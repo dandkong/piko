@@ -1,14 +1,8 @@
-export type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number;
-};
+import type { StreamEvent } from "./chat";
 
-export type StreamEvent =
-  | { type: "delta"; text: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
+export function encodeSse(event: StreamEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
 
 /** Parse complete SSE data blocks while retaining any partial block for the next chunk. */
 export function consumeSse(

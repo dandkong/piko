@@ -1,32 +1,48 @@
-# Piko mobile client (Expo / React Native)
+# Piko React Native 客户端
 
-This is a parallel client for the existing Piko Bun API. Pi SDK sessions and provider credentials remain on the Piko server; the mobile app does not run a second agent runtime.
+`apps/mobile` 是 Piko 的唯一前端，使用 Expo SDK 57 和 React Native，支持 iOS / Android。Pi SDK、模型配置和凭据由根目录的 Bun 服务端管理。
 
-## Run
+## 安装和启动
 
-From the repository root:
+从仓库根目录执行：
 
-```sh
+```powershell
+bun install
+bun install --cwd apps/mobile
+```
+
+分别在两个终端运行：
+
+```powershell
 bun run dev:api
-bun run dev:mobile
 ```
 
-Open the Expo Go QR code on a device, or press `a` / `i` for an available emulator/simulator. To preview the React Native UI in a browser:
-
-```sh
-bun run dev:mobile:web
+```powershell
+bun run dev
 ```
 
-The app defaults to `http://127.0.0.1:8787` on iOS Simulator and Expo Web, and `http://10.0.2.2:8787` on the Android Emulator. A physical device can set `EXPO_PUBLIC_PIKO_API_URL` to its secured Piko API address. Piko currently binds to loopback by default and has no API authentication, so do **not** expose it to a LAN or tunnel until authentication and an appropriately restricted network boundary are in place. CORS for Expo Web is limited to localhost development origins by default; additional trusted browser origins can be set with `PIKO_CORS_ORIGINS`.
+按 `a` 使用 Android Emulator；在 macOS 上按 `i` 使用 iOS Simulator。也可通过兼容 SDK 57 的 Expo Go 或开发客户端运行。
 
-Expo SDK 57 is used for this prototype. The `uuid` override pins a patched CommonJS-compatible version for Expo's nested `xcode` build dependency.
+Android Emulator 默认访问 `http://10.0.2.2:8787`，iOS Simulator 默认访问 `http://127.0.0.1:8787`。实体设备需通过 `EXPO_PUBLIC_PIKO_API_URL` 指向有身份验证和访问限制的服务端地址。API 当前只监听本机且无登录验证，不要直接暴露到不可信网络。
 
-## Build bundles
+依赖由 Bun 管理，客户端锁文件为 `apps/mobile/bun.lock`。`uuid` override 用于 Expo 的嵌套 `xcode` 构建依赖。
 
-```sh
-bun run build:mobile:web
-bun run build:mobile:ios
-bun run build:mobile:android
+## 首页和 Tab
+
+首页参考 OpenMuse 的 RN 组件，包括居中的水豚头像、近白背景、快捷提示、浅蓝/浅灰消息气泡、胶囊输入框和五项底部导航。Chat 具有灰色选中背景，其余 Tab 在对应功能实现前保持禁用。菜单、通知和附件也是禁用占位。
+
+`App.tsx` 只负责应用初始化；`src/components/AppShell.tsx` 管理头像、顶部和底部导航；`src/theme.ts` 定义颜色。聊天页面、输入框、状态 Hook 和 API 位于 `src/features/chat/`。通用 HTTP 客户端位于 `src/api/client.ts`，消息契约和 SSE parser 分别位于根目录 `shared/chat.ts` 与 `shared/sse.ts`。
+
+后续页面按功能放进 `src/features/`，领域状态由服务端管理；模块边界与下一步实施顺序见 [架构说明](../../docs/ARCHITECTURE.md)。
+
+## 检查和导出
+
+从仓库根目录执行：
+
+```powershell
+bun run typecheck:mobile
+bun run build:android
+bun run build:ios
 ```
 
-The iOS and Android commands export JavaScript bundles; producing signed native binaries still requires the respective native build toolchain or EAS Build.
+导出的是 JavaScript / Hermes bundle。生成签名的原生安装包仍需 Android / Xcode 工具链或 EAS Build。

@@ -4,6 +4,7 @@
     "slug": "piko",
     "scheme": "piko",
     "version": "0.1.0",
+    "platforms": ["ios", "android"],
     "icon": "./assets/capybara.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -15,12 +16,8 @@
       "package": "com.piko.assistant",
       "adaptiveIcon": {
         "foregroundImage": "./assets/capybara.png",
-        "backgroundColor": "#f7f5f0"
+        "backgroundColor": "#FCFCFC"
       }
-    },
-    "web": {
-      "bundler": "metro",
-      "name": "Piko"
     },
     "plugins": [
       "expo-status-bar"

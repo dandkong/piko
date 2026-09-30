@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { consumeSse } from "../src/shared/chat";
+import { consumeSse } from "../shared/sse";
 
 describe("consumeSse", () => {
   test("keeps an incomplete event until the next chunk arrives", () => {

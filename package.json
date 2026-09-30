@@ -4,31 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bun run --cwd apps/mobile start",
     "dev:api": "bun --watch server/index.ts",
-    "dev:web": "bunx vite --host 127.0.0.1",
-    "build": "bunx vite build",
-    "preview": "bunx vite preview --host 127.0.0.1",
-    "typecheck": "bunx tsc --noEmit",
-    "typecheck:mobile": "npm --prefix apps/mobile run typecheck",
-    "test": "bun test tests/chat.test.ts",
-    "dev:mobile": "npm --prefix apps/mobile run start",
-    "dev:mobile:web": "npm --prefix apps/mobile run web",
-    "build:mobile:web": "npm --prefix apps/mobile run build:web",
-    "build:mobile:ios": "npm --prefix apps/mobile run build:ios",
-    "build:mobile:android": "npm --prefix apps/mobile run build:android"
+    "dev:mobile": "bun run dev",
+    "typecheck": "bun run typecheck:api && bun run typecheck:mobile",
+    "typecheck:api": "bunx tsc --noEmit",
+    "typecheck:mobile": "bun run --cwd apps/mobile typecheck",
+    "test": "bun test tests",
+    "build": "bun run build:ios && bun run build:android",
+    "build:ios": "bun run --cwd apps/mobile build:ios",
+    "build:android": "bun run --cwd apps/mobile build:android",
+    "build:mobile:ios": "bun run build:ios",
+    "build:mobile:android": "bun run build:android"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.1",
-    "lucide-react": "1.48.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "@earendil-works/pi-coding-agent": "0.87.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.1",
-    "typescript": "7.0.2",
-    "vite": "8.3.1"
+    "typescript": "7.0.2"
   }
 }

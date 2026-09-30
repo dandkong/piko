@@ -5,7 +5,7 @@ const projectRoot = __dirname;
 const repositoryRoot = path.resolve(projectRoot, "../..");
 const config = getDefaultConfig(projectRoot);
 
-// The chat contract/parser is shared with Piko's existing Vite web client.
+// Keep the shared chat contract/parser inside Metro's watched repository.
 config.watchFolders = [...(config.watchFolders ?? []), repositoryRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),

@@ -17,10 +17,10 @@
 | **0. 核心模型** | 暂时没有太多新 UI | User、Thread、Run、Task、Event、Artifact、Goal、Memory 等领域模型及其关联 | 新功能都有各自领域对象，不再把所有状态塞进 Message 表；有统一 ID、时间和状态语义 | 计划中 |
 | **1. Chat + Agent** | 主会话，可以让 Pi 干活 | Streaming、工具调用、取消、重试、Run 状态、Pi → AG-UI adapter | 日常聊天和普通 Agent 任务稳定；停止、错误和重新连接行为明确 | 原型部分完成：已有 Pi 文本流、停止；领域 Run 状态、工具调用和 AG-UI adapter 尚未完成 |
 | **2. Activity + Artifacts** | 能看到 Agent 在干什么、产生了什么 | Event Log、Run Trace、Artifact Store、文件上传下载 | Agent 工作不再只能从聊天记录理解；Run 可查看进度、事件和产物 | 计划中 |
-| **3. Background Tasks** | 关掉网页后 Agent 继续工作 | Queue、Worker、Scheduler、Retry、Idempotency、Resume | 长任务可排队、恢复、取消；重复触发不会重复产生副作用 | 计划中 |
+| **3. Background Tasks** | 离开页面或切到后台后 Agent 继续工作 | Queue、Worker、Scheduler、Retry、Idempotency、Resume | 长任务可排队、恢复、取消；重复触发不会重复产生副作用 | 计划中 |
 | **4. Goals** | 长期目标、时间线、进度、产物 | Goal State、Timeline、linked tasks、checkpoints、goal context | 一个目标可以持续几周而不依赖一个 chat；目标与任务、产物互相链接 | 计划中 |
 | **5. Memory** | Agent 越来越懂你，并可以查看、修改记忆 | Memory extraction、retrieval、provenance、scope、decay | Memory 不只是聊天摘要；每条记忆可追溯、可纠正、可删除 | 计划中 |
-| **6. Notifications** | Agent 有事主动找你 | Notification Inbox、Web Push、Significance Filter | 重要进展可到达用户；低价值变化不会持续打扰 | 计划中 |
+| **6. Notifications** | Agent 有事主动找你 | Notification Inbox、原生推送、Significance Filter | 重要进展可到达用户；低价值变化不会持续打扰 | 计划中 |
 | **7. Ideas** | Agent 主动建议“可以帮你做什么” | Idea Curator、candidate generation、scoring、dedupe | Goals、Memory 与现有能力能产生可解释、去重的主动建议 | 计划中 |
 | **8. Feed** | 个性化研究和信息流 | Feed Brief、Taste、Topic Planner、Research、Writer、feedback | Feed 是私人研究员，不只是 RSS 列表；内容有来源并能反馈偏好 | 计划中 |
 | **9. Browser Computer** | Agent 拥有长期浏览器，并可由用户接管 | persistent session、remote viewer、downloads、cookies、takeover | 能稳定操作真实 Web；用户能看见并接管浏览器工作 | 计划中 |
@@ -32,13 +32,13 @@
 
 目前 Piko 具备：
 
-- Vite Web/PWA 聊天界面，以及并行的 Expo / React Native Chat 原型（可用 React Native Web 预览）。两端共享消息与 SSE 事件契约。
-- Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本；两个前端都连接同一 API。
+- Expo / React Native Chat 原型，运行于 iOS、Android；首页、输入框与五项底部 Tab 对齐 OpenMuse。消息与 SSE 事件契约位于 `shared/chat.ts`。
+- Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本；RN 客户端连接这一 API。
 - Pi coding tools 默认全部关闭；当前只做纯聊天。
 - 会话使用内存存储，服务端重启后上下文会清空；还没有领域数据库、Run/Event/Artifact 模型。
-- Web 与 RN 的菜单、通知和非 Chat 导航目前只是布局占位，不代表对应功能已经实现。
+- RN 的菜单、通知、附件和非 Chat 导航目前只是禁用的布局占位，不代表对应功能已经实现。
 
-因此当前是**Chat 原型**，不能算阶段 0 或阶段 1 完成。下一步先定核心实体及其关联，再按阶段补齐运行状态、Activity 与产物。
+因此当前是**Chat 原型**，不能算阶段 0 或阶段 1 完成。下一步先定核心实体及其关联，再按阶段补齐运行状态、Activity 与产物。代码边界和具体实施顺序见 [架构说明](docs/ARCHITECTURE.md)。
 
 ## UI 页面演进
 
