@@ -57,11 +57,30 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
 
     const sessionId = sessionFromPath(url.pathname);
     if (sessionId && request.method === "GET") {
-      return withCors(request, json({ sessionId, messages: conversations.history(sessionId) } satisfies ConversationResponse));
+      const run = conversations.run(sessionId)?.snapshot;
+      return withCors(request, json({ sessionId, messages: conversations.history(sessionId), ...(run && { run }) } satisfies ConversationResponse));
     }
     if (sessionId && request.method === "DELETE") {
-      conversations.delete(sessionId);
+      try { conversations.delete(sessionId); }
+      catch (error) { return withCors(request, json({ error: (error as Error).message }, 409)); }
       return withCors(request, json({ ok: true }));
+    }
+
+    const runPath = /^\/api\/sessions\/([^/]+)\/runs\/([^/]+)\/(events|cancel)$/.exec(url.pathname);
+    if (runPath && isSessionId(runPath[1]) && isSessionId(runPath[2])) {
+      const run = conversations.run(runPath[1]);
+      if (!run || run.snapshot.id !== runPath[2]) return withCors(request, json({ error: "Reply is no longer available. Reload the conversation." }, 404));
+      if (request.method === "GET" && runPath[3] === "events") {
+        const after = Number(url.searchParams.get("after") ?? 0);
+        if (!Number.isSafeInteger(after) || after < 0) return withCors(request, json({ error: "A valid event cursor is required." }, 422));
+        if (!run.canReplay(after)) return withCors(request, json({ error: "Event history expired. Reload the conversation." }, 409));
+        return withCors(request, chatStream(run, request, after));
+      }
+      if (request.method === "POST" && runPath[3] === "cancel") {
+        try { await run.cancel(); }
+        catch { return withCors(request, json({ error: "Could not stop this reply. Try again." }, 500)); }
+        return withCors(request, json({ run: run.snapshot }));
+      }
     }
 
     if (request.method === "POST" && url.pathname === "/api/chat") {
@@ -86,10 +105,21 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
       if (typeof input.message !== "string" || !input.message.trim() || input.message.length > MAX_MESSAGE_LENGTH) {
         return withCors(request, json({ error: "Message must contain 1–12,000 characters." }, 422));
       }
-      if (conversations.isStreaming(input.sessionId)) {
-        return withCors(request, json({ error: "This conversation is already responding." }, 409));
+      if (input.runId !== undefined && !isSessionId(input.runId)) return withCors(request, json({ error: "A valid runId is required." }, 422));
+      const after = input.after ?? 0;
+      if (typeof after !== "number" || !Number.isSafeInteger(after) || after < 0) return withCors(request, json({ error: "A valid event cursor is required." }, 422));
+      if (request.signal.aborted) return withCors(request, new Response(null, { status: 499 }));
+      try {
+        const existing = conversations.run(input.sessionId);
+        if (after > 0 && (!existing || existing.snapshot.id !== input.runId || !existing.canReplay(after))) {
+          return withCors(request, json({ error: "Event history expired. Reload the conversation." }, 409));
+        }
+        const run = conversations.startRun(input.sessionId, (input.runId as string | undefined) ?? crypto.randomUUID(), input.message.trim());
+        if (!run.canReplay(after)) return withCors(request, json({ error: "Event history expired. Reload the conversation." }, 409));
+        return withCors(request, chatStream(run, request, after));
+      } catch (error) {
+        return withCors(request, json({ error: (error as Error).message }, 409));
       }
-      return withCors(request, chatStream(conversations, request, input.sessionId, input.message.trim()));
     }
 
     if (url.pathname.startsWith("/api/")) return withCors(request, json({ error: "Not found." }, 404));

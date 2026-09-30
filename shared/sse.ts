@@ -22,6 +22,11 @@ export function consumeSse(
     if (!data) continue;
 
     const value: unknown = JSON.parse(data);
+    const metadata: { runId?: string; sequence?: number } = {};
+    if (typeof value === "object" && value !== null) {
+      if ("runId" in value && typeof value.runId === "string") metadata.runId = value.runId;
+      if ("sequence" in value && typeof value.sequence === "number" && Number.isSafeInteger(value.sequence) && value.sequence > 0) metadata.sequence = value.sequence;
+    }
     if (
       typeof value === "object" &&
       value !== null &&
@@ -30,14 +35,18 @@ export function consumeSse(
       "text" in value &&
       typeof value.text === "string"
     ) {
-      events.push({ type: "delta", text: value.text });
+      events.push({ type: "delta", text: value.text, ...metadata });
     } else if (
       typeof value === "object" &&
       value !== null &&
       "type" in value &&
       value.type === "done"
     ) {
-      events.push({ type: "done" });
+      events.push({ type: "done", ...metadata });
+    } else if (
+      typeof value === "object" && value !== null && "type" in value && value.type === "cancelled"
+    ) {
+      events.push({ type: "cancelled", ...metadata });
     } else if (
       typeof value === "object" &&
       value !== null &&
@@ -46,7 +55,7 @@ export function consumeSse(
       "message" in value &&
       typeof value.message === "string"
     ) {
-      events.push({ type: "error", message: value.message });
+      events.push({ type: "error", message: value.message, ...metadata });
     }
   }
 

@@ -5,13 +5,30 @@ export type Message = {
   createdAt: number;
 };
 
-export type StreamEvent =
+export type StreamEvent = (
   | { type: "delta"; text: string }
   | { type: "done" }
-  | { type: "error"; message: string };
+  | { type: "cancelled" }
+  | { type: "error"; message: string }
+) & { runId?: string; sequence?: number };
 
-export type ChatRequest = { sessionId: string; message: string };
-export type ConversationResponse = { sessionId: string; messages: Message[] };
+export type RunStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type RunSnapshot = {
+  id: string;
+  status: RunStatus;
+  message: string;
+  text: string;
+  createdAt: number;
+  lastEventId: number;
+  error?: string;
+};
+
+export function isRunActive(run: RunSnapshot): boolean {
+  return run.status === "queued" || run.status === "running" || run.status === "cancelling";
+}
+
+export type ChatRequest = { sessionId: string; message: string; runId?: string; after?: number };
+export type ConversationResponse = { sessionId: string; messages: Message[]; run?: RunSnapshot };
 export type HealthResponse = {
   ok: boolean;
   app: "Piko";

@@ -1,6 +1,6 @@
 # Piko React Native 客户端
 
-`apps/mobile` 是 Piko 的唯一前端，使用 Expo SDK 57 和 React Native，支持 iOS / Android。Pi SDK、模型配置和凭据由根目录的 Bun 服务端管理。
+`apps/mobile` 是 Piko 的唯一前端，使用 Expo SDK 57 和 React Native，支持 Web / iOS / Android。Pi SDK、模型配置和凭据由根目录的 Bun 服务端管理。
 
 ## 安装和启动
 
@@ -11,19 +11,25 @@ bun install
 bun install --cwd apps/mobile
 ```
 
-分别在两个终端运行：
-
-```powershell
-bun run dev:api
-```
+从仓库根目录，一条命令启动 API 和 Expo：
 
 ```powershell
 bun run dev
 ```
 
-按 `a` 使用 Android Emulator；在 macOS 上按 `i` 使用 iOS Simulator。也可通过兼容 SDK 57 的 Expo Go 或开发客户端运行。
+```powershell
+# Web
+bun run dev:web
 
-Android Emulator 默认访问 `http://10.0.2.2:8787`，iOS Simulator 默认访问 `http://127.0.0.1:8787`。实体设备需通过 `EXPO_PUBLIC_PIKO_API_URL` 指向有身份验证和访问限制的服务端地址。API 当前只监听本机且无登录验证，不要直接暴露到不可信网络。
+# 或 Android Emulator
+bun run dev:android
+```
+
+这些命令自动配置本地 Web 的 CORS，等待 API 就绪后启动 Expo；按 `Ctrl+C` 关闭两个服务，一个服务退出时另一个也会关闭。Web 在 `http://localhost:8081` 打开。Android 需先启动 Emulator，并安装兼容 SDK 57 的 Expo Go 或开发客户端。同时测试两端时，运行 `bun run dev:web` 后按 `a`，复用同一个 Expo 进程；不要同时启动两个使用 8081 的进程。运行 `bun run dev` 后可按 `w` 打开 Web、按 `a` 使用 Android Emulator；在 macOS 上按 `i` 使用 iOS Simulator。
+
+需要分开启动时，在终端 1 设置 `$env:PIKO_CORS_ORIGINS = "http://localhost:8081,http://127.0.0.1:8081"` 并运行 `bun run dev:api`，在终端 2 运行 `bun run dev:mobile`（仅 Expo）。
+
+Android Emulator 默认访问 `http://10.0.2.2:8787`，Web / iOS Simulator 默认访问 `http://127.0.0.1:8787`。使用其他 Web 地址或端口时，通过 `PIKO_CORS_ORIGINS` 加入其准确的 Origin 并重启 API。实体设备需通过 `EXPO_PUBLIC_PIKO_API_URL` 指向有身份验证和访问限制的服务端地址。API 当前只监听本机且无登录验证，不要直接暴露到不可信网络。
 
 依赖由 Bun 管理，客户端锁文件为 `apps/mobile/bun.lock`。`uuid` override 用于 Expo 的嵌套 `xcode` 构建依赖。
 
@@ -43,6 +49,7 @@ Android Emulator 默认访问 `http://10.0.2.2:8787`，iOS Simulator 默认访�
 bun run typecheck:mobile
 bun run build:android
 bun run build:ios
+bun run build:web
 ```
 
-导出的是 JavaScript / Hermes bundle。生成签名的原生安装包仍需 Android / Xcode 工具链或 EAS Build。
+`build:web` 导出 HTML、JavaScript 和静态资源；iOS / Android 导出的是 JavaScript / Hermes bundle。生成签名的原生安装包仍需 Android / Xcode 工具链或 EAS Build。

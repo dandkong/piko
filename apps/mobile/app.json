@@ -4,7 +4,10 @@
     "slug": "piko",
     "scheme": "piko",
     "version": "0.1.0",
-    "platforms": ["ios", "android"],
+    "platforms": ["ios", "android", "web"],
+    "web": {
+      "bundler": "metro"
+    },
     "icon": "./assets/capybara.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",

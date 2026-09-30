@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { Platform, Pressable, TextInput, type TextStyle, View } from "react-native";
 import { ArrowUp, Plus, Square } from "lucide-react-native";
 import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
 import { colors } from "../../theme";
 import { styles } from "./styles";
+
+// The pill supplies the focus indicator; hide the browser's inner textarea outline.
+// React Native's types omit "none", which react-native-web supports.
+const webInputStyle = Platform.OS === "web" ? ({ outlineStyle: "none" } as unknown as TextStyle) : undefined;
 
 type Props = {
   draft: string;
@@ -43,7 +47,7 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
           selectionColor={colors.blueDark}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          style={[styles.input, { height: inputHeight }]}
+          style={[styles.input, webInputStyle, { height: inputHeight }]}
           multiline
           maxLength={MAX_MESSAGE_LENGTH}
           editable={!loading}

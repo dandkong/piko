@@ -38,10 +38,20 @@ export function ChatScreen() {
   }, [busy]);
 
   const renderMessage = ({ item }: ListRenderItemInfo<Message>) => {
-    if (!item.content) return null;
+    const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
+    if (!item.content.trim() && !waitingForText) return null;
     return (
-      <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}>
-        <Text selectable style={styles.messageText}>{item.content}</Text>
+      <View
+        accessibilityLabel={waitingForText ? "Piko is working" : undefined}
+        style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
+      >
+        {waitingForText ? (
+          [0.4, 0.75, 0.5].map((opacity) => (
+            <View key={opacity} style={[styles.typingDot, { opacity }]} />
+          ))
+        ) : (
+          <Text selectable style={styles.messageText}>{item.content}</Text>
+        )}
       </View>
     );
   };
@@ -97,13 +107,6 @@ export function ChatScreen() {
           )}
           ListFooterComponent={(
             <View>
-              {busy && (
-                <View accessibilityLabel="Piko is working" style={styles.typing}>
-                  {[0.4, 0.75, 0.5].map((opacity) => (
-                    <View key={opacity} style={[styles.typingDot, { opacity }]} />
-                  ))}
-                </View>
-              )}
               {!!error && (
                 <View style={styles.errorNotice}>
                   <Text style={styles.errorText}>{error}</Text>
@@ -115,7 +118,7 @@ export function ChatScreen() {
                       style={styles.retryButton}
                     >
                       <RotateCcw size={14} color={colors.text} />
-                      <Text style={styles.suggestionText}>Retry response</Text>
+                      <Text style={styles.suggestionText}>Try again</Text>
                     </Pressable>
                   )}
                 </View>

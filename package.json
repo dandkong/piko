@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --cwd apps/mobile start",
+    "dev": "bun scripts/dev.ts",
     "dev:api": "bun --watch server/index.ts",
-    "dev:mobile": "bun run dev",
+    "dev:mobile": "bun run --cwd apps/mobile start",
+    "dev:web": "bun scripts/dev.ts --web",
+    "dev:android": "bun scripts/dev.ts --android",
     "typecheck": "bun run typecheck:api && bun run typecheck:mobile",
     "typecheck:api": "bunx tsc --noEmit",
     "typecheck:mobile": "bun run --cwd apps/mobile typecheck",
@@ -14,11 +16,12 @@
     "build": "bun run build:ios && bun run build:android",
     "build:ios": "bun run --cwd apps/mobile build:ios",
     "build:android": "bun run --cwd apps/mobile build:android",
+    "build:web": "bun run --cwd apps/mobile build:web",
     "build:mobile:ios": "bun run build:ios",
     "build:mobile:android": "bun run build:android"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.1"
+    "@earendil-works/pi-coding-agent": "0.99.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

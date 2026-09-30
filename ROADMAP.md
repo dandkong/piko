@@ -15,7 +15,7 @@
 | 阶段 | 用户看到什么 | 底层真正要实现什么 | 完成标准 | 状态 |
 | --- | --- | --- | --- | --- |
 | **0. 核心模型** | 暂时没有太多新 UI | User、Thread、Run、Task、Event、Artifact、Goal、Memory 等领域模型及其关联 | 新功能都有各自领域对象，不再把所有状态塞进 Message 表；有统一 ID、时间和状态语义 | 计划中 |
-| **1. Chat + Agent** | 主会话，可以让 Pi 干活 | Streaming、工具调用、取消、重试、Run 状态、Pi → AG-UI adapter | 日常聊天和普通 Agent 任务稳定；停止、错误和重新连接行为明确 | 原型部分完成：已有 Pi 文本流、停止；领域 Run 状态、工具调用和 AG-UI adapter 尚未完成 |
+| **1. Chat + Agent** | 主会话，可以让 Pi 干活 | Streaming、工具调用、取消、重试、Run 状态、Pi → AG-UI adapter | 日常聊天和普通 Agent 任务稳定；停止、错误和重新连接行为明确 | 原型部分完成：已有 Pi 文本流、内存 Run、独立停止、提交去重及断线/刷新恢复；统一领域 Run、工具调用和 AG-UI adapter 尚未完成 |
 | **2. Activity + Artifacts** | 能看到 Agent 在干什么、产生了什么 | Event Log、Run Trace、Artifact Store、文件上传下载 | Agent 工作不再只能从聊天记录理解；Run 可查看进度、事件和产物 | 计划中 |
 | **3. Background Tasks** | 离开页面或切到后台后 Agent 继续工作 | Queue、Worker、Scheduler、Retry、Idempotency、Resume | 长任务可排队、恢复、取消；重复触发不会重复产生副作用 | 计划中 |
 | **4. Goals** | 长期目标、时间线、进度、产物 | Goal State、Timeline、linked tasks、checkpoints、goal context | 一个目标可以持续几周而不依赖一个 chat；目标与任务、产物互相链接 | 计划中 |
@@ -35,7 +35,7 @@
 - Expo / React Native Chat 原型，运行于 iOS、Android；首页、输入框与五项底部 Tab 对齐 OpenMuse。消息与 SSE 事件契约位于 `shared/chat.ts`。
 - Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本；RN 客户端连接这一 API。
 - Pi coding tools 默认全部关闭；当前只做纯聊天。
-- 会话使用内存存储，服务端重启后上下文会清空；还没有领域数据库、Run/Event/Artifact 模型。
+- 会话、最近 Run 快照与事件回放使用内存存储，连接断开后回复继续执行，刷新或回到前台可恢复；服务端重启后状态清空。统一领域数据库和 Run/Event/Artifact 模型尚未完成。
 - RN 的菜单、通知、附件和非 Chat 导航目前只是禁用的布局占位，不代表对应功能已经实现。
 
 因此当前是**Chat 原型**，不能算阶段 0 或阶段 1 完成。下一步先定核心实体及其关联，再按阶段补齐运行状态、Activity 与产物。代码边界和具体实施顺序见 [架构说明](docs/ARCHITECTURE.md)。

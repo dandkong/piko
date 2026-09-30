@@ -9,6 +9,8 @@ const conversations = new ConversationStore(() => runtime.createSession(), confi
 const server = Bun.serve({
   hostname: config.hostname,
   port: config.port,
+  // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
+  idleTimeout: 60,
   fetch: createApp({ config, runtime, conversations }),
 });
 

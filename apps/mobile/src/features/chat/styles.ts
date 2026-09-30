@@ -92,13 +92,9 @@ export const styles = StyleSheet.create({
   },
   typing: {
     flexDirection: "row",
-    alignSelf: "flex-start",
     gap: 7,
     paddingHorizontal: 19,
     paddingVertical: 18,
-    backgroundColor: "#EEEEF0",
-    borderRadius: 28,
-    marginTop: 13,
   },
   typingDot: {
     width: 8,
