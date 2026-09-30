@@ -33,7 +33,15 @@ Android Emulator 默认访问 `http://10.0.2.2:8787`，Web / iOS Simulator 默�
 
 依赖由 Bun 管理，客户端锁文件为 `apps/mobile/bun.lock`。`uuid` override 用于 Expo 的嵌套 `xcode` 构建依赖。
 
+## 动效
+
+界面动效统一使用 `react-native-reanimated`，配合 SDK 57 对应的 `react-native-worklets`；Expo 的 Babel preset 自动配置插件。`src/components/TypingIndicator.tsx` 提供可复用的三点等待动画：错峰跳动和透明度变化，系统启用减少动效时保持静止，正文出现或取消回复后卸载并停止循环。
+
+安装或更新动效依赖后，重启 Expo 并清理缓存：`bun run dev:web --clear`（从仓库根目录执行）。Expo Go 需要与项目 SDK 兼容；自建原生开发客户端需要重新构建才能加载新增的原生依赖。消息进入、面板切换、按钮反馈等后续动效继续基于 Reanimated 实现。
+
 ## 首页和 Tab
+
+桌面 Web 输入框使用 `Enter` 发送、`Shift+Enter` 换行。中文输入法的候选词确认不会触发发送；空白内容、连接中、助手回复中和长按回车的重复事件不会发送。Android / iOS 和手机 Web 保留回车换行，通过箭头按钮发送。
 
 首页参考 OpenMuse 的 RN 组件，包括居中的水豚头像、近白背景、快捷提示、浅蓝/浅灰消息气泡、胶囊输入框和五项底部导航。Chat 具有灰色选中背景，其余 Tab 在对应功能实现前保持禁用。菜单、通知和附件也是禁用占位。
 

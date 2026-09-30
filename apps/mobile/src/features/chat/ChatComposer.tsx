@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, TextInput, type TextStyle, View } from "react-native";
 import { ArrowUp, Plus, Square } from "lucide-react-native";
 import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
 import { colors } from "../../theme";
 import { styles } from "./styles";
+import { handleComposerKeyDown, isMobileWeb } from "./composerKeyboard";
 
 // The pill supplies the focus indicator; hide the browser's inner textarea outline.
 // React Native's types omit "none", which react-native-web supports.
@@ -22,8 +23,32 @@ type Props = {
 export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, onStop }: Props) {
   const [focused, setFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
+  const [inputWidth, setInputWidth] = useState(0);
+  const [desktopWeb, setDesktopWeb] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  const canSend = !busy && !loading && ready && !!draft.trim();
   useEffect(() => {
-    if (!draft) setInputHeight(44);
+    if (Platform.OS === "web") setDesktopWeb(!isMobileWeb(navigator));
+  }, []);
+  useEffect(() => {
+    if (Platform.OS !== "web" || !inputRef.current) return;
+    const input = inputRef.current as unknown as HTMLTextAreaElement;
+    const onKeyDown = (event: KeyboardEvent) => handleComposerKeyDown(event, desktopWeb, canSend, onSend);
+    input.addEventListener("keydown", onKeyDown);
+    return () => input.removeEventListener("keydown", onKeyDown);
+  }, [desktopWeb, canSend, onSend]);
+  useLayoutEffect(() => {
+    if (Platform.OS !== "web" || !inputRef.current) return;
+    const input = inputRef.current as unknown as HTMLTextAreaElement;
+    // scrollHeight includes the current box height. Collapse it before measuring
+    // so deleting text can shrink the composer as well as typing can grow it.
+    input.style.height = "0px";
+    const height = Math.max(44, Math.min(140, input.scrollHeight));
+    input.style.height = `${height}px`;
+    setInputHeight(height);
+  }, [draft, inputWidth]);
+  useEffect(() => {
+    if (Platform.OS !== "web" && !draft) setInputHeight(44);
   }, [draft]);
   const sendDisabled = !busy && (!draft.trim() || loading || !ready);
   return (
@@ -39,9 +64,13 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
           <Plus size={23} strokeWidth={1.5} color={colors.text} />
         </Pressable>
         <TextInput
+          ref={inputRef}
           value={draft}
           onChangeText={onChange}
-          onContentSizeChange={(event) => setInputHeight(Math.max(44, Math.min(140, event.nativeEvent.contentSize.height)))}
+          onLayout={Platform.OS === "web" ? (event) => setInputWidth(event.nativeEvent.layout.width) : undefined}
+          onContentSizeChange={Platform.OS === "web" ? undefined : (event) => {
+            setInputHeight(Math.max(44, Math.min(140, event.nativeEvent.contentSize.height)));
+          }}
           placeholder={loading ? "Connecting…" : "Message…"}
           placeholderTextColor="#949B9F"
           selectionColor={colors.blueDark}

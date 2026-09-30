@@ -13,12 +13,19 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors } from "../theme";
 
-export function AppShell({ children, wide, status }: { children: ReactNode; wide: boolean; status: string }) {
+export function AppShell({ children, wide, status, onHeaderHeightChange }: {
+  children: ReactNode;
+  wide: boolean;
+  status: string;
+  onHeaderHeightChange: (height: number) => void;
+}) {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom", "left", "right"]}>
       <View style={styles.shell}>
-        <AgentHeader wide={wide} status={status} />
-        <View style={[styles.content, { paddingHorizontal: wide ? 42 : 17 }]}>{children}</View>
+        <View style={styles.stage}>
+          <View style={[styles.content, { paddingHorizontal: wide ? 42 : 17 }]}>{children}</View>
+          <AgentHeader wide={wide} status={status} onHeightChange={onHeaderHeightChange} />
+        </View>
         <BottomTabs wide={wide} />
       </View>
     </SafeAreaView>
@@ -50,9 +57,17 @@ function Mascot({ size }: { size: number }) {
   );
 }
 
-function AgentHeader({ wide, status }: { wide: boolean; status: string }) {
+function AgentHeader({ wide, status, onHeightChange }: {
+  wide: boolean;
+  status: string;
+  onHeightChange: (height: number) => void;
+}) {
   return (
-    <View style={[styles.header, { height: wide ? 146 : 122, paddingTop: wide ? 14 : 2 }]}>
+    <View
+      pointerEvents="box-none"
+      onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
+      style={[styles.header, { paddingTop: wide ? 14 : 2 }]}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Menu — coming soon"
@@ -62,7 +77,7 @@ function AgentHeader({ wide, status }: { wide: boolean; status: string }) {
       >
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
-      <View style={styles.identity}>
+      <View pointerEvents="none" style={styles.identity}>
         <Mascot size={wide ? 58 : 49} />
         <Text style={styles.name}>Piko</Text>
         <Text numberOfLines={1} style={styles.status}>{status}</Text>
@@ -117,12 +132,23 @@ const styles = StyleSheet.create({
     maxWidth: 760,
     alignSelf: "center",
   },
+  stage: {
+    flex: 1,
+    minHeight: 0,
+    position: "relative",
+  },
   content: {
     flex: 1,
     minHeight: 0,
   },
   header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
     marginHorizontal: 20,
+    paddingBottom: 10,
   },
   identity: {
     alignItems: "center",
@@ -139,7 +165,6 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 11,
     color: colors.muted,
-    marginBottom: 6,
   },
   headerButton: {
     position: "absolute",
