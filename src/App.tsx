@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { consumeSse, type Message } from "./shared/chat";
 import {
   ArrowDown,
   ArrowUp,
@@ -14,17 +15,6 @@ import {
   Square,
   SquareCheck,
 } from "lucide-react";
-
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number;
-};
-type StreamEvent =
-  | { type: "delta"; text: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
 
 function newSessionId() {
   return crypto.randomUUID();
@@ -135,12 +125,9 @@ export default function App() {
       while (true) {
         const { value, done } = await reader.read();
         pending += decoder.decode(value, { stream: !done });
-        const events = pending.split("\n\n");
-        pending = events.pop() || "";
-        for (const raw of events) {
-          const line = raw.split("\n").find((part) => part.startsWith("data: "));
-          if (!line) continue;
-          const event = JSON.parse(line.slice(6)) as StreamEvent;
+        const { events, remainder } = consumeSse(pending, done);
+        pending = remainder;
+        for (const event of events) {
           if (event.type === "delta") {
             setMessages((current) => current.map((item) => item.id === assistantMessage.id ? { ...item, content: item.content + event.text } : item));
           } else if (event.type === "error") {

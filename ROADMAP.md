@@ -32,11 +32,11 @@
 
 目前 Piko 具备：
 
-- Web/PWA 聊天界面，布局借鉴 OpenMuse Chat。
-- Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本。
+- Vite Web/PWA 聊天界面，以及并行的 Expo / React Native Chat 原型（可用 React Native Web 预览）。两端共享消息与 SSE 事件契约。
+- Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本；两个前端都连接同一 API。
 - Pi coding tools 默认全部关闭；当前只做纯聊天。
 - 会话使用内存存储，服务端重启后上下文会清空；还没有领域数据库、Run/Event/Artifact 模型。
-- UI 上的菜单、通知和非 Chat 导航目前只是布局占位，不代表对应功能已经实现。
+- Web 与 RN 的菜单、通知和非 Chat 导航目前只是布局占位，不代表对应功能已经实现。
 
 因此当前是**Chat 原型**，不能算阶段 0 或阶段 1 完成。下一步先定核心实体及其关联，再按阶段补齐运行状态、Activity 与产物。
 

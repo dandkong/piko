@@ -9,16 +9,12 @@ Piko 是一个本地优先的个人助理原型：使用 OpenMuse 风格的聊�
 ## 当前架构
 
 ```text
-React Web / PWA
-       │ fetch + 应用内 SSE
-       ▼
-Bun API（本地 HTTP 和 Pi SDK session）
-       │
-       ▼
-Pi ModelRuntime（读取 Pi profile 与模型配置）
+Vite React Web / PWA ─────┐
+                           ├─ Piko HTTP API + SSE ─ Pi SDK / ModelRuntime
+Expo React Native / Web ──┘
 ```
 
-目前的 SSE 是 Piko 自己的轻量事件格式，不是 AG-UI。路线图记录了后续领域模型、Run 状态、Activity / Artifacts 等阶段；见 [ROADMAP.md](ROADMAP.md)。
+两个前端并行连接同一个 Bun API；聊天事件契约和 SSE parser 共享于 `src/shared/chat.ts`。目前的 SSE 是 Piko 自己的轻量事件格式，不是 AG-UI，Pi SDK 仍是唯一 Agent / 模型运行时。路线图记录了后续领域模型、Run 状态、Activity / Artifacts 等阶段；见 [ROADMAP.md](ROADMAP.md)。
 
 ## 环境要求
 
@@ -60,9 +56,28 @@ bun run dev:web
 bunx vite --host 0.0.0.0
 ```
 
-然后在同一 Wi-Fi 下用手机打开 `http://<电脑局域网地址>:5173`。PWA 安装和 service worker 需要 HTTPS 或 localhost 安全源；在另一台手机上安装时，应通过 HTTPS tunnel 或 HTTPS 主机访问。iPhone/iPad 在 Safari 中使用“分享 → 添加到主屏幕”。
+然后在同一 Wi-Fi 下用手机打开 `http://<电脑局域网地址>:5173`。PWA 安装和 service worker 需要 HTTPS 或 localhost 安全源；iPhone/iPad 在 Safari 中使用“分享 → 添加到主屏幕”。
 
-PWA 离线缓存只覆盖应用外壳；聊天仍要求 Pi/Bun 服务端在线。
+**安全提醒：**Vite dev server 会把 `/api` 代理到 Bun；监听 `0.0.0.0` 或经 tunnel 访问时，等于把未认证的 Piko API 暴露给可访问该地址的人。只在可信网络短时测试，勿开放到公网。PWA 离线缓存只覆盖应用外壳；聊天仍要求 Pi/Bun 服务端在线。
+
+## Expo / React Native 客户端
+
+`apps/mobile` 是并行的 Expo + React Native 客户端，可运行于 iOS、Android，也可用 React Native Web 在浏览器预览。它只负责 UI 和 API 通信；Pi session、模型配置与凭据仍留在 Bun 服务端。项目借鉴 OpenMuse 的 Expo 跨端组织方式，不依赖 OpenMuse/CopilotKit Agent 后端。
+
+首次安装移动端依赖并启动：
+
+```sh
+npm --prefix apps/mobile install
+bun run dev:mobile
+```
+
+在浏览器查看 RN 页面：
+
+```sh
+bun run dev:mobile:web
+```
+
+默认 API 地址是 iOS Simulator / Web 的 `http://127.0.0.1:8787` 和 Android Emulator 的 `http://10.0.2.2:8787`。实体设备可通过 `EXPO_PUBLIC_PIKO_API_URL` 指向服务端地址；但 Piko 默认只监听 loopback 且没有 API 登录验证，**不要为了手机访问就直接暴露到局域网或 tunnel**。Expo Web 的 CORS 默认只允许本机开发 origin；附加可信 origin 可用 `PIKO_CORS_ORIGINS` 配置。iOS/Android bundle 导出命令见 `apps/mobile/README.md`；签名原生包还需要 Xcode / Android 工具链或 EAS Build。
 
 ## 当前边界
 

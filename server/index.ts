@@ -138,6 +138,34 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+const defaultDevOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+  "http://localhost:8081",
+  "http://127.0.0.1:8081",
+].join(",");
+const allowedCorsOrigins = new Set(
+  (process.env.PIKO_CORS_ORIGINS ?? (process.env.NODE_ENV === "production" ? "" : defaultDevOrigins))
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+
+function withCors(request: Request, response: Response): Response {
+  const origin = request.headers.get("origin");
+  if (!origin) return response;
+  if (!allowedCorsOrigins.has(origin)) return new Response("Origin not allowed.", { status: 403 });
+
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  const vary = headers.get("Vary");
+  if (!vary) headers.set("Vary", "Origin");
+  else if (!vary.toLowerCase().split(/,\s*/).includes("origin")) headers.set("Vary", `${vary}, Origin`);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function sessionFromPath(pathname: string): string | undefined {
   const match = /^\/api\/sessions\/([^/]+)$/.exec(pathname);
   if (!match) return undefined;
@@ -230,67 +258,80 @@ const server = Bun.serve({
   hostname: process.env.PIKO_HOST ?? "127.0.0.1",
   port: Number(process.env.PIKO_PORT ?? 8787),
   async fetch(request) {
+    if (request.method === "OPTIONS") {
+      const origin = request.headers.get("origin");
+      if (!origin || !allowedCorsOrigins.has(origin)) return new Response(null, { status: 403 });
+      return withCors(request, new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Accept, Content-Type",
+          "Access-Control-Max-Age": "600",
+        },
+      }));
+    }
+
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/api/health") {
       const modelReady = (await modelRuntimePromise).getAvailableSnapshot().length > 0;
-      return json({
+      return withCors(request, json({
         ok: true,
         app: "Piko",
         runtime: "Pi",
         modelReady,
         activeSessions: conversations.size,
-      });
+      }));
     }
 
     const sessionId = sessionFromPath(url.pathname);
     if (sessionId && request.method === "GET") {
       const conversation = conversations.get(sessionId);
       if (conversation) conversation.touchedAt = Date.now();
-      return json({ sessionId, messages: history(conversation) });
+      return withCors(request, json({ sessionId, messages: history(conversation) }));
     }
     if (sessionId && request.method === "DELETE") {
       const conversation = conversations.get(sessionId);
       conversation?.session.dispose();
       conversations.delete(sessionId);
-      return json({ ok: true });
+      return withCors(request, json({ ok: true }));
     }
 
     if (request.method === "POST" && url.pathname === "/api/chat") {
       if (Number(request.headers.get("content-length") ?? 0) > 64_000) {
-        return json({ error: "Request is too large." }, 413);
+        return withCors(request, json({ error: "Request is too large." }, 413));
       }
       let body: unknown;
       try {
         const raw = await request.text();
         if (new TextEncoder().encode(raw).byteLength > 64_000) {
-          return json({ error: "Request is too large." }, 413);
+          return withCors(request, json({ error: "Request is too large." }, 413));
         }
         body = JSON.parse(raw);
       } catch {
-        return json({ error: "Send a valid JSON body." }, 400);
+        return withCors(request, json({ error: "Send a valid JSON body." }, 400));
       }
       if (typeof body !== "object" || body === null || Array.isArray(body)) {
-        return json({ error: "A JSON object is required." }, 400);
+        return withCors(request, json({ error: "A JSON object is required." }, 400));
       }
       const input = body as Record<string, unknown>;
-      if (!isSessionId(input.sessionId)) return json({ error: "A valid sessionId is required." }, 422);
+      if (!isSessionId(input.sessionId)) return withCors(request, json({ error: "A valid sessionId is required." }, 422));
       if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 12000) {
-        return json({ error: "Message must contain 1–12,000 characters." }, 422);
+        return withCors(request, json({ error: "Message must contain 1–12,000 characters." }, 422));
       }
       try {
         const existing = conversations.get(input.sessionId);
-        if (existing?.session.isStreaming) return json({ error: "This conversation is already responding." }, 409);
+        if (existing?.session.isStreaming) return withCors(request, json({ error: "This conversation is already responding." }, 409));
       } catch {
-        return json({ error: "Piko is busy. Try again shortly." }, 503);
+        return withCors(request, json({ error: "Piko is busy. Try again shortly." }, 503));
       }
-      return chatStream(request, input.sessionId, input.message.trim());
+      return withCors(request, chatStream(request, input.sessionId, input.message.trim()));
     }
 
-    if (url.pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
-    return new Response("Piko API is running. Start the web app with `bun run dev:web`.", {
+    if (url.pathname.startsWith("/api/")) return withCors(request, json({ error: "Not found." }, 404));
+    return withCors(request, new Response("Piko API is running. Start the web app with `bun run dev:web`.", {
       status: 200,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    }));
   },
 });
 

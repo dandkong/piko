@@ -8,7 +8,14 @@
     "dev:web": "bunx vite --host 127.0.0.1",
     "build": "bunx vite build",
     "preview": "bunx vite preview --host 127.0.0.1",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "typecheck:mobile": "npm --prefix apps/mobile run typecheck",
+    "test": "bun test tests/chat.test.ts",
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "dev:mobile:web": "npm --prefix apps/mobile run web",
+    "build:mobile:web": "npm --prefix apps/mobile run build:web",
+    "build:mobile:ios": "npm --prefix apps/mobile run build:ios",
+    "build:mobile:android": "npm --prefix apps/mobile run build:android"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",
