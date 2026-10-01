@@ -3,6 +3,8 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  /** Native entries may belong to one Piko execution; IDs still come from Pi. */
+  runId?: string;
 };
 
 export type StreamEvent = (

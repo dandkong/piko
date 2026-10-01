@@ -1,13 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Message, StreamEvent } from "../shared/chat";
 import { consumeSse } from "../shared/sse";
 import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
 import { chatStream } from "../server/chat/stream";
 import { readServerConfig } from "../server/config";
-import type { ChatRuntime, ChatSession } from "../server/runtime/types";
+import type { ChatRuntime, ChatSession, HistoryReader } from "../server/runtime/types";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ChatRepository } from "../server/domain/chat-repository";
 
-const sessionId = "b9b7c60a-b2e2-4af0-8a61-fb0903629aca";
+let sessionId = "b9b7c60a-b2e2-4af0-8a61-fb0903629aca";
 const runId = "7a5c9c78-030a-4c2a-b6f7-13974210b807";
 
 class TestSession implements ChatSession {
@@ -27,15 +31,15 @@ class TestSession implements ChatSession {
     return () => { this.listeners.delete(listener); };
   }
 
-  async prompt(text: string) {
+  async prompt(text: string, run?: { id: string }) {
     this.promptCalls++;
     this.isStreaming = true;
     this.started.resolve();
-    this.messages.push({ id: "user", role: "user", content: text, createdAt: 1 });
+    this.messages.push({ id: "user-" + this.promptCalls, role: "user", content: text, createdAt: 1, runId: run?.id });
     for (const listener of this.listeners) listener({ type: "delta", text: "Hello" });
     if (this.hold) await this.finished.promise;
     this.isStreaming = false;
-    this.messages.push({ id: "assistant", role: "assistant", content: "Hello", createdAt: 2 });
+    this.messages.push({ id: "assistant-" + this.promptCalls, role: "assistant", content: "Hello", createdAt: 2, runId: run?.id });
   }
 
   async abort() {
@@ -48,16 +52,42 @@ class TestSession implements ChatSession {
   emit(event: StreamEvent) { for (const listener of this.listeners) listener(event); }
 }
 
+
+const fixtures: { root: string; repo: ChatRepository }[] = [];
+afterEach(() => {
+  for (const fixture of fixtures.splice(0)) { fixture.repo.close(); rmSync(fixture.root, { recursive: true, force: true }); }
+});
+function storage(session?: TestSession) {
+  const root = mkdtempSync(join(tmpdir(), "piko-api-test-"));
+  const repo = new ChatRepository(join(root, "piko.sqlite"), root);
+  fixtures.push({ root, repo }); sessionId = repo.main.sessionId;
+  const readHistory: HistoryReader = () => {
+    const messages = session?.messages ?? [];
+    const runs = new Map<string, { message: string; text: string }>();
+    for (const message of messages) {
+      if (!message.runId) continue;
+      const run = runs.get(message.runId) ?? { message: "", text: "" };
+      if (message.role === "user") run.message = message.content;
+      else run.text += message.content;
+      runs.set(message.runId, run);
+    }
+    return { messages, runs };
+  };
+  return { repo, readHistory };
+}
+
 function setup(session = new TestSession()) {
+  const { repo, readHistory } = storage(session);
   let creations = 0;
   const config = readServerConfig({});
   const runtime: ChatRuntime = {
+    readHistory,
     isModelReady: async () => true,
     createSession: async () => { creations++; return session; },
   };
-  const conversations = new ConversationStore(runtime.createSession, config);
+  const conversations = new ConversationStore(runtime.createSession, config, repo, readHistory);
   const app = createApp({ config, runtime, conversations });
-  return { app, conversations, session, get creations() { return creations; } };
+  return { app, conversations, session, repo, readHistory, get creations() { return creations; } };
 }
 
 function chatRequest(body: unknown, headers?: HeadersInit) {
@@ -109,9 +139,9 @@ describe("API and runtime boundary", () => {
     expect((await history.json()).messages).toEqual(state.session.messages);
     expect(state.session.messages[0]?.content).toBe("Hello");
     const deleted = await state.app(new Request(`http://localhost/api/sessions/${sessionId}`, { method: "DELETE" }));
-    expect(deleted.status).toBe(200);
-    expect(state.session.disposed).toBe(true);
-    expect(state.conversations.size).toBe(0);
+    expect(deleted.status).toBe(409);
+    expect(state.session.disposed).toBe(false);
+    expect(state.conversations.size).toBe(1);
   });
 
   test("rejects a second turn while that conversation is streaming", async () => {
@@ -172,9 +202,10 @@ describe("API and runtime boundary", () => {
   test("duplicate submissions reuse the Run before session creation finishes", async () => {
     const session = new TestSession(true);
     const gate = Promise.withResolvers<ChatSession>();
+    const { repo, readHistory } = storage(session);
     const config = readServerConfig({});
-    const runtime: ChatRuntime = { isModelReady: async () => true, createSession: () => gate.promise };
-    const conversations = new ConversationStore(runtime.createSession, config);
+    const runtime: ChatRuntime = { isModelReady: async () => true, readHistory, createSession: () => gate.promise };
+    const conversations = new ConversationStore(runtime.createSession, config, repo, readHistory);
     const app = createApp({ config, runtime, conversations });
     const first = await app(chatRequest({ sessionId, runId, message: "Hello" }));
     const duplicate = await app(chatRequest({ sessionId, runId, message: "Hello" }));
@@ -190,7 +221,8 @@ describe("API and runtime boundary", () => {
   test("queued cancellation prevents the prompt from starting", async () => {
     const session = new TestSession();
     const gate = Promise.withResolvers<ChatSession>();
-    const store = new ConversationStore(() => gate.promise, readServerConfig({}));
+    const { repo, readHistory } = storage(session);
+    const store = new ConversationStore(() => gate.promise, readServerConfig({}), repo, readHistory);
     const run = store.startRun(sessionId, runId, "Hello");
     await run.cancel();
     gate.resolve(session);
@@ -226,13 +258,15 @@ describe("API and runtime boundary", () => {
     expect(state.session.promptCalls).toBe(2);
   });
 
-  test("session creation failures keep the submitted message and error for recovery", async () => {
+  test("session creation failures keep the error and transient input without inventing native history", async () => {
+    const { repo, readHistory } = storage();
     const config = readServerConfig({});
     const runtime: ChatRuntime = {
+      readHistory,
       isModelReady: async () => false,
       createSession: async () => { throw new Error("No model configured."); },
     };
-    const conversations = new ConversationStore(runtime.createSession, config);
+    const conversations = new ConversationStore(runtime.createSession, config, repo, readHistory);
     const app = createApp({ config, runtime, conversations });
     const response = await app(chatRequest({ sessionId, runId, message: "Hello" }));
     expect(consumeSse(await response.text(), true).events).toEqual([
@@ -241,21 +275,26 @@ describe("API and runtime boundary", () => {
     const history = await app(new Request(`http://localhost/api/sessions/${sessionId}`));
     const snapshot = await history.json();
     expect(snapshot.run).toMatchObject({ status: "failed", error: "No model configured." });
-    expect(snapshot.messages[0]).toMatchObject({ role: "user", content: "Hello" });
+    expect(snapshot.messages).toEqual([]);
+    expect(snapshot.run.message).toBe("Hello");
   });
 
-  test("old replay cursors expire while the complete Run text remains recoverable", async () => {
+
+  test("stream batches remain recoverable from the live snapshot without writing delta metadata", async () => {
     const state = setup(new TestSession(true));
     const response = await state.app(chatRequest({ sessionId, runId, message: "Hello" }));
     await state.session.started.promise;
     await response.body!.cancel();
     for (let i = 0; i < 2048; i++) state.session.emit({ type: "delta", text: "x" });
+    await Bun.sleep(60);
     const events = `http://localhost/api/sessions/${sessionId}/runs/${runId}/events`;
-    expect((await state.app(new Request(`${events}?after=0`))).status).toBe(409);
-    expect(state.conversations.run(sessionId)!.snapshot.text).toBe("Hello" + "x".repeat(2048));
-    const resumed = await state.app(new Request(`${events}?after=2049`));
+    expect((await state.app(new Request(`${events}?after=999`))).status).toBe(409);
+    const snapshot = state.conversations.run(sessionId)!.snapshot;
+    expect(snapshot.text).toBe("Hello" + "x".repeat(2048));
+    expect(state.repo.run(sessionId, runId)?.lastEventId).toBe(0);
+    const resumed = await state.app(new Request(`${events}?after=${snapshot.lastEventId}`));
     await state.conversations.run(sessionId)!.cancel();
-    expect(consumeSse(await resumed.text(), true).events).toEqual([{ type: "cancelled", runId, sequence: 2050 }]);
+    expect(consumeSse(await resumed.text(), true).events).toEqual([{ type: "cancelled", runId, sequence: snapshot.lastEventId + 1 }]);
   });
 
   test("a failed cancel leaves the Run active and a successful retry can stop it", async () => {
@@ -275,17 +314,16 @@ describe("API and runtime boundary", () => {
 });
 
 describe("conversation lifecycle", () => {
-  test("runtime history compaction does not replace a completed reply with the old history", async () => {
-    class CompactingSession extends TestSession {
-      override async prompt(text: string) {
-        await super.prompt(text);
-        this.messages = this.messages.slice(-2);
-      }
-    }
-    const state = setup(new CompactingSession());
+
+  test("disposing and recreating a runtime cache preserves history and durable deduplication", async () => {
+    const state = setup();
     await (await state.app(chatRequest({ sessionId, runId, message: "First" }))).text();
-    await (await state.app(chatRequest({ sessionId, runId: crypto.randomUUID(), message: "Second" }))).text();
-    expect(state.conversations.history(sessionId).map((message) => message.content)).toEqual(["Second", "Hello"]);
+    const before = state.conversations.history(sessionId);
+    state.conversations.dispose();
+    const recreated = new ConversationStore(async () => state.session, readServerConfig({}), state.repo, state.readHistory);
+    expect(recreated.history(sessionId)).toEqual(before);
+    expect(recreated.startRun(sessionId, runId, "First").canReplay(0)).toBe(false);
+    expect(state.session.promptCalls).toBe(1); recreated.dispose();
   });
 
   test("concurrent requests share a single pending session creation", async () => {
@@ -297,7 +335,8 @@ describe("conversation lifecycle", () => {
 
   test("capacity eviction preserves streaming sessions", async () => {
     const active = new TestSession(true);
-    const store = new ConversationStore(async () => active, { idleSessionMs: 60_000, maxSessions: 1 });
+    const { repo, readHistory } = storage(active);
+    const store = new ConversationStore(async () => active, { idleSessionMs: 60_000, maxSessions: 1 }, repo, readHistory);
     await store.get(sessionId);
     active.isStreaming = true;
     await expect(store.get("other")).rejects.toThrow("Piko is busy");

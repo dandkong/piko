@@ -12,7 +12,9 @@ const releaseLock = acquireBackendLock(paths.state);
 process.on("exit", releaseLock);
 const repository = new ChatRepository(paths.database, paths.workspace);
 const runtime = createPiRuntime(paths);
-const conversations = new ConversationStore((context) => runtime.createSession(context), config, repository);
+// Validate the canonical conversation before accepting requests, without creating an agent.
+runtime.readHistory(repository.context(repository.main.sessionId));
+const conversations = new ConversationStore((context) => runtime.createSession(context), config, repository, runtime.readHistory);
 const server = Bun.serve({
   hostname: config.hostname,
   port: config.port,

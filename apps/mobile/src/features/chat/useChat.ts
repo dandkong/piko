@@ -219,7 +219,7 @@ export function useChat() {
       }
       const conversation = await loadConversation(sessionId);
       if (!mounted.current) return;
-      if (conversation.run?.status === "failed") await send(conversation.run.message, conversation.run.id);
+      if (conversation.run?.status === "failed" && conversation.run.message) await send(conversation.run.message, conversation.run.id);
       else await refresh(sessionId);
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));

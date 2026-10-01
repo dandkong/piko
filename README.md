@@ -13,7 +13,7 @@ Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式
 | [产品约定](docs/PRODUCT.md) | 主会话、工作区、side chat 的待定交互与功能边界 |
 | [架构约定](docs/ARCHITECTURE.md) | 当前实现、Pi / Piko 职责、工作区资源与核心模型 |
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
-| [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、存储、迁移、恢复和验收；复杂功能方案放在 docs/features/ |
+| [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
 
 启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前是具备长期工作区和持久主会话的文本聊天原型。
@@ -123,13 +123,13 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/state/runs` 保存聊天 JSONL，`state/pi-sessions` 保存 Pi 原生上下文 JSONL，`state/piko.sqlite` 只记录身份、状态、顺序和文件/上下文检查点索引。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/state/pi-sessions` 的 Pi 原生 JSONL 是会话内容的唯一来源，UI 从完整会话分支投影；`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。没有单独的 Run 正文或永久 SSE 日志。state 必须在工作区之外；同一状态目录只启动一个后端。
 
 用户可手动编辑工作区 AGENTS.md、SOUL.md、USER.md、MEMORY.md，每轮发送前重新加载有限长度的内容。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一轮刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
 工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。自动记忆提取与检索尚未实现。
 
-备份时先停止 API，再一起复制工作区和整个 state 目录；恢复保留原工作区绝对路径。异常修复和迁移限制见 [功能说明](docs/features/workspace-and-main-chat.md)。
+备份时先停止 API，再一起复制工作区和整个 state 目录；恢复保留原工作区绝对路径。当前开发期不做旧数据迁移，schema 不匹配时停止 API 并清理旧数据库及会话日志后重新开始；保留工作区和独立 Pi profile。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
 
@@ -149,6 +149,7 @@ bun run build:web
 
 - 工作区和唯一主会话已持久化，Pi 上下文使用原生 JSONL 与压缩机制；side chat 仅预留类型和关系。
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过 Run 取消接口终止回复。
-- JSONL 保存完整消息与 Run 事件，续订窗口为最近 2,048 条；同 `runId` 的重复提交在重启后仍不会重复执行。遗留运行标记为中断并保留已保存输出，用户主动重试产生新 Run，不自动重跑。
+- Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 2,048 条事件只保存在内存，过期或重启后加载快照。同 `runId` 的重复提交在重启后仍不会重复执行；遗留运行标记中断，不自动重跑。
+- 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。若在 Pi 保存用户输入前中断，只有去重元数据，用户需要重新发送；不从另一套日志重建正文。
 - 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
 - Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。

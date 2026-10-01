@@ -111,7 +111,8 @@ export async function observeRun(observer: Observer, transport: Transport): Prom
       try {
         const snapshot = await loadSnapshot();
         if (snapshot.run?.id === run.id) {
-          if (snapshot.run.message !== run.message) throw new HttpStreamError(409, "This runId belongs to another message.");
+          // A restart before Pi saved the user message leaves only the accepted request's hash.
+          if (snapshot.run.message && snapshot.run.message !== run.message) throw new HttpStreamError(409, "This runId belongs to another message.");
           accepted = true;
           cursor = snapshot.run.lastEventId;
           onSnapshot(snapshot);

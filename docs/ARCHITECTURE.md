@@ -4,104 +4,108 @@
 
 ## 当前结构
 
-```text
+~~~text
 Expo / React Native (Web、iOS、Android)
                  │ HTTP + SSE
             Bun Chat 服务
                  │ 运行时接口
             Pi SDK / ModelRuntime
-```
+~~~
 
 | 位置 | 职责 |
 | --- | --- |
-| `apps/mobile/src/features/chat/` | 页面、输入、临时状态、主会话发现、HTTP/SSE |
-| `apps/mobile/src/components/`、`theme.ts` | 通用布局、头像、导航和视觉 |
-| `server/app.ts`、`http.ts` | 路由、输入校验、响应和 CORS；导入不监听端口 |
-| `server/index.ts`、`config.ts` | 配置、初始化、单进程锁和依赖组装 |
-| `server/chat/` | Run 生命周期、提交去重、取消、流观察与回放 |
-| `server/domain/` | 工作区初始化、SQLite 索引、Piko JSONL 和启动恢复 |
-| `server/runtime/` | Piko 运行时接口、Pi 适配、资源范围和原生会话检查点 |
-| `server/resources/` | 随应用发布的核心指导、内建技能和用户文件模板 |
-| `shared/` | 跨端领域、消息与 SSE 契约，不依赖 React Native、Bun 或 Pi |
-| `tests/` | 键盘、协议、API、并发、持久化、恢复和资源范围验证 |
+| apps/mobile/src/features/chat/ | 页面、输入、临时状态、主会话发现、HTTP/SSE |
+| apps/mobile/src/components/、theme.ts | 通用布局、头像、导航和视觉 |
+| server/app.ts、http.ts | 路由、输入校验、响应和 CORS；导入不监听端口 |
+| server/index.ts、config.ts | 配置、初始化、单进程锁和依赖组装 |
+| server/chat/ | Run 生命周期、去重、取消、内存文本快照与事件重放 |
+| server/domain/ | 工作区初始化、SQLite 身份/执行元数据、重启标记中断 |
+| server/runtime/ | Pi 适配、资源范围、原生会话校验与完整历史投影 |
+| server/resources/ | 核心指导、内建技能和用户文件模板 |
+| shared/ | 跨端领域、消息与 SSE 契约，不依赖 React Native、Bun 或 Pi |
+| tests/ | 键盘、协议、API、并发、原生持久化、恢复和资源范围验证 |
 
-依赖方向：页面 → Hook/API → HTTP/SSE；路由 → 业务服务 → 运行时接口 → Pi 适配器。测试注入运行时替身，不加载个人模型凭据。
+依赖方向：页面 → Hook/API → HTTP/SSE；路由 → 业务服务 → 运行时接口 → Pi 适配器。测试使用临时状态与运行时替身，不加载个人模型凭据。
 
-Pi 是唯一 Agent / 模型运行时，负责模型、Agent 循环、技能解析、模型上下文与压缩。Piko 负责产品、领域对象、持久化、工作区与访问边界。后续 AG-UI 可作为事件适配层，不替代 Run 与恢复语义。
+Pi 是唯一 Agent / 模型运行时，也是唯一会话内容存储：模型消息、工具结果、自定义消息、压缩与分支都使用其原生 JSONL。Piko 管理产品、工作区/会话关系、执行生命周期、传输和后续调度，不能再复制一套聊天正文或永久流事件。
 
 ## 工作区与状态
 
-默认位于后端机器的 `~/.piko`，独立于源码仓库。`PIKO_HOME` 修改 Piko 根目录，`PIKO_WORKSPACE` 单独指定工作区，均要求绝对路径。
+默认位于后端机器的 ~/.piko，独立于源码仓库。PIKO_HOME 修改根目录，PIKO_WORKSPACE 单独指定工作区，均要求绝对路径。
 
-```text
+~~~text
 ~/.piko/
 ├── state/
-│   ├── backend.lock             # 一个状态目录只有一个后端写进程
-│   ├── piko.sqlite              # 身份、关系、状态、游标、文件与上下文检查点索引
-│   ├── runs/<run-id>.jsonl      # Piko 输入、输出增量、事件与终态
-│   └── pi-sessions/<thread-id>.jsonl # Pi 原生上下文、摘要与分支
+│   ├── backend.lock                 # 单后端写进程
+│   ├── piko.sqlite                  # 身份、执行元数据、原生会话引用
+│   └── pi-sessions/<thread-id>.jsonl # 唯一会话内容来源
 └── workspace/
-    ├── AGENTS.md                # 用户工作指导
-    ├── SOUL.md                  # 人格与语气
-    ├── USER.md                  # 用户资料与长期偏好
-    ├── MEMORY.md                # 精简长期记忆
+    ├── AGENTS.md                    # 用户工作指导
+    ├── SOUL.md                      # 人格与语气
+    ├── USER.md                      # 用户资料与长期偏好
+    ├── MEMORY.md                    # 精简长期记忆
     ├── .agents/skills/<name>/SKILL.md
-    ├── memory/                  # 后续详细记忆
-    ├── projects/                # 专题文件
-    └── artifacts/               # 交付物
-```
+    ├── memory/
+    ├── projects/
+    └── artifacts/
+~~~
 
-初始化只补缺失模板，保留用户内容，拒绝类型冲突和逃出工作区的链接目录。状态必须位于工作区之外。模型和凭据暂沿用现有 Pi profile（通常 `~/.pi/agent`）；Piko 的资源范围和运行设置单独管理。
+初始化只补缺失模板，保留用户内容，拒绝类型冲突和越界链接目录。状态必须位于工作区之外。模型与凭据沿用独立 Pi profile（通常 ~/.pi/agent）；Piko 的资源和运行设置单独管理。当前 schema 为 2，开发期不兼容旧库、不提供迁移。
 
-内建指导和技能随应用更新；用户定制内建技能可在工作区创建同名副本。当前读取、写入与执行复用 Pi 内建工具，以后端进程的本机权限运行。cwd 是默认目录，不提供文件隔离；后续访问边界由运行时实现。
-
-## 资源加载
+## 资源与工具
 
 复用锁定版本 Pi SDK 的 DefaultResourceLoader、SettingsManager、SessionManager 和技能格式，以安装源码为准。
 
-- 显式加载工作区 `.agents/skills`，再加载 `server/resources/skills`，同名用户技能优先并输出冲突诊断。
-- 默认全局/祖先技能、扩展、提示模板、主题、上下文发现关闭，不继承个人 CLI 或源码指导。
+- 显式加载工作区 .agents/skills，再加载 server/resources/skills；同名用户技能优先并输出诊断。
+- 关闭默认全局/祖先技能、扩展、提示模板、主题和上下文发现，不继承个人 CLI 或源码指导。
 - 工作区 AGENTS.md 最多加载 8,000 字节；SOUL.md、USER.md、MEMORY.md 各 4,000 字节，注明来源，超量截断。
-- 核心指导来自 `server/resources/prompts/core.md`；每轮发送前重新加载工作区指导和技能索引。
-- read、write、edit、bash 四个内建工具显式启用，资源刷新后仍保持激活。
-- 模型可通过 read 按需读取技能正文，并通过文件工具创建技能，通过命令工具运行脚本；新技能在下一轮进入索引。自动记忆提取/检索尚未实现，模型可以按用户要求直接维护记忆文件。
-- 工具调用、参数和结果由 Pi 原生会话记录保存；当前 SSE/UI 只提供文本流与 Run 终态，工具进度和 Activity 展示后续接入。
-- Pi 内存设置启用原生上下文压缩与有限重试，不自动继承工作区或个人 CLI 的运行设置。
+- 核心指导来自 server/resources/prompts/core.md；每轮发送前重新加载指导和技能索引。
+- read、write、edit、bash 四个内建工具显式启用，刷新后仍保持激活；可按需读技能正文、创建技能和脚本、维护记忆文件。自动记忆提取/检索未实现。
+- 工具使用后端本机权限，cwd 为工作区，不提供文件沙箱或单独审批界面。未来访问边界必须由运行时实现。
+- Pi 设置启用原生上下文压缩与有限重试。工具参数与结果保存在原生日志，当前 SSE/UI 展示文本和执行终态，工具进度与产物界面尚未实现。
 
-## 领域与存储
+## 领域与展示投影
 
-| 对象 | 关系与存储 |
+| 对象 | 当前职责 |
 | --- | --- |
-| Workspace | 稳定 UUID、规范化路径和初始化时间；SQLite 索引 |
-| Thread | 工作区内 main / side 对话；每个工作区唯一 main，side 预留 parentThreadId |
-| Message | 从 Piko Run 日志投影为可见记录；稳定 `user-<run-id>` / `assistant-<run-id>` ID |
-| Run | 一次执行；SQLite 保存顺序、状态、游标和文件名，JSONL 保存内容及重试来源 |
-| RunEvent | Run 内有序事件，完整保留于 JSONL，最近 2,048 条用于快速续订 |
-| Artifact（后续） | 工作区文件或结构化产物，关联 Thread / Run / Task |
+| Workspace | SQLite 保存稳定 UUID、规范化路径和创建时间 |
+| Thread | 工作区内 main / side；唯一 main，side 预留 parentThreadId；保存原生会话身份引用 |
+| Message | Pi 完整选定分支的临时投影，ID 为 pi-<原生 entry ID>；没有消息表或独立日志 |
+| Run | SQLite 保存顺序、状态、输入 SHA-256、时间、重试来源、错误和最近状态游标；不保存正文 |
+| StreamEvent | SSE 增量/终态；最近 2,048 条只在当前进程内存中重放 |
+| Task / Artifact（后续） | 任务定义/调度/投递元数据；成果文件保存在工作区 |
 
-实体 ID 使用 UUID，时间为 Unix 毫秒数。Message 是稳定投影，不根据 Pi 消息下标生成 ID。JSONL 是正文来源，SQLite 不重复保存消息/事件正文。模型上下文压缩不影响可见聊天历史。
+实体 ID 使用 UUID，时间为 Unix 毫秒数。Pi entry ID 直接作为展示身份，不使用消息下标。原生 state-only 的 piko-run 条目关联一次执行与后续消息，只包含 runId，不复制输入或输出。
 
-首期单助理、单写进程、多客户端。客户端通过服务端发现唯一主 Thread。side chat 只预留类型与关系，没有创建接口或切换界面；Task、Goal、Memory 在实际开发时细化。
+历史投影读取 SessionManager.getBranch()，不能使用 session.messages 或压缩感知的 buildSessionProjection() 代替完整 UI 历史。普通用户/助手文本形成气泡；display=true 的原生 custom_message 也可展示，隐藏指导、压缩和内部状态不显示。工具记录仍在原生日志中，当前不渲染。模型上下文编辑不改写已经展示的原始历史。
+
+执行中，已保存的本轮助手片段由内存聚合快照统一展示，避免与 SSE 文本重复；尚未出现原生用户条目时使用临时提交占位。终态重新读取原生历史，不保存这层临时投影。
 
 ## API 与执行
 
-- `GET /api/main`：默认 Workspace、主 Thread 及兼容字段 sessionId（等于 thread.id）。
-- `POST /api/chat`：`{ sessionId, runId, message, after?, retryOfRunId? }`，提交或复用 Run，返回 SSE。
-- `GET /api/sessions/:id`：完整可见消息和最近 Run 快照。
-- `GET /api/sessions/:id/runs/:runId/events?after=N`：恢复指定 Run，游标过期或越界返回 409，客户端先加载快照。
-- `POST /api/sessions/:id/runs/:runId/cancel`：独立取消，重复取消不再次调用模型。
-- 主会话删除暂返回 409；旧客户端 sessionId 返回 409，需重新加载主会话。
+- GET /api/main：默认 Workspace、主 Thread 和 sessionId（等于 thread.id）。
+- POST /api/chat：提交或复用 Run，返回 SSE；参数 sessionId、runId、message、after?、retryOfRunId?。
+- GET /api/sessions/:id：完整原生历史投影和最近 Run 快照。
+- GET /api/sessions/:id/runs/:runId/events?after=N：内存重放；游标过期、越界或重启后返回 409，客户端加载快照。
+- POST /api/sessions/:id/runs/:runId/cancel：独立取消；重复取消不重复调用 Pi。
+- 主会话删除不可用；不接受任意客户端 UUID 创建新会话。
 
-Run 独立于观察者，断线不取消。预留并持久化输入后才启动模型；同 Thread 仅一个活跃 Run，由 SQLite 唯一约束保证。同 ID 同内容与重试来源复用，修改内容拒绝；重启后和后续轮次仍可去重。
+同 Thread 仅一个活跃 Run，由 SQLite 唯一约束保证。先持久化输入哈希与身份，再调用 Pi；输入正文由 Pi 保存一次。同 ID 同哈希及重试来源复用，不同内容拒绝，重启后仍去重。用户重试必须引用失败 Run、使用相同输入，并创建新 UUID。
 
-状态为 queued → running → succeeded / failed，取消经过 cancelling → cancelled。服务重启把遗留活跃 Run 变为 `failed + errorCode: interrupted`，保留已保存输出，不自动重跑；用户重试产生新 UUID，关联旧 Run。
+状态 queued → running → succeeded / failed；停止经过 cancelling → cancelled。完成前 fsync 原生会话，再提交 SQL 状态，然后发布终态。流式增量不落盘，按最多 50 毫秒合并；SSE 15 秒心跳，客户端 45 秒无数据恢复并有限退避。断线只解除观察，不取消执行；回前台加载快照。
 
-持久输出最多按 50 毫秒合并增量，终态强制保存，保存后才向观察者发布。SSE 15 秒心跳，客户端 45 秒无数据恢复并有限退避，UI 文本按 50 毫秒合并。回前台加载快照并恢复观察。
+## 原生恢复与限制
 
-## 两类 JSONL 的一致性
+启动校验主会话原生文件；缺失已引用文件、身份不一致或内部损坏拒绝继续。末尾半条 JSON 归档后截掉残片。SQLite 仅保存原生 file/sessionId，不保存 committed leaf，也不回退原生历史。
 
-Piko 日志先写并 fsync，再更新 SQLite，最后发布事件。启动时从日志修复落后的索引，收养已写入但未入库的提交文件；内容缺失、内部损坏或索引领先则报告问题。仅被截断的最后一条 JSON 先归档再修复。
+遗留活跃 Run 标记 failed + interrupted，不自动调用模型。保留 Pi 已保存的消息，未保存的流式片段可丢失；若用户消息尚未写入 Pi，则没有可恢复的输入正文，需重新发送。重新创建 Agent 时在原生上下文追加一次隐藏的中断说明，避免自动延续不确定执行；不复制原输入或回复。
 
-Pi 原生日志保留模型上下文与压缩。SQLite 保存已确认的 session ID 和 leaf ID，不保存原生正文；终态日志也带小型检查点用于索引修复。恢复时回到已提交分支，保留未确认尾部；中断 Run 以历史说明加入新上下文，不当成新请求执行。
+Pi 文件与 SQLite 不构成跨存储事务。原生消息保存后、SQL 终态提交前崩溃，消息仍可见，但执行标记中断。旧 SSE 事件不伪造重放，客户端从快照恢复。当前全量读取历史；分页与增量索引按规模再引入。
 
-跨两类文件和 SQLite 无单一事务。写入或检查点异常不能静默清空上下文。备份需要一起保存工作区与完整状态目录，详细操作及限制见功能方案。可靠后台任务恢复、历史分页/索引重建和单独 profile 迁移属于后续功能。
+备份前停止后端，复制工作区与完整 state（含仍存在的 WAL/SHM）；模型凭据属于独立 Pi profile。重置开发数据仅清理数据库与会话日志，不删除工作区、用户技能或凭据。
+
+## 异步任务方向（尚未实现）
+
+定时任务使用独立 Pi 会话执行，详细过程留在任务会话；完成摘要通过原生 custom_message 进入主会话，以 triggerTurn=false 保存供 UI 和下一次用户提问使用。主会话忙碌时等待安全写入边界。
+
+未来 SQLite 只增加任务定义、调度、执行与待投递状态；结果引用原生条目/工作区文件，不另建正文库。需要持久化投递并去重，不能依赖 Pi 的内存队列。调度器、任务结果卡片、后台通知和投递接口均未实现。

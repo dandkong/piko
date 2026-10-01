@@ -1,13 +1,7 @@
-import { isRunActive, type Message, type RunSnapshot, type StreamEvent } from "../../shared/chat";
+import { isRunActive, type RunSnapshot, type StreamEvent } from "../../shared/chat";
 import type { ChatSession } from "../runtime/types";
 
 const MAX_REPLAY_EVENTS = 2048;
-export type RunPersistence = {
-  snapshot: RunSnapshot;
-  events: StreamEvent[];
-  checkpoint: (snapshot: RunSnapshot, event?: StreamEvent, runtimeState?: unknown) => void;
-};
-
 /** A reply owns its runtime subscription independently of any HTTP connection. */
 export class ChatRun {
   private state: RunSnapshot;
@@ -19,22 +13,15 @@ export class ChatRun {
   private flushTimer?: ReturnType<typeof setTimeout>;
   private storageError?: unknown;
 
-  constructor(id: string, message: string, readonly baseMessages: Message[], private readonly persistence?: RunPersistence) {
-    this.state = persistence ? { ...persistence.snapshot } : { id, message, status: "queued", text: "", createdAt: Date.now(), lastEventId: 0 };
-    this.events = persistence?.events ?? [];
+  constructor(snapshot: RunSnapshot, private readonly checkpoint: (snapshot: RunSnapshot, runtimeState?: unknown) => void) {
+    this.state = { ...snapshot };
   }
 
   get snapshot(): RunSnapshot { return { ...this.state }; }
   get active(): boolean { return isRunActive(this.state); }
-  get started(): boolean { return this.promptStarted; }
-
-  history(): Message[] {
-    return [...this.baseMessages, {
-      id: `user-${this.state.id}`, role: "user", content: this.state.message, createdAt: this.state.createdAt,
-    }];
-  }
-
   canReplay(after: number): boolean {
+    // A restored Run has metadata but no persistent SSE event log.
+    if (!this.events.length && this.state.lastEventId > 0) return false;
     return after <= this.state.lastEventId && after >= (this.events[0]?.sequence ?? 1) - 1;
   }
 
@@ -46,11 +33,12 @@ export class ChatRun {
 
   private persist(next: RunSnapshot, event?: StreamEvent): void {
     if (this.storageError) throw this.storageError;
+    if (event?.type === "delta") return; // Output/replay are transient, never a second message store.
     try {
-      this.persistence?.checkpoint(next, event,
+      this.checkpoint(next,
         event && !isRunActive(next) && this.promptStarted ? this.session?.exportState?.() : undefined);
     } catch (error) {
-      // A failed append may have left a torn record. Do not append another record before startup repair.
+      // Do not report completion after a failed native flush or metadata transaction.
       this.storageError = error;
       void this.session?.abort().catch((cause) => console.error("Could not stop reply after a storage failure:", cause));
       throw error;
@@ -92,7 +80,7 @@ export class ChatRun {
       unsubscribe = this.session.subscribe((event) => {
         if (event.type === "delta") {
           this.pendingText += event.text;
-          if (!this.persistence || this.state.lastEventId === 0) this.flushText();
+          if (this.state.lastEventId === 0) this.flushText();
           else if (!this.flushTimer) this.flushTimer = setTimeout(() => {
             try { this.flushText(); }
             catch (error) {
@@ -103,7 +91,7 @@ export class ChatRun {
         } else if (event.type === "error") agentError = event.message;
       });
       this.promptStarted = true;
-      await this.session.prompt(this.state.message);
+      await this.session.prompt(this.state.message, { id: this.state.id, createdAt: this.state.createdAt });
       if (this.snapshot.status === "cancelling") this.finish("cancelled");
       else if (agentError) this.finish("failed", agentError);
       else this.finish("succeeded");

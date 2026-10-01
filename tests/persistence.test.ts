@@ -10,8 +10,11 @@ import { ConversationStore } from "../server/chat/conversations";
 import { ChatRun } from "../server/chat/run";
 import { createApp } from "../server/app";
 import { readServerConfig } from "../server/config";
-import type { ChatSession, SessionContext } from "../server/runtime/types";
-import type { StreamEvent } from "../shared/chat";
+import { openPiContext, readPiContext, exportPiReference } from "../server/runtime/pi-context";
+import { projectPiHistory } from "../server/runtime/pi-history";
+import type { ChatSession, HistoryReader, SessionContext } from "../server/runtime/types";
+import type { Message, RunSnapshot, StreamEvent } from "../shared/chat";
+import { assistant } from "./fixtures/pi-message";
 
 const roots: string[] = [];
 const repositories: ChatRepository[] = [];
@@ -22,20 +25,19 @@ afterEach(() => {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "piko-test-")); roots.push(root);
   const paths = initializeWorkspace(resolveWorkspacePaths({ PIKO_HOME: root }));
+  const directory = join(paths.state, "pi-sessions");
   const open = () => { const repo = new ChatRepository(paths.database, paths.workspace); repositories.push(repo); return repo; };
   const close = (repo: ChatRepository) => { repo.close(); repositories.splice(repositories.indexOf(repo), 1); };
-  return { root, paths, open, close };
+  const readHistory: HistoryReader = (context) => projectPiHistory(readPiContext(paths.workspace, directory, context)?.getBranch() ?? []);
+  return { root, paths, directory, open, close, readHistory };
 }
-function finish(repo: ChatRepository, id: string, text = "reply", state?: unknown) {
-  const snapshot = repo.run(repo.main.sessionId, id)!;
-  repo.checkpoint(repo.main.sessionId, { ...snapshot, status: "running", text, lastEventId: 1 },
-    { type: "delta", text, runId: id, sequence: 1 });
-  repo.checkpoint(repo.main.sessionId, { ...snapshot, status: "succeeded", text, lastEventId: 2 },
-    { type: "done", runId: id, sequence: 2 }, state);
+function finish(repo: ChatRepository, id: string, message: string, text = "reply", state?: unknown) {
+  const record = repo.run(repo.main.sessionId, id)!;
+  repo.checkpoint(repo.main.sessionId, { ...record, message, text, status: "succeeded", lastEventId: 2 }, state);
 }
 
-describe("workspace and JSONL index", () => {
-  test("initialization is idempotent, preserves user guidance, bounds reads, and rejects conflicting types", () => {
+describe("workspace and metadata", () => {
+  test("initialization preserves user guidance, bounds reads, and rejects conflicting types", () => {
     const f = fixture();
     writeFileSync(join(f.paths.workspace, "USER.md"), "mine".repeat(100));
     initializeWorkspace(f.paths);
@@ -57,22 +59,20 @@ describe("workspace and JSONL index", () => {
     expect(existsSync(join(f.paths.state, "backend.lock"))).toBe(false);
   });
 
-  test("one stable main Thread, derived message identities, and past Run deduplication survive restart", () => {
+  test("stable main Thread, hashed deduplication, retry identity and side relation survive restart without body storage", () => {
     const f = fixture(); const repo = f.open(); const main = repo.main;
     const first = crypto.randomUUID(), second = crypto.randomUUID();
-    repo.reserve(main.sessionId, first, "first input"); finish(repo, first, "first reply", { marker: 1 });
-    repo.reserve(main.sessionId, second, "second input"); finish(repo, second, "second reply", { marker: 2 });
-    const history = repo.history(main.sessionId);
-    expect(history.map((message) => message.content)).toEqual(["first input", "first reply", "second input", "second reply"]);
+    repo.reserve(main.sessionId, first, "first input"); finish(repo, first, "first input", "first reply", { marker: 1 });
+    repo.reserve(main.sessionId, second, "second input"); finish(repo, second, "second input", "second reply", { marker: 2 });
     f.close(repo); const resumed = f.open();
     expect(resumed.main).toEqual(main);
-    expect(resumed.history(main.sessionId)).toEqual(history);
     expect(resumed.reserve(main.sessionId, first, "first input").status).toBe("succeeded");
     expect(() => resumed.reserve(main.sessionId, first, "changed")).toThrow("already used");
+    expect(() => resumed.reserve(main.sessionId, first, "first input", second)).toThrow("already used");
     expect(resumed.context(main.sessionId).state).toEqual({ marker: 2 });
-    expect(resumed.db.query("PRAGMA table_info(runs)").all().map((row: any) => row.name)).toEqual([
-      "ordinal", "id", "thread_id", "status", "log_file", "last_event_id",
-    ]);
+    const columns = resumed.db.query<{ name: string }, []>("PRAGMA table_info(runs)").all().map((row) => row.name);
+    expect(columns).toEqual(["ordinal", "id", "thread_id", "input_hash", "created_at", "status", "last_event_id", "error", "error_code", "retry_of_run_id"]);
+    expect(existsSync(join(f.paths.state, "runs"))).toBe(false);
     expect(() => resumed.db.query("INSERT INTO threads (id,workspace_id,kind,created_at) VALUES (?,?,'main',0)")
       .run(crypto.randomUUID(), main.workspace.id)).toThrow();
     expect(() => resumed.db.query("INSERT INTO threads (id,workspace_id,kind,created_at) VALUES (?,?,'side',0)")
@@ -84,110 +84,117 @@ describe("workspace and JSONL index", () => {
       .run(crypto.randomUUID(), main.workspace.id, side)).toThrow("main Thread");
   });
 
-  test("an interrupted Run preserves partial output and events; retry is an explicitly related new Run", () => {
+  test("restart fails an uncertain execution; output is recovered only from Pi and an explicit retry is a new Run", () => {
     const f = fixture(); const repo = f.open(); const id = crypto.randomUUID(), thread = repo.main.sessionId;
-    const run = repo.reserve(thread, id, "work");
+    const meta = repo.reserve(thread, id, "work");
     expect(() => repo.reserve(thread, crypto.randomUUID(), "other")).toThrow("already responding");
-    repo.checkpoint(thread, { ...run, status: "running", text: "partial", lastEventId: 1 },
-      { type: "delta", text: "partial", runId: id, sequence: 1 });
+    const native = openPiContext(f.paths.workspace, f.directory, repo.context(thread));
+    repo.saveRuntime(thread, exportPiReference(native));
+    native.appendCustomEntry("piko-run", { runId: id });
+    native.appendMessage({ role: "user", content: "work", timestamp: 1 });
+    native.appendMessage(assistant("saved before the crash"));
+    repo.checkpoint(thread, { ...meta, message: "work", text: "unsaved delta", status: "running", lastEventId: 0 });
     f.close(repo); const resumed = f.open();
-    expect(resumed.latest(thread)).toMatchObject({ status: "failed", errorCode: "interrupted", text: "partial", lastEventId: 2 });
-    expect(resumed.history(thread).map((message) => message.content)).toEqual(["work", "partial"]);
-    expect(resumed.events(id).map((event) => event.type)).toEqual(["delta", "error"]);
-    expect(resumed.context(thread).recovery).toEqual([{ runId: id, message: "work", text: "partial", status: "interrupted" }]);
+    expect(resumed.latest(thread)).toMatchObject({ status: "failed", errorCode: "interrupted", lastEventId: 1 });
+    expect(resumed.context(thread).interruptedRunIds).toEqual([id]);
+    const store = new ConversationStore(async () => { throw new Error("Must not execute"); }, readServerConfig({}), resumed, f.readHistory);
+    expect(store.history(thread).map((message) => message.content)).toEqual(["work", "saved before the crash"]);
+    expect(store.run(thread)?.snapshot.text).toBe("saved before the crash");
+    expect(store.run(thread)?.canReplay(0)).toBe(false);
     expect(() => resumed.reserve(thread, crypto.randomUUID(), "changed", id)).toThrow("same message");
-    const retry = resumed.reserve(thread, crypto.randomUUID(), "work", id);
-    expect(retry.retryOfRunId).toBe(id);
+    expect(resumed.reserve(thread, crypto.randomUUID(), "work", id).retryOfRunId).toBe(id);
+    store.dispose();
   });
 
-  test("logs ahead of SQLite and an orphan submission are reconciled in execution order", () => {
-    const f = fixture(); const repo = f.open(); const thread = repo.main.sessionId;
-    const first = "ffffffff-ffff-4fff-8fff-ffffffffffff", orphan = "00000000-0000-4000-8000-000000000001";
-    repo.reserve(thread, first, "old");
-    appendJsonLine(join(repo.logsDir, `${first}.jsonl`), { type: "checkpoint", status: "succeeded", lastEventId: 1,
-      event: { type: "done", runId: first, sequence: 1 }, runtimeState: { marker: "committed" } });
-    appendJsonLine(join(repo.logsDir, `${orphan}.jsonl`), { type: "run", version: 1, threadId: thread,
-      snapshot: { id: orphan, status: "queued", message: "new", text: "", createdAt: Date.now() + 1, lastEventId: 0 } }, true);
-    f.close(repo); const resumed = f.open();
-    expect(resumed.run(thread, first)?.status).toBe("succeeded");
-    expect(resumed.latest(thread)).toMatchObject({ id: orphan, errorCode: "interrupted" });
-    expect(resumed.context(thread).state).toEqual({ marker: "committed" });
-    expect(resumed.context(thread).recovery.map((run) => run.runId)).toEqual([orphan]);
-  });
-
-  test("a subsequently saved context pointer is not overwritten by an older terminal log on restart", () => {
+  test("a request interrupted before Pi's user message has no invented history and remains deduplicated", () => {
     const f = fixture(); const repo = f.open(); const thread = repo.main.sessionId, id = crypto.randomUUID();
-    repo.reserve(thread, id, "input"); finish(repo, id, "out", { leaf: "old" });
-    repo.saveRuntime(thread, { leaf: "new baseline" }, id);
-    f.close(repo); expect(f.open().context(thread).state).toEqual({ leaf: "new baseline" });
+    repo.reserve(thread, id, "accepted but not started");
+    f.close(repo); const resumed = f.open();
+    const store = new ConversationStore(async () => { throw new Error("Must not execute"); }, readServerConfig({}), resumed, f.readHistory);
+    expect(store.history(thread)).toEqual([]);
+    expect(store.run(thread)?.snapshot).toMatchObject({ message: "", text: "", errorCode: "interrupted" });
+    expect(store.startRun(thread, id, "accepted but not started").snapshot.status).toBe("failed");
+    expect(() => store.startRun(thread, id, "different")).toThrow("already used");
+    store.dispose();
   });
 
-  test("torn final appends are archived; interior corruption, missing files and newer schema fail closed", () => {
+  test("native JSONL torn tails are archived, interior corruption and unsupported schemas fail closed", () => {
     const f = fixture(); const file = join(f.root, "records.jsonl");
     appendJsonLine(file, { ok: 1 }, true); appendFileSync(file, '{"partial":');
     expect(readJsonLines(file)).toEqual([{ ok: 1 }]);
     expect(readdirSync(f.root).some((name) => name.startsWith("records.jsonl.torn-"))).toBe(true);
     appendJsonLine(file, { ok: 2 }); expect(readJsonLines(file)).toHaveLength(2);
     writeFileSync(file, '{bad}\n{"ok":1}\n'); expect(() => readJsonLines(file)).toThrow("Corrupt JSONL");
-    const repo = f.open(); const id = crypto.randomUUID(); repo.reserve(repo.main.sessionId, id, "x");
-    rmSync(join(repo.logsDir, `${id}.jsonl`)); f.close(repo);
-    expect(() => f.open()).toThrow();
-    // No future-version database is silently overwritten.
-    const other = fixture(), future = other.open(); future.db.exec("PRAGMA user_version=2"); other.close(future);
-    expect(() => other.open()).toThrow("newer application");
+    for (const version of [1, 3]) {
+      const other = fixture(), unsupported = other.open(); unsupported.db.exec("PRAGMA user_version=" + version); other.close(unsupported);
+      expect(() => other.open()).toThrow("Incompatible development database");
+    }
   });
 });
 
 class FakeSession implements ChatSession {
   isStreaming = false;
-  messages = [];
   promptCalls = 0;
   private listeners = new Set<(event: StreamEvent) => void>();
+  constructor(readonly manager: ReturnType<typeof openPiContext>) {}
+  get messages(): Message[] { return projectPiHistory(this.manager.getBranch()).messages; }
   subscribe(listener: (event: StreamEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  async prompt() { this.promptCalls++; this.isStreaming = true; for (const listener of this.listeners) listener({ type: "delta", text: "saved" }); this.isStreaming = false; }
+  async prompt(text: string, run?: { id: string }) {
+    this.promptCalls++; this.isStreaming = true;
+    this.manager.appendCustomEntry("piko-run", { runId: run!.id });
+    this.manager.appendMessage({ role: "user", content: text, timestamp: 1 });
+    for (const listener of this.listeners) listener({ type: "delta", text: "saved" });
+    this.manager.appendMessage(assistant("saved"));
+    this.isStreaming = false;
+  }
   async abort() { this.isStreaming = false; }
-  dispose() { }
-  exportState() { return { mockCheckpoint: this.promptCalls }; }
+  dispose() {}
+  exportState() { return exportPiReference(this.manager); }
 }
 
-test("main discovery across clients, persistent SSE replay and duplicate requests do not reexecute the model", async () => {
-  const f = fixture(); const repo = f.open(); const config = readServerConfig({}); const session = new FakeSession();
-  const contexts: (SessionContext | undefined)[] = [];
-  const runtime = { isModelReady: async () => true, createSession: async (context?: SessionContext) => { contexts.push(context); return session; } };
-  const store = new ConversationStore(runtime.createSession, config, repo);
+test("main discovery, native history, live SSE replay, and durable duplicate requests never reexecute the model", async () => {
+  const f = fixture(); const repo = f.open(); const config = readServerConfig({});
+  let session: FakeSession | undefined; let creations = 0;
+  const runtime = { isModelReady: async () => true, readHistory: f.readHistory,
+    createSession: async (context?: SessionContext) => {
+      creations++; session = new FakeSession(openPiContext(f.paths.workspace, f.directory, context!)); return session;
+    } };
+  const store = new ConversationStore(runtime.createSession, config, repo, runtime.readHistory);
   const app = createApp({ config, runtime, conversations: store });
   const client = () => app(new Request("http://local/api/main")).then((response) => response.json());
-  expect(await client()).toEqual(await client()); expect(session.promptCalls).toBe(0);
-  expect((await app(new Request(`http://local/api/sessions/${crypto.randomUUID()}`))).status).toBe(409);
-  expect((await app(new Request(`http://local/api/sessions/${repo.main.sessionId}`, { method: "DELETE" }))).status).toBe(409);
-  const request = (id: string) => new Request("http://local/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: repo.main.sessionId, runId: id, message: "hi" }) });
+  expect(await client()).toEqual(await client()); expect(creations).toBe(0);
+  expect((await app(new Request("http://local/api/sessions/" + crypto.randomUUID()))).status).toBe(409);
+  expect((await app(new Request("http://local/api/sessions/" + repo.main.sessionId, { method: "DELETE" }))).status).toBe(409);
   const id = crypto.randomUUID();
-  const [a, b] = await Promise.all([app(request(id)), app(request(id))]);
+  const request = () => new Request("http://local/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: repo.main.sessionId, runId: id, message: "hi" }) });
+  const [a, b] = await Promise.all([app(request()), app(request())]);
   const [first, duplicate] = await Promise.all([a.text(), b.text()]);
   expect(first).toContain('"text":"saved"'); expect(duplicate).toContain('"type":"done"');
-  expect(session.promptCalls).toBe(1); expect(contexts).toHaveLength(1);
+  expect(session!.promptCalls).toBe(1); expect(creations).toBe(1);
+  const before = store.history(repo.main.sessionId);
+  expect(before.map((message) => message.content)).toEqual(["hi", "saved"]);
   store.dispose(); f.close(repo);
-  const resumed = f.open(); const resumedStore = new ConversationStore(runtime.createSession, config, resumed);
+  const resumed = f.open(); const resumedStore = new ConversationStore(runtime.createSession, config, resumed, runtime.readHistory);
   const resumedApp = createApp({ config, runtime, conversations: resumedStore });
-  expect(await (await resumedApp(request(id))).text()).toContain('"type":"done"');
-  expect(session.promptCalls).toBe(1);
-  const snapshot = await (await resumedApp(new Request(`http://local/api/sessions/${resumed.main.sessionId}`))).json();
-  expect(snapshot.messages.map((message: any) => message.content)).toEqual(["hi", "saved"]);
-  expect(contexts).toHaveLength(1); resumedStore.dispose();
+  expect((await resumedApp(request())).status).toBe(409); // Replay expired; load the native snapshot.
+  expect(session!.promptCalls).toBe(1);
+  const snapshot = await (await resumedApp(new Request("http://local/api/sessions/" + resumed.main.sessionId))).json();
+  expect(snapshot.messages).toEqual(before);
+  expect(snapshot.run).toMatchObject({ message: "hi", text: "saved", status: "succeeded" });
+  expect(creations).toBe(1); resumedStore.dispose();
 });
 
-test("a failed durable write never publishes output or a successful terminal event", async () => {
-  const session = new FakeSession(); const events: StreamEvent[] = [];
-  let writes = 0;
+test("stream deltas do not write storage; a failed terminal flush cannot publish success", async () => {
+  const f = fixture(); const session = new FakeSession(openPiContext(f.paths.workspace, f.directory,
+    { threadId: crypto.randomUUID(), interruptedRunIds: [] }));
+  const events: StreamEvent[] = []; const writes: RunSnapshot[] = [];
   const id = crypto.randomUUID();
-  const run = new ChatRun(id, "input", [], {
-    snapshot: { id, message: "input", text: "", status: "queued", createdAt: 1, lastEventId: 0 }, events: [],
-    checkpoint: (snapshot, event) => { writes++; if (event) throw new Error("disk full"); expect(snapshot.status).toBe("running"); },
-  });
+  const run = new ChatRun({ id, message: "input", text: "", status: "queued", createdAt: 1, lastEventId: 0 },
+    (snapshot) => { writes.push(snapshot); if (snapshot.status === "succeeded") throw new Error("disk full"); });
   run.subscribe(0, (event) => events.push(event));
   await expect(run.execute(async () => ({ session, touchedAt: 1 }))).rejects.toThrow("disk full");
-  expect(events).toEqual([]);
-  expect(run.snapshot).toMatchObject({ status: "running", text: "", lastEventId: 0 });
-  expect(writes).toBe(2); // No second append to a potentially torn record.
+  expect(events.map((event) => event.type)).toEqual(["delta"]);
+  expect(run.snapshot).toMatchObject({ status: "running", text: "saved", lastEventId: 1 });
+  expect(writes.map((snapshot) => snapshot.status)).toEqual(["running", "succeeded"]);
 });

@@ -20,12 +20,6 @@ import { AssistantMessage } from "./AssistantMessage";
 import { styles } from "./styles";
 import { useChat } from "./useChat";
 
-const suggestions = [
-  "Help me plan my day",
-  "Turn an idea into a plan",
-  "Help me write something",
-];
-
 export function ChatScreen() {
   const { sessionId, messages, draft, setDraft, loading, busy, error, status, send, stop, retry } = useChat();
   const listRef = useRef<FlatList<Message>>(null);
@@ -99,28 +93,7 @@ export function ChatScreen() {
                 <ActivityIndicator color={colors.blueDark} />
                 <Text style={styles.muted}>Opening your conversation…</Text>
               </View>
-            ) : (
-              <View style={styles.welcome}>
-                <Text style={styles.welcomeTitle}>A little help. A lot more room for life.</Text>
-                <Text style={styles.welcomeCopy}>
-                  Tell me what’s on your mind. I can help you think, make a plan, and find the words.
-                </Text>
-                <View style={styles.suggestions}>
-                  {suggestions.map((text) => (
-                    <Pressable
-                      key={text}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: busy || !sessionId }}
-                      disabled={busy || !sessionId}
-                      onPress={() => void send(text)}
-                      style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
-                    >
-                      <Text style={styles.suggestionText}>{text}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )}
+            ) : null}
             ListFooterComponent={(
               <View>
                 {!!error && (
@@ -134,7 +107,7 @@ export function ChatScreen() {
                         style={styles.retryButton}
                       >
                         <RotateCcw size={14} color={colors.text} />
-                        <Text style={styles.suggestionText}>Try again</Text>
+                        <Text style={styles.retryButtonText}>Try again</Text>
                       </Pressable>
                     )}
                   </View>

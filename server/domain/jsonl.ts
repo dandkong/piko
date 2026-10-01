@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, truncateSync, writeFileSync } from "node:fs";
 
-/** Fsync the log before committing its SQLite index or publishing the event. */
+/** Durable creation of a native session header; normal messages are written by Pi. */
 export function appendJsonLine(path: string, value: unknown, create = false): void {
   const fd = openSync(path, create ? "wx" : "a");
   try { writeFileSync(fd, `${JSON.stringify(value)}\n`); fsyncSync(fd); }
