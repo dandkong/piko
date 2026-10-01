@@ -4,7 +4,7 @@
 
 Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式传输。Pi 的会话、模型设置和凭据留在服务端；当前只支持文本聊天，Pi 的文件和命令工具关闭。
+Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式传输。Pi 的会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个 Pi 内建工具。
 
 ## 文档入口
 
@@ -13,10 +13,10 @@ Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式
 | [产品约定](docs/PRODUCT.md) | 主会话、工作区、side chat 的待定交互与功能边界 |
 | [架构约定](docs/ARCHITECTURE.md) | 当前实现、Pi / Piko 职责、工作区资源与核心模型 |
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
-| [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 下一阶段实施范围、迁移、恢复和验收；复杂功能方案放在 docs/features/ |
+| [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、存储、迁移、恢复和验收；复杂功能方案放在 docs/features/ |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
 
-启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前仍是内存文本聊天原型。
+启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前是具备长期工作区和持久主会话的文本聊天原型。
 
 ## 当前架构
 
@@ -28,7 +28,7 @@ Expo / React Native (Web、iOS、Android)
          Pi SDK / ModelRuntime
 ```
 
-RN 客户端位于 `apps/mobile`；消息契约位于 `shared/chat.ts`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务和 Pi 适配器拆分。目前使用 Piko 的轻量事件格式，AG-UI、领域模型和后续功能见 [ROADMAP.md](ROADMAP.md)。
+RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务、领域存储和 Pi 适配器拆分。目前使用 Piko 的轻量事件格式，后续功能见 [ROADMAP.md](ROADMAP.md)。
 
 目录职责、依赖方向与后续实施顺序见 [架构说明](docs/ARCHITECTURE.md)。
 
@@ -110,7 +110,26 @@ bun run android
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。
 - 更新 JS 依赖后可用 `bun run dev:web --clear` 清理 Metro 缓存；新增或更新原生依赖后需要重建原生开发版。
 
-工作区与持久化配置尚未实现；目标路径和后续参数见功能方案，不作为当前可用配置。
+### 助手工作区与主会话
+
+首次启动 API 创建 `~/.piko/workspace`，并初始化用户指导和 `.agents/skills`、memory、projects、artifacts。已有文件不会覆盖。所有客户端通过 `/api/main` 使用同一个主会话，刷新或重启服务后保留历史。
+
+可在启动前指定绝对路径：
+
+```powershell
+$env:PIKO_HOME = "D:\Piko"
+# 可选：将工作区单独放在其他位置
+$env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
+bun run dev
+```
+
+`PIKO_HOME/state/runs` 保存聊天 JSONL，`state/pi-sessions` 保存 Pi 原生上下文 JSONL，`state/piko.sqlite` 只记录身份、状态、顺序和文件/上下文检查点索引。state 必须在工作区之外；同一状态目录只启动一个后端。
+
+用户可手动编辑工作区 AGENTS.md、SOUL.md、USER.md、MEMORY.md，每轮发送前重新加载有限长度的内容。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一轮刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
+
+工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。自动记忆提取与检索尚未实现。
+
+备份时先停止 API，再一起复制工作区和整个 state 目录；恢复保留原工作区绝对路径。异常修复和迁移限制见 [功能说明](docs/features/workspace-and-main-chat.md)。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
 
@@ -128,8 +147,8 @@ bun run build:web
 
 ## 当前边界
 
-- Pi session 和上下文保存在 Bun 进程内，重启后会清空；暂无持久化历史。
+- 工作区和唯一主会话已持久化，Pi 上下文使用原生 JSONL 与压缩机制；side chat 仅预留类型和关系。
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过 Run 取消接口终止回复。
-- 每个会话保留最近一次 Run 的内存快照与最多 2,048 条事件；同一个 `runId` 的重试不会重复执行。重启服务端会丢失这些状态，客户端会提示重新加载，不会自动重新发起已接受的回复。
+- JSONL 保存完整消息与 Run 事件，续订窗口为最近 2,048 条；同 `runId` 的重复提交在重启后仍不会重复执行。遗留运行标记为中断并保留已保存输出，用户主动重试产生新 Run，不自动重跑。
 - 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
 - Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。

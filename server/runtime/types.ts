@@ -8,9 +8,13 @@ export interface ChatSession {
   subscribe(listener: (event: StreamEvent) => void): () => void;
   abort(): Promise<void>;
   dispose(): void;
+  /** Opaque pointer to durable native context; business storage commits its own checkpoint. */
+  exportState?(): unknown;
 }
+
+export type SessionContext = { threadId: string; state?: unknown; recovery: Array<{ runId: string; message: string; text: string; status: string }> };
 
 export interface ChatRuntime {
   isModelReady(): Promise<boolean>;
-  createSession(): Promise<ChatSession>;
+  createSession(context?: SessionContext): Promise<ChatSession>;
 }

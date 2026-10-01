@@ -1,15 +1,40 @@
 import {
   createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
   ModelRuntime,
-  SessionManager,
+  SettingsManager,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 
 import type { Message } from "../../shared/chat";
-import type { ChatRuntime, ChatSession } from "./types";
+import type { ChatRuntime, ChatSession, SessionContext } from "./types";
+import type { WorkspacePaths } from "../domain/workspace";
+import { join } from "node:path";
+import { openPiContext, exportPiCheckpoint } from "./pi-context";
+import { createWorkspaceResources } from "./resources";
 
 type PiSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
+
+export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
+
+/** Bind the selected built-in tools and controlled resources to the assistant's workspace. */
+export async function createPiSession(paths: WorkspacePaths, context: SessionContext, modelRuntime: ModelRuntime, profile: SettingsManager) {
+  const { loader: resourceLoader, settingsManager } = createWorkspaceResources(paths, {
+    defaultProvider: profile.getDefaultProvider(), defaultModel: profile.getDefaultModel(),
+    defaultThinkingLevel: profile.getDefaultThinkingLevel(),
+  });
+  await resourceLoader.reload();
+  for (const diagnostic of resourceLoader.getSkills().diagnostics) console.warn("Piko skill:", diagnostic.message, diagnostic.path);
+  const sessionManager = openPiContext(paths.workspace, join(paths.state, "pi-sessions"), context);
+  const { session } = await createAgentSession({
+    modelRuntime, cwd: paths.workspace, sessionManager, settingsManager, resourceLoader,
+    tools: PIKO_TOOL_NAMES,
+  });
+  if (!session.model) {
+    session.dispose();
+    throw new Error("No Pi model is configured. Run `pi` and finish setting up a provider and model.");
+  }
+  return { session, sessionManager };
+}
 
 function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -38,52 +63,30 @@ function sessionMessages(session: PiSession): Message[] {
   });
 }
 
-export function createPiRuntime(): ChatRuntime {
+export function createPiRuntime(paths: WorkspacePaths): ChatRuntime {
   const modelRuntimePromise = ModelRuntime.create();
 
-  async function createSession(): Promise<ChatSession> {
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: process.cwd(),
-      agentDir: getAgentDir(),
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-      systemPrompt: [
-        "You are Piko, a thoughtful personal assistant.",
-        "Be warm, clear, and concise. Help the person think, plan, and write.",
-        "You have no tools and no access to their files, accounts, or the internet.",
-        "Never claim you completed an action or accessed information you could not reach.",
-      ].join("\n"),
-    });
-    await resourceLoader.reload();
-
-    const { session } = await createAgentSession({
-      modelRuntime: await modelRuntimePromise,
-      sessionManager: SessionManager.inMemory(),
-      resourceLoader,
-      noTools: "all",
-      tools: [],
-    });
-    if (!session.model) {
-      session.dispose();
-      throw new Error("No Pi model is configured. Run `pi` and finish setting up a provider and model.");
-    }
+  async function createSession(context?: SessionContext): Promise<ChatSession> {
+    if (!context) throw new Error("A persistent Piko Thread is required.");
+    // Preserve the user's chosen model without inheriting CLI resource or tool settings.
+    const profile = SettingsManager.create(paths.state, getAgentDir());
+    const { session, sessionManager } = await createPiSession(paths, context, await modelRuntimePromise, profile);
     return {
       get isStreaming() { return session.isStreaming; },
       get messages() { return sessionMessages(session); },
-      prompt: (text) => session.prompt(text),
+      prompt: async (text) => {
+        await session.reload();
+        await session.prompt(text);
+        // An intermediate provider error may be recovered by Pi's automatic retry.
+        const last = session.messages.at(-1);
+        if (last?.role === "assistant" && last.stopReason === "error") throw new Error(last.errorMessage || "Pi could not complete this reply.");
+      },
       abort: () => session.abort(),
       dispose: () => session.dispose(),
+      exportState: () => exportPiCheckpoint(sessionManager),
       subscribe: (listener) => session.subscribe((event) => {
         if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
           listener({ type: "delta", text: event.assistantMessageEvent.delta });
-        } else if (event.type === "message_end" && event.message.role === "assistant") {
-          const result = event.message;
-          if (result.stopReason === "error") {
-            listener({ type: "error", message: result.errorMessage || "Pi could not complete this reply." });
-          }
         }
       }),
     };

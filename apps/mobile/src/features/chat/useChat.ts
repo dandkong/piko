@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { isRunActive, type ConversationResponse, type Message, type RunSnapshot } from "../../../../../shared/chat";
 import { cancelRun, checkHealth, isAbortError, loadConversation, streamMessage } from "./api";
-import { getOrCreateSessionId } from "./session";
+import { getMainSessionId } from "./session";
 
 type Observation = {
   controller: AbortController;
@@ -35,6 +35,7 @@ export function useChat() {
   const mounted = useRef(true);
   const refreshVersion = useRef(0);
   const pendingSubmission = useRef<RunSnapshot | null>(null);
+  const sessionRef = useRef("");
 
   const requestStop = useCallback(async (observation: Observation) => {
     if (!observation.ready || observation.cancelSent || !observation.stopRequested) return;
@@ -154,11 +155,11 @@ export function useChat() {
   useEffect(() => {
     let active = true;
     mounted.current = true;
-    let id: string | undefined;
     void (async () => {
       try {
-        id = await getOrCreateSessionId();
+        const id = await getMainSessionId();
         if (!active) return;
+        sessionRef.current = id;
         setSessionId(id);
         await refresh(id);
       } catch (cause) {
@@ -167,7 +168,7 @@ export function useChat() {
     })();
     let previousState = AppState.currentState;
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active" && previousState !== "active" && id) void refresh(id);
+      if (state === "active" && previousState !== "active" && sessionRef.current) void refresh(sessionRef.current);
       previousState = state;
     });
     return () => {
@@ -180,12 +181,13 @@ export function useChat() {
     };
   }, [refresh]);
 
-  const send = useCallback(async (text = draft) => {
+  const send = useCallback(async (text = draft, retryOfRunId?: string) => {
     const content = text.trim();
     if (!content || observerRef.current || busy || loading || !sessionId) return;
     refreshVersion.current++;
     const run: RunSnapshot = {
       id: randomUUID(), status: "queued", message: content, text: "", createdAt: Date.now(), lastEventId: 0,
+      ...(retryOfRunId && { retryOfRunId }),
     };
     pendingSubmission.current = run;
     setMessages((items) => [...items,
@@ -205,11 +207,19 @@ export function useChat() {
     void requestStop(observation);
   }, [requestStop]);
   const retry = useCallback(async () => {
-    if (!sessionId || busy || loading) return;
+    if (busy || loading) return;
     try {
+      if (!sessionId) {
+        const id = await getMainSessionId();
+        if (!mounted.current) return;
+        sessionRef.current = id;
+        setSessionId(id);
+        await refresh(id);
+        return;
+      }
       const conversation = await loadConversation(sessionId);
       if (!mounted.current) return;
-      if (conversation.run?.status === "failed") await send(conversation.run.message);
+      if (conversation.run?.status === "failed") await send(conversation.run.message, conversation.run.id);
       else await refresh(sessionId);
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));

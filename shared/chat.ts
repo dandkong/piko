@@ -21,13 +21,15 @@ export type RunSnapshot = {
   createdAt: number;
   lastEventId: number;
   error?: string;
+  errorCode?: "interrupted";
+  retryOfRunId?: string;
 };
 
 export function isRunActive(run: RunSnapshot): boolean {
   return run.status === "queued" || run.status === "running" || run.status === "cancelling";
 }
 
-export type ChatRequest = { sessionId: string; message: string; runId?: string; after?: number };
+export type ChatRequest = { sessionId: string; message: string; runId?: string; after?: number; retryOfRunId?: string };
 export type ConversationResponse = { sessionId: string; messages: Message[]; run?: RunSnapshot };
 export type HealthResponse = {
   ok: boolean;

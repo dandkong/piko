@@ -2,10 +2,17 @@ import { createApp } from "./app";
 import { readServerConfig } from "./config";
 import { ConversationStore } from "./chat/conversations";
 import { createPiRuntime } from "./runtime/pi";
+import { initializeWorkspace, resolveWorkspacePaths } from "./domain/workspace";
+import { ChatRepository } from "./domain/chat-repository";
+import { acquireBackendLock } from "./domain/backend-lock";
 
 const config = readServerConfig();
-const runtime = createPiRuntime();
-const conversations = new ConversationStore(() => runtime.createSession(), config);
+const paths = initializeWorkspace(resolveWorkspacePaths());
+const releaseLock = acquireBackendLock(paths.state);
+process.on("exit", releaseLock);
+const repository = new ChatRepository(paths.database, paths.workspace);
+const runtime = createPiRuntime(paths);
+const conversations = new ConversationStore((context) => runtime.createSession(context), config, repository);
 const server = Bun.serve({
   hostname: config.hostname,
   port: config.port,
@@ -15,4 +22,6 @@ const server = Bun.serve({
 });
 
 console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
-console.log("Pi model credentials are read from the Pi agent profile; coding tools are disabled.");
+console.log("Pi model credentials are read from the Pi agent profile; read, write, edit and bash are enabled in the assistant workspace.");
+console.log(`Piko workspace: ${paths.workspace}`);
+console.log(`Piko main conversation: ${repository.main.sessionId}; state: ${paths.state}`);

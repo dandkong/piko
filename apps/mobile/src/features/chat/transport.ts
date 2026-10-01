@@ -70,7 +70,7 @@ export async function observeRun(observer: Observer, transport: Transport): Prom
         : {
           method: "POST", signal: controller.signal,
           headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, runId: run.id, message: observer.message, after: cursor }),
+          body: JSON.stringify({ sessionId, runId: run.id, message: observer.message, after: cursor, retryOfRunId: run.retryOfRunId }),
         });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
