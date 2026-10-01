@@ -1,73 +1,17 @@
 # Piko React Native 客户端
 
-`apps/mobile` 是 Piko 的唯一前端，使用 Expo SDK 57 和 React Native，支持 Web / iOS / Android。Pi SDK、模型配置和凭据由根目录的 Bun 服务端管理。
+`apps/mobile` 是唯一前端，使用 Expo SDK 57 / React Native，覆盖 Web、iOS、Android。模型、凭据与实际工作由根目录 Bun 后端管理。
 
-## 安装和启动
+安装、启动、Android 原生构建、API 地址、配置与验证命令统一见 [根目录 README](../../README.md)。依赖版本以 package.json / bun.lock 为准，客户端维护自己的锁文件；`uuid` override 用于 Expo 的嵌套 xcode 构建依赖。
 
-从仓库根目录执行：
+## 客户端开发约定
 
-```powershell
-bun install
-bun install --cwd apps/mobile
-```
+- `App.tsx` 负责初始化；`src/components/AppShell.tsx` 管理通用布局；`src/theme.ts` 管理视觉基础。
+- 页面按功能放进 `src/features/`，临时交互状态留在 Hook，持久业务状态归服务端。Chat 的页面、输入框、API 与 SSE transport 位于 `src/features/chat/`。
+- 动效使用 Reanimated 和匹配 Expo SDK 的 Worklets，Babel preset 自动配置插件。`TypingIndicator.tsx` 提供等待动效，启用减少动效时保持静止，卸载后停止循环。
+- 当前非 Chat 导航、菜单、通知和附件保持禁用；不展示不可用的功能页面。
+- Android / iOS 生成工程已忽略，原生设置通过 app.json 和配置插件保存。新增原生依赖后重建应用，不能只依赖热更新。
+- 输入、滚动和布局的已确认行为见 [产品约定](../../docs/PRODUCT.md)。原生键盘与后台切换需设备验证。
+- OpenMuse UI 与素材授权见 [第三方说明](../../THIRD_PARTY_NOTICES.md)。
 
-从仓库根目录，一条命令启动 API 和 Expo：
-
-```powershell
-bun run dev
-```
-
-```powershell
-# Web
-bun run dev:web
-
-# 或 Android Emulator
-bun run dev:android
-```
-
-这些命令自动配置本地 Web 的 CORS，等待 API 就绪后启动 Expo；按 `Ctrl+C` 关闭两个服务，一个服务退出时另一个也会关闭。Web 在 `http://localhost:8081` 打开。Android 需先启动 Emulator，并安装兼容 SDK 57 的 Expo Go 或开发客户端。同时测试两端时，运行 `bun run dev:web` 后按 `a`，复用同一个 Expo 进程；不要同时启动两个使用 8081 的进程。运行 `bun run dev` 后可按 `w` 打开 Web、按 `a` 使用 Android Emulator；在 macOS 上按 `i` 使用 iOS Simulator。
-
-需要分开启动时，在终端 1 设置 `$env:PIKO_CORS_ORIGINS = "http://localhost:8081,http://127.0.0.1:8081"` 并运行 `bun run dev:api`，在终端 2 运行 `bun run dev:mobile`（仅 Expo）。
-
-Android Emulator 默认访问 `http://10.0.2.2:8787`，Web / iOS Simulator 默认访问 `http://127.0.0.1:8787`。使用其他 Web 地址或端口时，通过 `PIKO_CORS_ORIGINS` 加入其准确的 Origin 并重启 API。实体设备需通过 `EXPO_PUBLIC_PIKO_API_URL` 指向有身份验证和访问限制的服务端地址。API 当前只监听本机且无登录验证，不要直接暴露到不可信网络。
-
-依赖由 Bun 管理，客户端锁文件为 `apps/mobile/bun.lock`。`uuid` override 用于 Expo 的嵌套 `xcode` 构建依赖。
-
-本机构建并安装 Android 开发版时，先启动 Emulator，在一个终端运行 `bun run dev:api`，再在另一个终端从根目录运行：
-
-```powershell
-bun run android
-```
-
-需要 Node.js、JDK 17（配置 `JAVA_HOME`）、Android SDK Platform 36、Build Tools 36.0.0 和 NDK 27.1.12297006，并配置 `ANDROID_HOME`。该命令首次运行会自动生成 Android 工程，随后编译、安装并启动应用和 Metro；它不会启动 API。如果已有 Metro 在运行，可执行 `bun run android --no-bundler` 复用该服务。
-
-`android/` 和 `ios/` 是 Expo 生成的本地工程，已加入 Git 忽略规则；原生配置以 `app.json` 和配置插件为准。SDK 路径、构建缓存、安装包和生成的调试密钥不提交。后续需要自定义原生配置时，应通过配置插件保存，避免重新生成工程时丢失修改。
-
-## 动效
-
-界面动效统一使用 `react-native-reanimated`，配合 SDK 57 对应的 `react-native-worklets`；Expo 的 Babel preset 自动配置插件。`src/components/TypingIndicator.tsx` 提供可复用的三点等待动画：错峰跳动和透明度变化，系统启用减少动效时保持静止，正文出现或取消回复后卸载并停止循环。
-
-安装或更新动效依赖后，重启 Expo 并清理缓存：`bun run dev:web --clear`（从仓库根目录执行）。Expo Go 需要与项目 SDK 兼容；自建原生开发客户端需要重新构建才能加载新增的原生依赖。消息进入、面板切换、按钮反馈等后续动效继续基于 Reanimated 实现。
-
-## 首页和 Tab
-
-桌面和手机 Web 输入框统一使用 `Enter` 发送、`Shift+Enter` 换行；中文输入法候选词确认和长按回车的重复事件不会触发发送。Android / iOS 原生输入框使用回车提交，屏幕输入法显示发送键，提交后保持焦点和键盘。所有平台仍可通过箭头按钮发送；空白内容、连接中和助手回复中不能提交新消息。
-
-首页参考 OpenMuse 的 RN 组件，包括居中的水豚头像、近白背景、快捷提示、浅蓝/浅灰消息气泡、胶囊输入框和五项底部导航。Chat 具有灰色选中背景，其余 Tab 在对应功能实现前保持禁用。菜单、通知和附件也是禁用占位。
-
-`App.tsx` 只负责应用初始化；`src/components/AppShell.tsx` 管理头像、顶部和底部导航；`src/theme.ts` 定义颜色。聊天页面、输入框、状态 Hook 和 API 位于 `src/features/chat/`。通用 HTTP 客户端位于 `src/api/client.ts`，消息契约和 SSE parser 分别位于根目录 `shared/chat.ts` 与 `shared/sse.ts`。
-
-后续页面按功能放进 `src/features/`，领域状态由服务端管理；模块边界与下一步实施顺序见 [架构说明](../../docs/ARCHITECTURE.md)。
-
-## 检查和导出
-
-从仓库根目录执行：
-
-```powershell
-bun run typecheck:mobile
-bun run build:android
-bun run build:ios
-bun run build:web
-```
-
-`build:web` 导出 HTML、JavaScript 和静态资源；iOS / Android 导出的是 JavaScript / Hermes bundle。生成签名的原生安装包仍需 Android / Xcode 工具链或 EAS Build。
+职责和数据边界见 [架构约定](../../docs/ARCHITECTURE.md)，下一项功能见 [工作区与主会话模型](../../docs/features/workspace-and-main-chat.md)。

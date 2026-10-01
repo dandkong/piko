@@ -6,6 +6,18 @@ Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Nati
 
 Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式传输。Pi 的会话、模型设置和凭据留在服务端；当前只支持文本聊天，Pi 的文件和命令工具关闭。
 
+## 文档入口
+
+| 文档 | 内容 |
+| --- | --- |
+| [产品约定](docs/PRODUCT.md) | 主会话、工作区、side chat 的待定交互与功能边界 |
+| [架构约定](docs/ARCHITECTURE.md) | 当前实现、Pi / Piko 职责、工作区资源与核心模型 |
+| [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
+| [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 下一阶段实施范围、迁移、恢复和验收；复杂功能方案放在 docs/features/ |
+| [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
+
+启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前仍是内存文本聊天原型。
+
 ## 当前架构
 
 ```text
@@ -75,6 +87,30 @@ bun run dev:mobile
 ```
 
 默认 API 地址是 Android Emulator 的 `http://10.0.2.2:8787`，Web 和 iOS Simulator 的 `http://127.0.0.1:8787`。Android Emulator 使用 Expo Go 时，保持 Expo 和 API 同时运行。独立启动 API 时需要手动配置 Web 的 `PIKO_CORS_ORIGINS`；使用其他 Web 地址或端口时，加入其准确的 Origin 并重启 API。
+
+### Android 本机构建
+
+先启动 Emulator，在一个终端运行 `bun run dev:api`，再在另一个终端从仓库根目录运行：
+
+```powershell
+bun run android
+```
+
+除了 Bun，还需要 Node.js、JDK 17（配置 `JAVA_HOME`）、Android SDK Platform 36、Build Tools 36.0.0 和 NDK 27.1.12297006，并配置 `ANDROID_HOME`，将 SDK 的 platform-tools 和 emulator 加入 PATH。
+
+该命令首次运行自动生成 Android 工程，随后编译、安装并启动应用和 Metro；不会启动 API。已有 Metro 时使用 `bun run android --no-bundler`。Expo Go 运行不需要本地 Gradle/JDK/NDK 构建链，模拟器本身仍需 Android SDK / Emulator 和系统镜像。
+
+`apps/mobile/android/`、`apps/mobile/ios/` 是 Expo 生成的本地工程，已忽略；原生配置保存在 `app.json` 或配置插件中。本机 SDK 路径、构建缓存、安装包和调试密钥不提交。iOS 本机构建需要 macOS / Xcode。
+
+### 配置与排错
+
+- `PIKO_HOST`、`PIKO_PORT` 控制 API 监听地址与端口，默认 `127.0.0.1:8787`；`PIKO_CORS_ORIGINS` 配置允许的 Web Origin。
+- `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
+- `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
+- 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。
+- 更新 JS 依赖后可用 `bun run dev:web --clear` 清理 Metro 缓存；新增或更新原生依赖后需要重建原生开发版。
+
+工作区与持久化配置尚未实现；目标路径和后续参数见功能方案，不作为当前可用配置。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
 

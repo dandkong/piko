@@ -1,73 +1,47 @@
 # Piko 开发路线图
 
-这份路线图按**领域模型 → Agent 运行时 → 可见工作 → 异步工作 → 个性化 → 工具与生态**的顺序推进。当前版本是 Pi 聊天原型；未实现的导航项可以为了复用 OpenMuse 布局而禁用显示，但不能打开假的页面或表现为可用。
+当前是文本聊天原型。已完成 UI 和基本流式交互；工作区、统一聊天模型和持久化尚未实现。产品方向见 [PRODUCT](docs/PRODUCT.md)，技术约定见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
 
-## 架构约束
+## 当前基线
 
-- **Pi 是唯一的 Agent / 模型运行时。** Bun 负责托管本地 API、会话和 Pi SDK，不再引入第二套 Agent 框架。
-- AG-UI 是 Pi 与聊天 UI 之间的协议适配层，不是另一个 Agent 后端；协议事件由 Pi Session 事件转换而来。
-- 业务数据由 Piko 自己的领域模型管理。Pi 通过受限工具调用业务服务，不直接读写数据库或主机资源。
-- 按阶段逐步加入持久化，不提前建设通用数据平台；先定领域模型，再在 Goals、Background Tasks 等需要保留状态的阶段引入本地存储和恢复逻辑。
-- 有外部影响的操作必须能说明操作对象、记录结果，并在需要时取得用户确认。
+- Expo / React Native 覆盖 Web、iOS、Android；已打磨聊天布局、输入、滚动与等待动效，并增加根目录 Android 原生启动命令。
+- Bun 托管 Pi SDK，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
+- 会话和 Run 状态仅在内存；服务端重启后丢失。客户端自行保存 sessionId，尚无服务端唯一主会话。
+- Pi 文件/命令工具、技能、扩展与上下文文件加载关闭。
+- 菜单、通知、附件、Activity / Ideas / Goals / Apps 是禁用占位。
 
-## 阶段路线
+## 近期开发顺序
 
-| 阶段 | 用户看到什么 | 底层真正要实现什么 | 完成标准 | 状态 |
-| --- | --- | --- | --- | --- |
-| **0. 核心模型** | 暂时没有太多新 UI | User、Thread、Run、Task、Event、Artifact、Goal、Memory 等领域模型及其关联 | 新功能都有各自领域对象，不再把所有状态塞进 Message 表；有统一 ID、时间和状态语义 | 计划中 |
-| **1. Chat + Agent** | 主会话，可以让 Pi 干活 | Streaming、工具调用、取消、重试、Run 状态、Pi → AG-UI adapter | 日常聊天和普通 Agent 任务稳定；停止、错误和重新连接行为明确 | 原型部分完成：已有 Pi 文本流、内存 Run、独立停止、提交去重及断线/刷新恢复；统一领域 Run、工具调用和 AG-UI adapter 尚未完成 |
-| **2. Activity + Artifacts** | 能看到 Agent 在干什么、产生了什么 | Event Log、Run Trace、Artifact Store、文件上传下载 | Agent 工作不再只能从聊天记录理解；Run 可查看进度、事件和产物 | 计划中 |
-| **3. Background Tasks** | 离开页面或切到后台后 Agent 继续工作 | Queue、Worker、Scheduler、Retry、Idempotency、Resume | 长任务可排队、恢复、取消；重复触发不会重复产生副作用 | 计划中 |
-| **4. Goals** | 长期目标、时间线、进度、产物 | Goal State、Timeline、linked tasks、checkpoints、goal context | 一个目标可以持续几周而不依赖一个 chat；目标与任务、产物互相链接 | 计划中 |
-| **5. Memory** | Agent 越来越懂你，并可以查看、修改记忆 | Memory extraction、retrieval、provenance、scope、decay | Memory 不只是聊天摘要；每条记忆可追溯、可纠正、可删除 | 计划中 |
-| **6. Notifications** | Agent 有事主动找你 | Notification Inbox、原生推送、Significance Filter | 重要进展可到达用户；低价值变化不会持续打扰 | 计划中 |
-| **7. Ideas** | Agent 主动建议“可以帮你做什么” | Idea Curator、candidate generation、scoring、dedupe | Goals、Memory 与现有能力能产生可解释、去重的主动建议 | 计划中 |
-| **8. Feed** | 个性化研究和信息流 | Feed Brief、Taste、Topic Planner、Research、Writer、feedback | Feed 是私人研究员，不只是 RSS 列表；内容有来源并能反馈偏好 | 计划中 |
-| **9. Browser Computer** | Agent 拥有长期浏览器，并可由用户接管 | persistent session、remote viewer、downloads、cookies、takeover | 能稳定操作真实 Web；用户能看见并接管浏览器工作 | 计划中 |
-| **10. Secrets + Permissions** | Gmail/API/网站账号能放心交给 Agent | Credential Vault、scopes、approval policy、audit | Secret 不直接暴露给模型；权限可检查、可撤销，敏感操作有审计 | 计划中 |
-| **11. Connectors** | 日历、邮件、GitHub 等真正连起来 | OAuth、connector abstraction、webhooks、refresh token | 新连接器可按统一能力接口接入；授权、撤权和失败状态清晰 | 计划中 |
-| **12. Agent-native UI** | Dashboard、Tracker、Itinerary 等 | Structured Artifact + renderer / mini-app model | Agent 输出不再只有 Markdown；结构化产物可交互、可复用 | 计划中 |
+| 增量 | 用户可见结果 | 范围 | 状态 |
+| --- | --- | --- | --- |
+| 1. 工作区与主会话模型 | 重开应用和重启服务仍回到同一主会话 | 工作区初始化、Pi 资源范围、核心实体、SQLite、Pi 上下文恢复、中断处理 | 准备实施；[功能方案](docs/features/workspace-and-main-chat.md) |
+| 2. 受限文件与技能创建 | 助手能保存工作成果与可复用流程 | 工作区文件读写、技能正文加载与创建、来源和结果记录；脚本执行单独定义范围 | 待设计 |
+| 3. Activity 与 Artifacts | 看见助理做了什么、生成了什么 | 执行轨迹、事件与文件/结构化产物查看 | 待设计 |
 
-## 当前原型基线
+第一增量只落地 Workspace、Thread、Message、Run、RunEvent。主会话是默认入口，side chat 仅预留类型与关联，不做会话列表或切换交互。记忆目录与指导文件可以先建立，自动提取和检索不因此算完成。
 
-目前 Piko 具备：
+第一增量的关键验收是：主会话唯一、模板不覆盖用户内容、历史和上下文能恢复、重复提交不重复执行、强制重启明确中断、已有停止和重连语义不回退。接口、迁移和细项见功能方案。
 
-- Expo / React Native Chat 原型，运行于 iOS、Android；首页、输入框与五项底部 Tab 对齐 OpenMuse。消息与 SSE 事件契约位于 `shared/chat.ts`。
-- Bun API 在服务端进程内通过 Pi SDK 建立 `AgentSession`，并以 SSE 流式回传文本；RN 客户端连接这一 API。
-- Pi coding tools 默认全部关闭；当前只做纯聊天。
-- 会话、最近 Run 快照与事件回放使用内存存储，连接断开后回复继续执行，刷新或回到前台可恢复；服务端重启后状态清空。统一领域数据库和 Run/Event/Artifact 模型尚未完成。
-- RN 的菜单、通知、附件和非 Chat 导航目前只是禁用的布局占位，不代表对应功能已经实现。
+## 后续方向
 
-因此当前是**Chat 原型**，不能算阶段 0 或阶段 1 完成。下一步先定核心实体及其关联，再按阶段补齐运行状态、Activity 与产物。代码边界和具体实施顺序见 [架构说明](docs/ARCHITECTURE.md)。
+| 能力 | 核心结果与依赖 |
+| --- | --- |
+| Background Tasks | 在稳定 Run / Event 基础上加入队列、调度、重试、恢复与取消 |
+| Goals | 长期目标关联任务、检查点、时间线和产物 |
+| Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
+| Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |
+| Ideas | 基于目标、记忆与实际能力给出可解释、可接受/忽略的建议 |
+| Feed | 有来源和反馈的个性化研究，复用浏览器/搜索能力 |
+| Browser Computer | 持续的浏览器与执行环境，用户可查看和接管；早期只读公开网页与人工接管 |
+| Secrets + Permissions | 凭据存储、权限范围、撤权和审计；先于私人账号连接器与自动外部操作 |
+| Connectors | 日历、邮件等授权、撤权、刷新和失败恢复 |
+| Agent-native UI | 基于真实结构化产物提供 Dashboard、Tracker 等交互 |
+| Side chat | 专题研究入口、上下文范围和结论回传；模型预留，交互单独研究 |
 
-## UI 页面演进
+这些是方向及依赖，不是每项都立即开工的承诺。协议适配（包括 AG-UI）随真实工具、事件和 UI 需求推进，Pi 始终是唯一 Agent 运行时。页面在能力可用且验收后启用。
 
-页面随阶段逐步启用。当前保留的 OpenMuse 风格导航图标是禁用占位；功能完成并通过验收后再开放：
+## 功能方案与完成标准
 
-| 页面 / 导航入口 | 首次出现阶段 | 主要内容 |
-| --- | --- | --- |
-| Chat | 1 | 主会话、Pi 输出流、Run 状态 |
-| Activity | 2 | Run Trace、事件时间线、Artifacts |
-| Tasks / Schedule | 3 | 后台任务队列、执行计划、重试与恢复 |
-| Goals | 4 | 目标、里程碑、关联任务、时间线 |
-| Memory | 5 | 可搜索、编辑和删除的用户记忆 |
-| Notifications | 6 | Inbox、重要性和已读状态 |
-| Ideas | 7 | 建议、证据、接受/忽略 |
-| Feed | 8 | 主题、研究简报、来源与反馈 |
-| Browser | 9 | session、截图、下载与接管 |
-| Connections / Permissions | 10–11 | 凭据、scope、连接器状态和审批 |
-| Artifact mini-apps | 12 | Tracker、Dashboard、Itinerary 等结构化 UI |
+复杂功能临近开发时放进 `docs/features/`，写清状态、场景/目标、范围、交互与状态、数据/API、失败恢复、实施顺序、验收和待定问题。简单改动不必单独建文档。
 
-移动端一级导航优先保持简短，非核心页面可放进 More；Chat 始终是首页。
-
-## 阶段验收约定
-
-每个阶段完成前都要具备：
-
-1. **领域契约：**输入、输出、状态流转和所有权有清晰类型与校验。
-2. **Pi 工具边界：**工具只暴露当前阶段所需能力，不直接给予 Pi 通用主机权限。
-3. **可恢复性：**明确进程重启、重复请求、取消、超时和部分失败的结果。
-4. **用户可见性：**前端覆盖空状态、运行中、失败、完成和重新打开等主要状态。
-5. **验证：**关键状态转换有自动化测试，并能按文档在本地复现。
-
-阶段 10 的凭据和权限设计应先于阶段 11 的真实连接器；阶段 9 的 Browser 在此之前只允许公开网页读取和人工接管，不使用私人账号凭据。
+完成时更新方案状态及本路线图，并将长期约定同步回架构/产品文档。每个增量必须覆盖用户可见的空状态、进行中、失败和完成；关键并发、去重、迁移与恢复有自动化验证。原生键盘、网络和后台切换补设备验证，不把导出成功当成真机验证。
