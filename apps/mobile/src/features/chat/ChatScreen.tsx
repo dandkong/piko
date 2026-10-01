@@ -16,6 +16,7 @@ import { AppShell } from "../../components/AppShell";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { ChatComposer } from "./ChatComposer";
+import { AssistantMessage } from "./AssistantMessage";
 import { styles } from "./styles";
 import { useChat } from "./useChat";
 
@@ -55,6 +56,8 @@ export function ChatScreen() {
       >
         {waitingForText ? (
           <TypingIndicator />
+        ) : item.role === "assistant" ? (
+          <AssistantMessage content={item.content} streaming={busy && item.id === messages.at(-1)?.id} />
         ) : (
           <Text selectable style={styles.messageText}>{item.content}</Text>
         )}
