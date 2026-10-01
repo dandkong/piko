@@ -159,7 +159,7 @@ export function ChatScreen() {
         </View>
         <ChatComposer
           draft={draft} onChange={setDraft} loading={loading} busy={busy}
-          ready={!!sessionId} onSend={() => void send()} onStop={stop}
+          ready={!!sessionId} onSend={(text) => void send(text)} onStop={stop}
         />
       </KeyboardAvoidingView>
     </AppShell>

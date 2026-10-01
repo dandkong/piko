@@ -9,6 +9,7 @@
     "dev:mobile": "bun run --cwd apps/mobile start",
     "dev:web": "bun scripts/dev.ts --web",
     "dev:android": "bun scripts/dev.ts --android",
+    "android": "bun run --cwd apps/mobile expo run:android",
     "typecheck": "bun run typecheck:api && bun run typecheck:mobile",
     "typecheck:api": "bunx tsc --noEmit",
     "typecheck:mobile": "bun run --cwd apps/mobile typecheck",

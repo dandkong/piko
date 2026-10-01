@@ -33,6 +33,16 @@ Android Emulator 默认访问 `http://10.0.2.2:8787`，Web / iOS Simulator 默�
 
 依赖由 Bun 管理，客户端锁文件为 `apps/mobile/bun.lock`。`uuid` override 用于 Expo 的嵌套 `xcode` 构建依赖。
 
+本机构建并安装 Android 开发版时，先启动 Emulator，在一个终端运行 `bun run dev:api`，再在另一个终端从根目录运行：
+
+```powershell
+bun run android
+```
+
+需要 Node.js、JDK 17（配置 `JAVA_HOME`）、Android SDK Platform 36、Build Tools 36.0.0 和 NDK 27.1.12297006，并配置 `ANDROID_HOME`。该命令首次运行会自动生成 Android 工程，随后编译、安装并启动应用和 Metro；它不会启动 API。如果已有 Metro 在运行，可执行 `bun run android --no-bundler` 复用该服务。
+
+`android/` 和 `ios/` 是 Expo 生成的本地工程，已加入 Git 忽略规则；原生配置以 `app.json` 和配置插件为准。SDK 路径、构建缓存、安装包和生成的调试密钥不提交。后续需要自定义原生配置时，应通过配置插件保存，避免重新生成工程时丢失修改。
+
 ## 动效
 
 界面动效统一使用 `react-native-reanimated`，配合 SDK 57 对应的 `react-native-worklets`；Expo 的 Babel preset 自动配置插件。`src/components/TypingIndicator.tsx` 提供可复用的三点等待动画：错峰跳动和透明度变化，系统启用减少动效时保持静止，正文出现或取消回复后卸载并停止循环。
@@ -41,7 +51,7 @@ Android Emulator 默认访问 `http://10.0.2.2:8787`，Web / iOS Simulator 默�
 
 ## 首页和 Tab
 
-桌面 Web 输入框使用 `Enter` 发送、`Shift+Enter` 换行。中文输入法的候选词确认不会触发发送；空白内容、连接中、助手回复中和长按回车的重复事件不会发送。Android / iOS 和手机 Web 保留回车换行，通过箭头按钮发送。
+桌面和手机 Web 输入框统一使用 `Enter` 发送、`Shift+Enter` 换行；中文输入法候选词确认和长按回车的重复事件不会触发发送。Android / iOS 原生输入框使用回车提交，屏幕输入法显示发送键，提交后保持焦点和键盘。所有平台仍可通过箭头按钮发送；空白内容、连接中和助手回复中不能提交新消息。
 
 首页参考 OpenMuse 的 RN 组件，包括居中的水豚头像、近白背景、快捷提示、浅蓝/浅灰消息气泡、胶囊输入框和五项底部导航。Chat 具有灰色选中背景，其余 Tab 在对应功能实现前保持禁用。菜单、通知和附件也是禁用占位。
 

@@ -4,7 +4,7 @@ import { ArrowUp, Plus, Square } from "lucide-react-native";
 import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
 import { colors } from "../../theme";
 import { styles } from "./styles";
-import { handleComposerKeyDown, isMobileWeb } from "./composerKeyboard";
+import { handleComposerKeyDown } from "./composerKeyboard";
 
 // The pill supplies the focus indicator; hide the browser's inner textarea outline.
 // React Native's types omit "none", which react-native-web supports.
@@ -16,7 +16,7 @@ type Props = {
   loading: boolean;
   busy: boolean;
   ready: boolean;
-  onSend: () => void;
+  onSend: (text?: string) => void;
   onStop: () => void;
 };
 
@@ -24,19 +24,15 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
   const [focused, setFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
-  const [desktopWeb, setDesktopWeb] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const canSend = !busy && !loading && ready && !!draft.trim();
   useEffect(() => {
-    if (Platform.OS === "web") setDesktopWeb(!isMobileWeb(navigator));
-  }, []);
-  useEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
     const input = inputRef.current as unknown as HTMLTextAreaElement;
-    const onKeyDown = (event: KeyboardEvent) => handleComposerKeyDown(event, desktopWeb, canSend, onSend);
+    const onKeyDown = (event: KeyboardEvent) => handleComposerKeyDown(event, canSend, onSend);
     input.addEventListener("keydown", onKeyDown);
     return () => input.removeEventListener("keydown", onKeyDown);
-  }, [desktopWeb, canSend, onSend]);
+  }, [canSend, onSend]);
   useLayoutEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
     const input = inputRef.current as unknown as HTMLTextAreaElement;
@@ -80,7 +76,13 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
           multiline
           maxLength={MAX_MESSAGE_LENGTH}
           editable={!loading}
-          submitBehavior="newline"
+          submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
+          returnKeyType="send"
+          onSubmitEditing={Platform.OS === "web" ? undefined : (event) => {
+            if (!busy && !loading && ready && event.nativeEvent.text.trim()) {
+              onSend(event.nativeEvent.text);
+            }
+          }}
           accessibilityLabel="Message Piko"
         />
         <Pressable
@@ -88,7 +90,7 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
           accessibilityRole="button"
           accessibilityState={{ disabled: sendDisabled }}
           disabled={sendDisabled}
-          onPress={busy ? onStop : onSend}
+          onPress={busy ? onStop : () => onSend()}
           style={({ pressed }) => [
             styles.composerButton,
             busy || draft.trim() ? styles.sendReady : styles.sendIdle,
