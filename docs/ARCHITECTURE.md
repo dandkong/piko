@@ -49,7 +49,7 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
 │       ├── main.jsonl              # 会话、entries、任务与提交事务
 │       └── doc-*.jsonl             # 运行时/插件持久化文档
 └── workspace/
-    ├── AGENTS.md                   # 工作指导；AGENTS.override.md 存在时优先
+    ├── AGENTS.md                   # 工作指导
     ├── SOUL.md                     # 人格与语气
     ├── USER.md                     # 用户偏好
     ├── MEMORY.md                   # 精简长期记忆
@@ -68,7 +68,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 配置重载先解析模型、验证当前选择、编译并注册候选插件，再关闭和重新打开原生 Harness；失败保留旧配置，重新打开失败则回退旧 registry。重载和选择期间占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
 - 技能优先级：工作区 `.agents/skills` > `PIKO_HOME/skills` > 应用 `server/resources/skills`。同名覆盖有诊断，非法 YAML 跳过。
-- 核心指导保留在 `server/resources/prompts/core.md`；工作区 AGENTS/override 上限 8,000 字节，SOUL/USER/MEMORY 各 4,000 字节。注明来源，超量截断。技能只注入索引，正文按需 read。
+- 核心指导保留在 `server/resources/prompts/core.md`；工作区 AGENTS.md 上限 8,000 字节，SOUL/USER/MEMORY 各 4,000 字节。注明来源，超量截断。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
 - 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
 - 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。

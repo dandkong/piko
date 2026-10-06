@@ -40,7 +40,7 @@ API 契约见 [架构说明](../ARCHITECTURE.md)。新增运行时 API 提供配
 
 ## 资源与工具
 
-原有核心指导随应用发布；工作区 AGENTS.override.md 优先于 AGENTS.md，上限 8,000 字节；SOUL/USER/MEMORY 各 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。
+原有核心指导随应用发布；工作区 AGENTS.md 上限 8,000 字节；SOUL/USER/MEMORY 各 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。
 
 技能优先级为工作区 `.agents/skills` > PIKO_HOME/skills > 应用内建技能，同名覆盖有诊断。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI，插件为 durable 原生 Extension。
 

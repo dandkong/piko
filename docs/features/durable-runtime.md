@@ -140,7 +140,7 @@ Read the project's existing notes, then append the new decision and next action.
 
 同名优先级：工作区 .agents/skills > PIKO_HOME/skills > 应用内建。不递归读取祖先指导、不加载个人 Pi CLI 资源。`disable-model-invocation: true` 的技能不注入模型索引；普通技能只注入名称/描述/文件路径，正文由 read 按需加载。聊天输入不会展开 CLI `/skill:` 命令。
 
-保留 Piko 原有 core.md、AGENTS.md、SOUL.md、USER.md、MEMORY.md 指导方式；AGENTS.override.md 存在时替代 AGENTS.md。工作区指导与技能可由用户或助手修改，初始化不会覆盖。
+保留 Piko 原有 core.md、AGENTS.md、SOUL.md、USER.md、MEMORY.md 指导方式。工作区指导与技能可由用户或助手修改，初始化不会覆盖。
 
 ## 原生插件
 

@@ -12,11 +12,8 @@ const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;
 export async function loadWorkspaceResources(paths: WorkspacePaths, signal?: AbortSignal): Promise<WorkspaceResources> {
   const result: WorkspaceResources = { instructions: [], skills: [], diagnostics: [] };
   const warn = (path: string, message: string) => result.diagnostics.push({ path, message });
-  let instructionName = "AGENTS.md";
-  try { await stat(join(paths.workspace, "AGENTS.override.md")); instructionName = "AGENTS.override.md"; }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   for (const [root, name, limit] of [
-    [join(paths.resources, "prompts"), "core.md", 8000], [paths.workspace, instructionName, 8000],
+    [join(paths.resources, "prompts"), "core.md", 8000], [paths.workspace, "AGENTS.md", 8000],
     ...["SOUL.md", "USER.md", "MEMORY.md"].map(name => [paths.workspace, name, 4000]),
   ] as [string, string, number][]) {
     signal?.throwIfAborted();

@@ -59,7 +59,8 @@ test("workspace guidance and user-first YAML skills refresh without ancestor/glo
   expect(resources.skills.map(skill => skill.name)).toEqual(["piko-workspace"]);
   expect(resources.skills[0]?.description).toBe("User replacement");
   expect(resources.diagnostics.length).toBeGreaterThan(0);
-  expect(formatWorkspaceResources(resources)).toContain("override instructions");
+  expect(formatWorkspaceResources(resources)).toContain("workspace instructions");
+  expect(formatWorkspaceResources(resources)).not.toContain("override instructions");
   expect(formatWorkspaceResources(resources)).not.toContain("ANCESTOR_MUST_NOT_LOAD");
   await writeFile(join(f.paths.workspace, "USER.md"), "updated preference");
   expect(formatWorkspaceResources(await loadWorkspaceResources(f.paths))).toContain("updated preference");

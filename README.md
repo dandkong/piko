@@ -123,7 +123,7 @@ bun run dev
 
 `PIKO_HOME/config` 保存 `settings.json`、`models.json` 和 `auth.json`；`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable-sessions/<thread-id>/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。state 必须在工作区之外；同一状态目录只启动一个后端。
 
-用户可手动编辑工作区 AGENTS.md（或优先加载的 AGENTS.override.md）、SOUL.md、USER.md、MEMORY.md，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
+用户可手动编辑工作区 AGENTS.md、SOUL.md、USER.md、MEMORY.md，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
 工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。自动记忆提取与检索尚未实现。
 
