@@ -33,7 +33,7 @@ export class ChatRun {
 
   private persist(next: RunSnapshot, event?: StreamEvent): void {
     if (this.storageError) throw this.storageError;
-    if (event?.type === "delta") return; // Output/replay are transient, never a second message store.
+    if (event?.type === "delta" || event?.type === "replace") return; // Output/replay are transient.
     try {
       this.checkpoint(next,
         event && !isRunActive(next) && this.promptStarted ? this.session?.exportState?.() : undefined);
@@ -88,6 +88,9 @@ export class ChatRun {
               void this.session?.abort().catch((cause) => console.error("Could not stop reply after a storage failure:", cause));
             }
           }, 50);
+        } else if (event.type === "replace") {
+          clearTimeout(this.flushTimer); this.flushTimer = undefined; this.pendingText = "";
+          this.emit(event, { text: event.text });
         } else if (event.type === "error") agentError = event.message;
       });
       this.promptStarted = true;

@@ -90,6 +90,9 @@ export function useChat() {
           if (event.type === "delta") {
             text += event.text;
             if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (event.type === "replace") {
+            text = event.text;
+            if (!flushTimer) flushTimer = setTimeout(flush, 50);
           } else {
             flush();
             if (event.type === "error") setError(event.message);

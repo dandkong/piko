@@ -27,7 +27,7 @@ export function chatStream(run: ChatRun, request: Request, after = 0): Response 
           // A slow observer can recover from the Run snapshot rather than buffer without limit.
           if ((controller.desiredSize ?? 0) <= 0) { close(); return; }
           controller.enqueue(encoder.encode(encodeSse(event)));
-          if (event.type !== "delta") close();
+          if (event.type !== "delta" && event.type !== "replace") close();
         } catch { close(); }
       });
       if (closed) { unsubscribe(); return; }

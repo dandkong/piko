@@ -152,14 +152,14 @@ describe("API and runtime boundary", () => {
     expect(second.status).toBe(409);
     await response.body!.cancel();
     expect(state.session.abortCalls).toBe(0);
-    await state.conversations.run(sessionId)!.cancel();
+    await (await state.conversations.run(sessionId))!.cancel();
   });
 
   test("request abort disconnects its observer without stopping the reply", async () => {
     const state = setup(new TestSession(true));
     const controller = new AbortController();
     const request = new Request("http://localhost/api/chat", { signal: controller.signal });
-    const run = state.conversations.startRun(sessionId, runId, "Hello");
+    const run = await state.conversations.startRun(sessionId, runId, "Hello");
     const response = chatStream(run, request);
     await state.session.started.promise;
     controller.abort();
@@ -167,6 +167,23 @@ describe("API and runtime boundary", () => {
     expect(run.active).toBe(true);
     expect(consumeSse(await response.text(), true).events).toEqual([{ type: "delta", text: "Hello", runId, sequence: 1 }]);
     await run.cancel();
+  });
+
+  test("replacement discards buffered old text and updates the reconnect snapshot", async () => {
+    const state = setup(new TestSession(true));
+    const run = await state.conversations.startRun(sessionId, runId, "Hello");
+    await state.session.started.promise;
+    state.session.emit({ type: "delta", text: " old buffered partial" });
+    state.session.emit({ type: "replace", text: "corrected" });
+    state.session.emit({ type: "delta", text: " answer" });
+    await run.cancel();
+    while (run.active) await Bun.sleep(1);
+    expect(run.snapshot.text).toBe("corrected answer");
+    const events: StreamEvent[] = [];
+    run.subscribe(0, event => events.push(event));
+    expect(events.map(event => event.type)).toEqual(["delta", "replace", "delta", "cancelled"]);
+    expect(events[1]).toMatchObject({ type: "replace", text: "corrected" });
+    expect(JSON.stringify(events)).not.toContain("old buffered partial");
   });
 
   test("an already aborted request does not create a session", async () => {
@@ -214,7 +231,7 @@ describe("API and runtime boundary", () => {
     gate.resolve(session);
     await session.started.promise;
     expect(session.promptCalls).toBe(1);
-    await conversations.run(sessionId)!.cancel();
+    await (await conversations.run(sessionId))!.cancel();
     expect(await first.text()).toBe(await duplicate.text());
   });
 
@@ -223,7 +240,7 @@ describe("API and runtime boundary", () => {
     const gate = Promise.withResolvers<ChatSession>();
     const { repo, readHistory } = storage(session);
     const store = new ConversationStore(() => gate.promise, readServerConfig({}), repo, readHistory);
-    const run = store.startRun(sessionId, runId, "Hello");
+    const run = await store.startRun(sessionId, runId, "Hello");
     await run.cancel();
     gate.resolve(session);
     await store.get(sessionId);
@@ -242,7 +259,7 @@ describe("API and runtime boundary", () => {
     expect((await state.app(new Request(events.replace(runId, crypto.randomUUID())))).status).toBe(404);
     expect((await state.app(new Request(`http://localhost/api/sessions/${sessionId}`, { method: "DELETE" }))).status).toBe(409);
     await response.body!.cancel();
-    await state.conversations.run(sessionId)!.cancel();
+    await (await state.conversations.run(sessionId))!.cancel();
   });
 
   test("a completed or retired runId never starts a second prompt", async () => {
@@ -289,11 +306,11 @@ describe("API and runtime boundary", () => {
     await Bun.sleep(60);
     const events = `http://localhost/api/sessions/${sessionId}/runs/${runId}/events`;
     expect((await state.app(new Request(`${events}?after=999`))).status).toBe(409);
-    const snapshot = state.conversations.run(sessionId)!.snapshot;
+    const snapshot = (await state.conversations.run(sessionId))!.snapshot;
     expect(snapshot.text).toBe("Hello" + "x".repeat(2048));
     expect(state.repo.run(sessionId, runId)?.lastEventId).toBe(0);
     const resumed = await state.app(new Request(`${events}?after=${snapshot.lastEventId}`));
-    await state.conversations.run(sessionId)!.cancel();
+    await (await state.conversations.run(sessionId))!.cancel();
     expect(consumeSse(await resumed.text(), true).events).toEqual([{ type: "cancelled", runId, sequence: snapshot.lastEventId + 1 }]);
   });
 
@@ -307,7 +324,7 @@ describe("API and runtime boundary", () => {
     await session.started.promise;
     const cancelRequest = () => new Request(`http://localhost/api/sessions/${sessionId}/runs/${runId}/cancel`, { method: "POST" });
     expect((await state.app(cancelRequest())).status).toBe(500);
-    expect(state.conversations.run(sessionId)!.snapshot.status).toBe("running");
+    expect((await state.conversations.run(sessionId))!.snapshot.status).toBe("running");
     expect((await state.app(cancelRequest())).status).toBe(200);
     expect(consumeSse(await response.text(), true).events.at(-1)?.type).toBe("cancelled");
   });
@@ -318,12 +335,12 @@ describe("conversation lifecycle", () => {
   test("disposing and recreating a runtime cache preserves history and durable deduplication", async () => {
     const state = setup();
     await (await state.app(chatRequest({ sessionId, runId, message: "First" }))).text();
-    const before = state.conversations.history(sessionId);
-    state.conversations.dispose();
+    const before = await state.conversations.history(sessionId);
+    await state.conversations.dispose();
     const recreated = new ConversationStore(async () => state.session, readServerConfig({}), state.repo, state.readHistory);
-    expect(recreated.history(sessionId)).toEqual(before);
-    expect(recreated.startRun(sessionId, runId, "First").canReplay(0)).toBe(false);
-    expect(state.session.promptCalls).toBe(1); recreated.dispose();
+    expect(await recreated.history(sessionId)).toEqual(before);
+    expect((await recreated.startRun(sessionId, runId, "First")).canReplay(0)).toBe(false);
+    expect(state.session.promptCalls).toBe(1); await recreated.dispose();
   });
 
   test("concurrent requests share a single pending session creation", async () => {

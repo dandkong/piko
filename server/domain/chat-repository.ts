@@ -30,7 +30,7 @@ export class ChatRepository {
     try {
       this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
       const version = this.db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;
-      if (version !== 0 && version !== 2) throw new Error("Incompatible development database. Stop Piko and reset its state directory; no migration is provided.");
+      if (version !== 0 && version !== 3) throw new Error("Incompatible development database. Stop Piko and use a new PIKO_HOME; old data is not migrated or deleted.");
       if (version === 0) this.db.transaction(() => {
         this.db.exec(`
           CREATE TABLE workspaces (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
@@ -52,7 +52,7 @@ export class ChatRepository {
             retry_of_run_id TEXT REFERENCES runs(id));
           CREATE UNIQUE INDEX one_active_run ON runs(thread_id) WHERE status IN ('queued','running','cancelling');
           CREATE INDEX thread_runs ON runs(thread_id, ordinal);
-          PRAGMA user_version=2;
+          PRAGMA user_version=3;
         `);
       }).immediate();
       this.main = this.db.transaction(() => {

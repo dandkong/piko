@@ -6,9 +6,10 @@
 
 - Expo / React Native 覆盖 Web、iOS、Android；已打磨聊天布局、输入、滚动与等待动效，并增加根目录 Android 原生启动命令。
 - 助手消息支持 Markdown 与流式未闭合语法显示，代码块和表格支持横向滚动；用户消息保持原文。
-- Bun 托管 Pi SDK，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
-- 服务端唯一主会话，Pi 原生 JSONL 是唯一会话内容来源；UI 投影完整分支，SQLite 只保存必要元数据；重启恢复已保存消息并明确标记中断 Run，流式片段不另行持久化。
+- Bun 托管 pi-durable 1.0.4 + pi-ai 1.0.4，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
+- 服务端唯一主会话，Durable 原生 JSONL 是唯一会话内容来源；UI 投影完整 conversation entries，SQLite 只保存必要元数据；重启恢复已保存消息并明确标记中断 Run，流式片段不另行持久化。
 - 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建技能和执行脚本，全局扩展不自动加载。
+- 独立 JSON 模型/凭据/预设配置、思考强度、durable 插件及重载/压缩/取消 API 已接入；[配置说明](docs/features/durable-runtime.md)。模型配置界面、图片读取尚未接入。
 - 菜单、通知、附件、Activity / Ideas / Goals / Apps 是禁用占位。
 
 ## 近期开发顺序
@@ -27,7 +28,7 @@
 
 | 能力 | 核心结果与依赖 |
 | --- | --- |
-| Background Tasks | 持久化任务定义、调度与执行/投递状态；独立 Pi 会话执行，结果以原生 custom_message 进入主会话和后续上下文；尚未实现 |
+| Background Tasks | 产品层任务定义、调度与执行/投递状态；可复用 durable 原生任务、文档和 write submission，执行详情保存在独立 conversation；产品调度和 UI 尚未实现 |
 | Goals | 长期目标关联任务、检查点、时间线和产物 |
 | Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
 | Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |

@@ -1,101 +1,98 @@
-import { afterEach, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { expect, test } from "bun:test";
+import { appendFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exportPiReference, openPiContext, readPiContext } from "../server/runtime/pi-context";
-import { projectPiHistory } from "../server/runtime/pi-history";
-import { createWorkspaceResources } from "../server/runtime/resources";
-import { initializeWorkspace, resolveWorkspacePaths } from "../server/domain/workspace";
-import { assistant } from "./fixtures/pi-message";
+import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { UserEntry } from "@earendil-works/pi-durable";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { fixture } from "./fixtures/durable";
+import { DurableChatSession } from "../server/runtime/pi";
+import { loadWorkspaceResources, formatWorkspaceResources } from "../server/runtime/resources";
+import { runtimePaths } from "../server/runtime/config/paths";
+import { readPiEntries } from "../server/runtime/pi-history";
 
-const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "piko-pi-test-")); roots.push(root);
-  const paths = initializeWorkspace(resolveWorkspacePaths({ PIKO_HOME: root }));
-  return { root, paths, directory: join(paths.state, "pi-sessions"), threadId: crypto.randomUUID(), interruptedRunIds: [] as string[] };
-}
-
-test("UI uses full native branch with stable entry IDs; compaction and model context edits do not erase displayed history", () => {
-  const f = fixture(); const manager = openPiContext(f.paths.workspace, f.directory, f);
-  const runId = crypto.randomUUID(); manager.appendCustomEntry("piko-run", { runId });
-  const old = manager.appendMessage({ role: "user", content: "old input", timestamp: 1 });
-  manager.appendMessage(assistant("old reply"));
-  const kept = manager.appendMessage({ role: "user", content: "recent input", timestamp: 3 });
-  manager.appendCompaction("summary", kept, 100);
-  manager.appendContextEdit(old, null);
-  const custom = manager.appendCustomMessageEntry("task-result", "daily report", true, { taskId: "task" });
-  manager.appendCustomMessageEntry("hidden-guidance", "must stay hidden", false);
-  const history = projectPiHistory(manager.getBranch());
-  expect(history.messages.map((message) => message.content)).toEqual(["old input", "old reply", "recent input", "daily report"]);
-  expect(history.messages[0]!.id).toBe("pi-" + old);
-  expect(history.messages.at(-1)).toMatchObject({ id: "pi-" + custom, role: "assistant" });
-  expect(history.messages.at(-1)!.runId).toBeUndefined();
-  expect(history.runs.get(runId)).toEqual({ message: "old input", text: "old reply" });
-  expect(JSON.stringify(manager.buildSessionContext().messages)).not.toContain("old input");
-  const reference = exportPiReference(manager);
-  const resumed = openPiContext(f.paths.workspace, f.directory, { ...f, state: reference });
-  expect(projectPiHistory(resumed.getBranch())).toEqual(history);
-  expect(reference).not.toHaveProperty("leafId");
+test("full UI history retains stable IDs after native context edits, reset and compaction", async () => {
+  const f = await fixture(); const session = await f.createSession() as DurableChatSession;
+  f.faux.setResponses([fauxAssistantMessage("old reply")]);
+  await session.prompt("old input", { id: crypto.randomUUID(), createdAt: 1 });
+  const old = await f.runtime.readHistory(f.input);
+  const entries = await readPiEntries(session.nativeHarness);
+  const user = entries.find(entry => entry.kind === "pi.user")!;
+  await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "test.context-edit", edits: [{ target: user.id, action: "omit" }] }), ctx);
+  expect(JSON.stringify((await session.native.context(ctx)).messages)).not.toContain("old input");
+  await session.native.reset(undefined, ctx);
+  expect(JSON.stringify((await session.native.context(ctx)).messages)).not.toContain("old reply");
+  expect((await f.runtime.readHistory(f.input)).messages).toEqual(old.messages);
+  const state = session.exportState(); await session.dispose();
+  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(old.messages);
 });
 
-test("UI follows the selected branch instead of combining every JSONL entry", () => {
-  const f = fixture(); const manager = openPiContext(f.paths.workspace, f.directory, f);
-  const root = manager.appendMessage({ role: "user", content: "root", timestamp: 1 });
-  manager.appendMessage(assistant("abandoned branch"));
-  manager.branch(root);
-  manager.appendMessage(assistant("chosen branch"));
-  expect(projectPiHistory(manager.getBranch()).messages.map((message) => message.content)).toEqual(["root", "chosen branch"]);
-  const resumed = readPiContext(f.paths.workspace, f.directory, { ...f, state: exportPiReference(manager) })!;
-  expect(projectPiHistory(resumed.getBranch())).toEqual(projectPiHistory(manager.getBranch()));
+test("history reads without credentials and fails closed for missing references, wrong identities and corrupt records", async () => {
+  const f = await fixture();
+  expect((await f.runtime.readHistory(f.input)).messages).toEqual([]);
+  const session = await f.createSession() as DurableChatSession;
+  await session.native.commit(tx => tx.appendEntry(UserEntry, session.native.id, {
+    model: [{ role: "user", content: "saved before SQL", timestamp: 1 }] }), ctx);
+  const state = session.exportState(); await session.dispose();
+  await writeFile(join(f.paths.home, "config/auth.json"), "invalid credentials must not be read");
+  expect((await f.runtime.readHistory(f.input)).messages[0]?.content).toBe("saved before SQL");
+  await expect(f.runtime.readHistory({ ...f.input, state: { ...state, directory: crypto.randomUUID() } })).rejects.toThrow("reference");
+  const path = join(runtimePaths(f.paths.home).sessions, f.input.threadId, "main.jsonl");
+  const content = await readFile(path, "utf8");
+  await appendFile(path, "{bad}\n");
+  await expect(f.runtime.readHistory({ ...f.input, state })).rejects.toThrow();
+  await writeFile(path, content); await unlink(path);
+  await expect(f.runtime.readHistory({ ...f.input, state })).rejects.toThrow("missing");
 });
 
-test("restart retains native tail and adds one context-only interruption notice without repeating input or tools", () => {
-  const f = fixture(); const manager = openPiContext(f.paths.workspace, f.directory, f);
-  const state = exportPiReference(manager), runId = crypto.randomUUID();
-  manager.appendCustomEntry("piko-run", { runId });
-  manager.appendMessage({ role: "user", content: "interrupted input", timestamp: 1 });
-  manager.appendMessage(assistant("saved fragment"));
-  const context = { ...f, state, interruptedRunIds: [runId] };
-  const resumed = openPiContext(f.paths.workspace, f.directory, context);
-  expect(projectPiHistory(resumed.getBranch()).messages.map((message) => message.content)).toEqual(["interrupted input", "saved fragment"]);
-  expect(JSON.stringify(resumed.buildSessionContext().messages)).toContain("Do not resume or repeat");
-  const again = openPiContext(f.paths.workspace, f.directory, context);
-  expect(again.getEntries()).toHaveLength(resumed.getEntries().length);
+test("workspace guidance and user-first YAML skills refresh without ancestor/global resources", async () => {
+  const f = await fixture();
+  await writeFile(join(f.root, "AGENTS.md"), "ANCESTOR_MUST_NOT_LOAD");
+  await writeFile(join(f.paths.workspace, "AGENTS.md"), "workspace instructions");
+  await writeFile(join(f.paths.workspace, "AGENTS.override.md"), "override instructions");
+  const skill = join(f.paths.workspace, ".agents/skills/piko-workspace"); await mkdir(skill);
+  await writeFile(join(skill, "SKILL.md"), "---\nname: piko-workspace\ndescription: User replacement\n---\nUser body\n");
+  const global = join(f.root, ".agents/skills/foreign"); await mkdir(global, { recursive: true });
+  await writeFile(join(global, "SKILL.md"), "---\nname: foreign\ndescription: Must not load\n---\nForeign body\n");
+  const bad = join(f.paths.workspace, ".agents/skills/bad"); await mkdir(bad);
+  await writeFile(join(bad, "SKILL.md"), "---\nname: [invalid\n---\n");
+  const resources = await loadWorkspaceResources(f.paths);
+  expect(resources.skills.map(skill => skill.name)).toEqual(["piko-workspace"]);
+  expect(resources.skills[0]?.description).toBe("User replacement");
+  expect(resources.diagnostics.length).toBeGreaterThan(0);
+  expect(formatWorkspaceResources(resources)).toContain("override instructions");
+  expect(formatWorkspaceResources(resources)).not.toContain("ANCESTOR_MUST_NOT_LOAD");
+  await writeFile(join(f.paths.workspace, "USER.md"), "updated preference");
+  expect(formatWorkspaceResources(await loadWorkspaceResources(f.paths))).toContain("updated preference");
 });
 
-test("native records ahead of SQL references remain canonical; missing or inconsistent referenced files fail closed", () => {
-  const f = fixture();
-  expect(readPiContext(f.paths.workspace, f.directory, f)).toBeUndefined();
-  const first = openPiContext(f.paths.workspace, f.directory, f);
-  const state = exportPiReference(first);
-  first.appendMessage({ role: "user", content: "saved before SQL reference", timestamp: 1 });
-  const adopted = openPiContext(f.paths.workspace, f.directory, f);
-  expect(projectPiHistory(adopted.getBranch()).messages[0]!.content).toBe("saved before SQL reference");
-  expect(() => readPiContext(f.paths.workspace, f.directory, { ...f, state: { ...state, sessionId: crypto.randomUUID() } })).toThrow("header");
-  appendFileSync(join(f.directory, state.file), '{bad}\n');
-  expect(() => openPiContext(f.paths.workspace, f.directory, { ...f, state })).toThrow("Corrupt JSONL");
-  rmSync(join(f.directory, state.file));
-  expect(() => openPiContext(f.paths.workspace, f.directory, { ...f, state })).toThrow("missing");
+test("manual compaction preserves full native UI history and restart does not call the model", async () => {
+  const f = await fixture(); const session = await f.createSession();
+  f.faux.setResponses([fauxAssistantMessage("old answer"), fauxAssistantMessage("recent answer")]);
+  await session.prompt("Old context. ".repeat(10000), { id: crypto.randomUUID(), createdAt: 1 });
+  await session.prompt("Recent context. ".repeat(6000), { id: crypto.randomUUID(), createdAt: 2 });
+  const old = (await f.runtime.readHistory(f.input)).messages;
+  f.faux.setResponses([fauxAssistantMessage("Compacted summary.")]);
+  await f.runtime.compact!(f.input);
+  expect(f.faux.state.callCount).toBe(3);
+  expect((await f.runtime.readHistory(f.input)).messages).toEqual(old);
+  const state = session.exportState!(); await session.dispose();
+  const resumed = await f.runtime.createSession({ ...f.input, state });
+  expect(resumed.messages).toEqual(old);
+  expect(f.faux.state.callCount).toBe(3);
 });
 
-test("explicit workspace guidance and user-first skills refresh without ancestor resources or extensions", async () => {
-  const f = fixture();
-  writeFileSync(join(f.root, "AGENTS.md"), "ANCESTOR_MUST_NOT_LOAD");
-  writeFileSync(join(f.paths.workspace, "AGENTS.md"), "workspace instructions");
-  const skill = join(f.paths.workspace, ".agents/skills/piko-workspace"); mkdirSync(skill);
-  writeFileSync(join(skill, "SKILL.md"), "---\nname: piko-workspace\ndescription: User replacement\n---\nUser body\n");
-  const global = join(f.paths.state, "pi/skills/foreign"); mkdirSync(global, { recursive: true });
-  writeFileSync(join(global, "SKILL.md"), "---\nname: foreign\ndescription: Must not load\n---\nForeign body\n");
-  writeFileSync(join(f.paths.workspace, ".pi-unrelated"), "not guidance");
-  const { loader, settingsManager } = createWorkspaceResources(f.paths); await loader.reload();
-  expect(loader.getSkills().skills.map((skill) => skill.name)).toEqual(["piko-workspace"]);
-  expect(loader.getSkills().skills[0].description).toBe("User replacement");
-  expect(loader.getSkills().diagnostics.length).toBeGreaterThan(0);
-  expect(loader.getAgentsFiles()).toEqual({ agentsFiles: [{ path: join(f.paths.workspace, "AGENTS.md"), content: "workspace instructions" }] });
-  expect(loader.getExtensions().extensions).toHaveLength(0);
-  expect(settingsManager.getCompactionEnabled()).toBe(true);
-  writeFileSync(join(f.paths.workspace, "USER.md"), "updated preference"); await loader.reload();
-  expect(loader.getSystemPrompt()).toContain("updated preference");
-  expect(loader.getSystemPrompt()).not.toContain("ANCESTOR_MUST_NOT_LOAD");
+test("native JSONL recovery discards a torn tail and full history spans storage pages", async () => {
+  const f = await fixture(); const session = await f.createSession() as DurableChatSession;
+  await session.native.commit(async tx => {
+    for (let index = 0; index < 510; index++) await tx.appendEntry(UserEntry, session.native.id, {
+      model: [{ role: "user", content: `saved-${index}`, timestamp: index + 1 }] });
+  }, ctx);
+  const before = (await f.runtime.readHistory(f.input)).messages;
+  expect(before).toHaveLength(510);
+  const state = session.exportState(); await session.dispose();
+  const path = join(runtimePaths(f.paths.home).sessions, f.input.threadId, "main.jsonl");
+  await appendFile(path, '{"incomplete":');
+  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(before);
+  expect((await readFile(path, "utf8")).endsWith("\n")).toBe(true);
+  expect(f.faux.state.callCount).toBe(0);
 });

@@ -9,6 +9,7 @@ export type Message = {
 
 export type StreamEvent = (
   | { type: "delta"; text: string }
+  | { type: "replace"; text: string }
   | { type: "done" }
   | { type: "cancelled" }
   | { type: "error"; message: string }

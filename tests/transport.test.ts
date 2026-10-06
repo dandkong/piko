@@ -27,6 +27,21 @@ function observation(message?: string) {
 }
 
 describe("Run transport recovery", () => {
+  test("a durable retry can replace streamed text and continue on the same SSE connection", async () => {
+    const state = observation(); let text = "";
+    await observeRun({ ...state.options, onEvent(value) {
+      state.options.onEvent(value);
+      if (value.type === "delta") text += value.text;
+      else if (value.type === "replace") text = value.text;
+    } }, {
+      fetch: async () => stream(event(1, { type: "delta", text: "discarded partial" }),
+        event(2, { type: "replace", text: "new" }), event(3, { type: "delta", text: " answer" }), event(4, { type: "done" })),
+      load: async () => { throw new Error("Should not reload."); },
+    });
+    expect(text).toBe("new answer");
+    expect(state.events).toHaveLength(4);
+    expect(state.snapshots).toEqual([]);
+  });
   test("replayed events are applied once, including split UTF-8 data", async () => {
     const state = observation();
     const bytes = new TextEncoder().encode([

@@ -2,13 +2,13 @@ import { mkdirSync, realpathSync, writeFileSync, lstatSync, openSync, readSync, 
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-export type WorkspacePaths = { workspace: string; state: string; database: string; resources: string };
+export type WorkspacePaths = { home: string; workspace: string; state: string; database: string; resources: string };
 
 export function resolveWorkspacePaths(env: Record<string, string | undefined> = process.env): WorkspacePaths {
   const home = env.PIKO_HOME ?? join(homedir(), ".piko");
   const workspace = env.PIKO_WORKSPACE ?? join(home, "workspace");
   if (!isAbsolute(home) || !isAbsolute(workspace)) throw new Error("PIKO_HOME and PIKO_WORKSPACE must be absolute paths.");
-  return { workspace: resolve(workspace), state: resolve(home, "state"), database: resolve(home, "state/piko.sqlite"),
+  return { home: resolve(home), workspace: resolve(workspace), state: resolve(home, "state"), database: resolve(home, "state/piko.sqlite"),
     resources: resolve(import.meta.dir, "../resources") };
 }
 
@@ -24,6 +24,18 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   const workspace = realpathSync(paths.workspace);
   const state = realpathSync(paths.state);
   if (isWithin(workspace, state)) throw new Error("Piko state must be outside the assistant workspace.");
+  for (const directory of ["config", "extensions", "skills", "state/durable-sessions", "state/tmp"]) {
+    const path = join(paths.home, directory);
+    mkdirSync(path, { recursive: true });
+    if (!isWithin(realpathSync(paths.home), realpathSync(path))) throw new Error(`Piko data directory escapes its root: ${directory}`);
+  }
+  for (const [name, value] of Object.entries({
+    "settings.json": { version: 1, profiles: {}, retry: { enabled: true, maxRetries: 2 } },
+    "models.json": { providers: {} }, "auth.json": {},
+  })) {
+    try { writeFileSync(join(paths.home, "config", name), JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
   for (const directory of [".agents", ".agents/skills", "memory", "projects", "artifacts"]) {
     const path = join(workspace, directory);
     mkdirSync(path, { recursive: true });
@@ -36,7 +48,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     if (!lstatSync(path).isFile()) throw new Error(`Workspace guidance must be a regular file: ${name}`);
   }
-  return { ...paths, workspace, state, database: join(state, "piko.sqlite") };
+  return { ...paths, home: realpathSync(paths.home), workspace, state, database: join(state, "piko.sqlite") };
 }
 
 /** Bounded reads, including allocation; arbitrary files do not become prompt instructions. */

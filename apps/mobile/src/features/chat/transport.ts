@@ -97,7 +97,7 @@ export async function observeRun(observer: Observer, transport: Transport): Prom
           failures = 0;
           onReconnecting(false);
           onEvent(event);
-          if (event.type !== "delta") return;
+          if (event.type !== "delta" && event.type !== "replace") return;
         }
       }
     } catch (error) {

@@ -31,11 +31,11 @@ export function consumeSse(
       typeof value === "object" &&
       value !== null &&
       "type" in value &&
-      value.type === "delta" &&
+      (value.type === "delta" || value.type === "replace") &&
       "text" in value &&
       typeof value.text === "string"
     ) {
-      events.push({ type: "delta", text: value.text, ...metadata });
+      events.push({ type: value.type, text: value.text, ...metadata });
     } else if (
       typeof value === "object" &&
       value !== null &&

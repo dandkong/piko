@@ -10,6 +10,7 @@ export class ConversationStore {
   private readonly conversations = new Map<string, Conversation>();
   private readonly pending = new Map<string, Promise<Conversation>>();
   private readonly runs = new Map<string, ChatRun>();
+  private readonly executions = new Set<Promise<void>>();
   private storageFailure?: Error;
 
   constructor(
@@ -21,6 +22,7 @@ export class ConversationStore {
 
   get size() { return this.conversations.size; }
   get main() { return this.repository.main; }
+  context() { return this.repository.context(this.main.sessionId); }
   get unavailableReason() { return this.storageFailure?.message; }
   accepts(sessionId: string): boolean { return this.main.thread.id === sessionId; }
 
@@ -28,40 +30,47 @@ export class ConversationStore {
     return this.runs.get(sessionId)?.active || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
   }
 
-  run(sessionId: string, runId?: string): ChatRun | undefined {
+  async run(sessionId: string, runId?: string): Promise<ChatRun | undefined> {
     const cached = this.runs.get(sessionId);
     if (cached && (!runId || cached.snapshot.id === runId)) return cached;
     const record = runId ? this.repository.run(sessionId, runId) : this.repository.latest(sessionId);
     if (!record) return undefined;
-    const content = this.readHistory(this.repository.context(sessionId)).runs.get(record.id);
+    const content = (await this.readHistory(this.repository.context(sessionId))).runs.get(record.id);
     const { inputHash: _, ...metadata } = record;
     return new ChatRun({ ...metadata, message: content?.message ?? "", text: content?.text ?? "" },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
   }
 
-  startRun(sessionId: string, runId: string, message: string, retryOfRunId?: string): ChatRun {
+  async startRun(sessionId: string, runId: string, message: string, retryOfRunId?: string): Promise<ChatRun> {
     if (this.storageFailure) throw this.storageFailure;
     if (!this.accepts(sessionId)) throw new Error("This client uses an old conversation. Reload to open the main conversation.");
     const previous = this.repository.run(sessionId, runId);
     if (previous) {
       if (previous.inputHash !== submissionHash(message) || previous.retryOfRunId !== retryOfRunId) throw new Error("This runId was already used for another submission.");
-      return this.run(sessionId, runId)!;
+      return (await this.run(sessionId, runId))!;
     }
     // Validate canonical history before reserving an execution.
-    this.readHistory(this.repository.context(sessionId));
+    await this.readHistory(this.repository.context(sessionId));
+    // Another submission may have reserved this identity while history was read.
+    if (this.repository.run(sessionId, runId)) {
+      const record = this.repository.reserve(sessionId, runId, message, retryOfRunId);
+      return (await this.run(sessionId, record.id))!;
+    }
     const { inputHash: _, ...metadata } = this.repository.reserve(sessionId, runId, message, retryOfRunId);
     const run = new ChatRun({ ...metadata, message, text: "" },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
     this.runs.set(sessionId, run);
-    void run.execute(() => this.get(sessionId)).catch((error) => {
+    const execution = run.execute(() => this.get(sessionId)).catch((error) => {
       this.storageFailure = new Error("Reply storage is unavailable. Fix the storage issue and restart Piko to recover saved history.");
       console.error("Reply persistence failed:", error);
     });
+    this.executions.add(execution);
+    void execution.finally(() => this.executions.delete(execution));
     return run;
   }
 
-  history(sessionId: string): Message[] {
-    const messages = this.readHistory(this.repository.context(sessionId)).messages;
+  async history(sessionId: string): Promise<Message[]> {
+    const messages = (await this.readHistory(this.repository.context(sessionId))).messages;
     const run = this.runs.get(sessionId);
     if (!run?.active) return messages;
     // Completed native fragments of this execution are already included in its live snapshot.
@@ -79,7 +88,7 @@ export class ConversationStore {
     const now = Date.now();
     for (const [id, value] of this.conversations) {
       if (now - value.touchedAt > this.options.idleSessionMs && !this.isStreaming(id)) {
-        value.session.dispose();
+        await value.session.dispose();
         this.conversations.delete(id);
       }
     }
@@ -95,15 +104,15 @@ export class ConversationStore {
       const oldest = [...this.conversations.entries()].filter(([id]) => !this.isStreaming(id))
         .sort((a, b) => a[1].touchedAt - b[1].touchedAt)[0];
       if (!oldest) throw new Error("Piko is busy with other conversations. Try again shortly.");
-      oldest[1].session.dispose();
+      await oldest[1].session.dispose();
       this.conversations.delete(oldest[0]);
       this.runs.delete(oldest[0]);
     }
     const context = this.repository.context(sessionId);
-    const creation = this.createSession(context).then((session) => {
+    const creation = this.createSession(context).then(async (session) => {
       if (session.exportState) {
         try { this.repository.saveRuntime(sessionId, session.exportState()); }
-        catch (error) { session.dispose(); throw error; }
+        catch (error) { await session.dispose(); throw error; }
       }
       const created = { session, touchedAt: Date.now() };
       this.conversations.set(sessionId, created);
@@ -113,10 +122,16 @@ export class ConversationStore {
     return creation;
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     if ([...this.runs.values()].some((run) => run.active) || this.pending.size) throw new Error("Stop active replies before disposing the conversation store.");
-    for (const value of this.conversations.values()) value.session.dispose();
+    for (const value of this.conversations.values()) await value.session.dispose();
     this.conversations.clear();
     this.runs.clear();
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([...this.runs.values()].filter(run => run.active).map(run => run.cancel()));
+    await Promise.all([...this.executions]);
+    await this.dispose();
   }
 }

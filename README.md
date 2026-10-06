@@ -4,7 +4,7 @@
 
 Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式传输。Pi 的会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个 Pi 内建工具。
+Agent 运行时使用 pi-durable 1.0.4，模型适配使用 pi-ai 1.0.4，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具。
 
 ## 文档入口
 
@@ -14,6 +14,7 @@ Pi SDK 是唯一的 Agent / 模型运行时，Bun 提供 HTTP API 和 SSE 流式
 | [架构约定](docs/ARCHITECTURE.md) | 当前实现、Pi / Piko 职责、工作区资源与核心模型 |
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
+| [Durable 配置与插件](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能、插件与运行时控制 API |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
 
 启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前是具备长期工作区和持久主会话的文本聊天原型。
@@ -25,7 +26,9 @@ Expo / React Native (Web、iOS、Android)
                   │
            Piko HTTP API + SSE
                   │
-         Pi SDK / ModelRuntime
+         pi-durable / Harness
+                  │
+                 pi-ai
 ```
 
 RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务、领域存储和 Pi 适配器拆分。目前使用 Piko 的轻量事件格式，后续功能见 [ROADMAP.md](ROADMAP.md)。
@@ -35,16 +38,11 @@ RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码�
 ## 环境要求
 
 - Bun 1.4 或更新版本。
-- Pi CLI 已完成 provider 和 model 设置，至少有一个可用模型。SDK 从 Pi 默认 profile（通常为 `~/.pi/agent`）读取配置。
+- 在 Piko 的 `config/auth.json` 填写供应商凭据，在 `config/settings.json` 选择模型预设；自定义供应商写入 `config/models.json`。
 - 与 Expo SDK 57 兼容的 Expo Go，或者相应的开发客户端。
 - Android Emulator 或 iOS Simulator。iOS Simulator 需要 macOS；Windows 上可使用 Android Emulator。
 
-Windows 上 Pi profile 通常在 `%USERPROFILE%\.pi\agent`。如需安装和设置 Pi：
-
-```powershell
-bun add --global --ignore-scripts @earendil-works/pi-coding-agent
-pi
-```
+不需要安装或登录 Pi CLI，也不读取 `~/.pi/agent`。首次启动自动补齐空配置文件，模型配置示例见 [Durable 配置](docs/features/durable-runtime.md)。已有旧版 Piko 状态时，先指定新的 `PIKO_HOME` 测试；旧数据不会自动迁移。
 
 ## 本地运行
 
@@ -123,13 +121,13 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/state/pi-sessions` 的 Pi 原生 JSONL 是会话内容的唯一来源，UI 从完整会话分支投影；`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。没有单独的 Run 正文或永久 SSE 日志。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/config` 保存 `settings.json`、`models.json` 和 `auth.json`；`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable-sessions/<thread-id>/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。state 必须在工作区之外；同一状态目录只启动一个后端。
 
-用户可手动编辑工作区 AGENTS.md、SOUL.md、USER.md、MEMORY.md，每轮发送前重新加载有限长度的内容。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一轮刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
+用户可手动编辑工作区 AGENTS.md（或优先加载的 AGENTS.override.md）、SOUL.md、USER.md、MEMORY.md，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
 工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。自动记忆提取与检索尚未实现。
 
-备份时先停止 API，再一起复制工作区和整个 state 目录；恢复保留原工作区绝对路径。当前开发期不做旧数据迁移，schema 不匹配时停止 API 并清理旧数据库及会话日志后重新开始；保留工作区和独立 Pi profile。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
+备份时先停止 API，再一起复制整个 `PIKO_HOME` 和单独指定的工作区；恢复保留原工作区绝对路径。当前 schema 为 3，不迁移旧版 coding-agent 会话；旧 schema 会明确报错，可指定新的 `PIKO_HOME` 开始测试，原数据保留。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
 
@@ -151,5 +149,7 @@ bun run build:web
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过 Run 取消接口终止回复。
 - Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 2,048 条事件只保存在内存，过期或重启后加载快照。同 `runId` 的重复提交在重启后仍不会重复执行；遗留运行标记中断，不自动重跑。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。若在 Pi 保存用户输入前中断，只有去重元数据，用户需要重新发送；不从另一套日志重建正文。
+- JSON 模型配置、思考强度、模型预设、插件重载和手动压缩已接入服务端 API；配置管理界面尚未实现。Durable 插件使用 `defineExtension`，不直接兼容 coding-agent CLI 扩展。
+- durable 1.0.4 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
 - 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
 - Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。

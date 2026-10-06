@@ -2,7 +2,7 @@
 
 ## 项目与文档
 
-Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 Bun，Pi SDK 是唯一的 Agent / 模型运行时。
+Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 Bun，pi-durable 是唯一 Agent 运行时，模型适配使用 pi-ai。
 
 当前处于开发期，架构可随需求随时调整，无需考虑旧版本兼容、历史数据迁移或为此保留过渡实现。
 
@@ -19,18 +19,19 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。
 - 底层保留 side chat 的 Thread 类型与关系，交互、上下文共享和结论回传仍待设计。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
-- 用户技能采用 `.agents/skills/<name>/SKILL.md`；优先复用 Pi 的资源加载器、技能格式、设置和上下文压缩机制。
+- 用户技能采用 `.agents/skills/<name>/SKILL.md`，也可放在 `PIKO_HOME/skills`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。
-- Pi 原生 JSONL 是会话内容的唯一来源；UI 从完整原生分支投影，不能用压缩后的模型上下文代替展示历史。Piko 只管理工作区/会话关系、执行状态、去重和后续调度元数据。
+- Durable 原生 JSONL 是会话内容的唯一来源；UI 从所选 conversation 的完整原始 entries 投影，不能用压缩后的模型上下文代替展示历史。Piko 只管理工作区/会话关系、执行状态、去重和后续调度元数据。
 
 ## 代码边界
 
 - `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。
-- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。Pi SDK 类型、事件与 profile 细节集中在 `server/runtime/`。
+- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
 - `shared/` 保存跨端契约，不依赖 React Native、Bun 或 Pi SDK。
 - UUID 用于实体 ID，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具，以后端进程的本机权限运行，默认工作目录为助手工作区。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
 - 显式指定 Piko 资源范围，避免自动继承个人 Pi CLI 的全局技能、扩展或祖先目录指导。
+- 模型和凭据使用 `PIKO_HOME/config/{settings,models,auth}.json`，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，重载先验证候选配置；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
 - 保留提交去重、停止、流快照、断线恢复语义；断开观察者不等于取消任务，重启后不自动重放不确定执行。
 - 工作区指导、技能索引、Pi 上下文持久化和 read、write、edit、bash 四个内建工具已启用；支持读取技能正文、创建技能文件和运行脚本，个人 CLI 的全局扩展仍不自动加载。
 - 不建立第二套消息正文或永久流事件存储。SQLite 只保存必要身份、状态、输入哈希和原生会话引用；流式文字与 SSE 重放缓存在内存中，重启后不承诺恢复尚未由 Pi 保存的片段。
