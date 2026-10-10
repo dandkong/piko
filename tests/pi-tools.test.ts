@@ -67,10 +67,10 @@ test("literal submissions, multiple turns and passive results survive restart wi
 });
 
 test("provider failure surfaces, abort stops work, and next input still works", async () => {
-  const f = await fixture(30); const session = await f.createSession();
+  const f = await fixture(30);
   f.faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "provider failed" })]);
   await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, retry: { enabled: false } }));
-  await f.runtime.reload!(f.input);
+  const session = await f.createSession();
   await expect(session.prompt("fail", { id: crypto.randomUUID(), createdAt: 1 })).rejects.toThrow();
   f.faux.setResponses([fauxAssistantMessage("A very long reply that should be interrupted before it completes."), fauxAssistantMessage("Next.")]);
   const pending = session.prompt("stop", { id: crypto.randomUUID(), createdAt: 2 });

@@ -16,7 +16,6 @@ export const TELEGRAM_COMMANDS = [
   { command: "recent", description: "View recent messages" }, { command: "skills", description: "Browse skills" },
   { command: "plugins", description: "View plugins" },
   { command: "models", description: "Choose a model" }, { command: "thinking", description: "Set thinking level" },
-  { command: "reload", description: "Reload settings" },
   { command: "compact", description: "Compact context" },
 ];
 const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
@@ -107,13 +106,12 @@ export class TelegramChannel {
       }
     } else if ((command === "models" || command === "thinking") && this.runtime.describe && this.runtime.configure) {
       await this.menus.open(message, command); return;
-    } else if ((command === "reload" && this.runtime.reload) || (command === "compact" && this.runtime.compact)) {
+    } else if (command === "compact" && this.runtime.compact) {
       await this.conversations.changeRuntime(async () => {
-        this.feedback(message, command === "reload" ? "Reloading settings…" : "Compacting context…");
-        if (command === "reload") { await this.runtime.reload!(this.conversations.context()); this.menus.invalidate(); }
-        else await this.runtime.compact!(this.conversations.context());
+        this.feedback(message, "Compacting context…");
+        await this.runtime.compact!(this.conversations.context());
       });
-      text = command === "reload" ? "Settings reloaded." : "Context compacted. Your chat history is preserved.";
+      text = "Context compacted. Your chat history is preserved.";
       if (this.runtime.describe) text += `\n${selectionText(await this.runtime.describe(this.conversations.context()))}`;
     } else if (command === "recent") {
       const history = await this.conversations.history(sessionId);

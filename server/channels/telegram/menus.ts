@@ -45,8 +45,6 @@ export class TelegramMenus {
     this.prune();
   }
 
-  invalidate(): void { this.menus.clear(); }
-
   private prune(): void {
     for (const [token, menu] of this.menus) if (Date.now() - menu.createdAt > 15 * 60_000) this.menus.delete(token);
     while (this.menus.size > 64) this.menus.delete(this.menus.keys().next().value!);
@@ -78,7 +76,7 @@ export class TelegramMenus {
       buttons = rows(providers.map((name, index) => ({
         text: `${name} (${description.models.filter(model => model.provider === name).length})`, callbackData: data(`provider:${index}`),
       })), 2);
-      if (!providers.length) text += "\nNo models available. Add your model credentials, then use /reload.";
+      if (!providers.length) text += "\nNo models available. Add your model credentials, then restart Piko.";
     }
     menu.actions = new Set(buttons.flat().map(button => button.callbackData));
     return { text, buttons };

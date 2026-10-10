@@ -58,11 +58,11 @@ export class DurableChatSession implements ChatSession {
   async init(): Promise<void> {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
     const extensions = await registry(this.paths);
-    try { await this.open(config, extensions, true); }
+    try { await this.open(config, extensions); }
     catch (error) { await extensions.dispose(); throw error; }
   }
 
-  private async open(config: WorkspaceModelConfig, extensions: WorkspaceRegistry, recover: boolean): Promise<void> {
+  private async open(config: WorkspaceModelConfig, extensions: WorkspaceRegistry): Promise<void> {
     const directory = sessionDirectory(runtimePaths(this.paths.home).sessions, this.input);
     const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
     let harness: Harness;
@@ -83,11 +83,11 @@ export class DurableChatSession implements ChatSession {
         thinkingLevel: preferred?.thinking ?? "off",
       } });
       // Preserve Piko's explicit-retry contract. Mark all inherited work aborted BEFORE enabling scheduling.
-      if (recover) await conversation.abort(ctx, { background: true });
+      await conversation.abort(ctx, { background: true });
       if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({
         model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off",
       }, ctx);
-      if (recover && this.input.interruptedRunIds.length) await conversation.commit(async tx => {
+      if (this.input.interruptedRunIds.length) await conversation.commit(async tx => {
         const state = await tx.doc(Interruptions, conversation.id);
         for (const runId of this.input.interruptedRunIds) {
           if (state.runs.includes(runId)) continue;
@@ -182,22 +182,6 @@ export class DurableChatSession implements ChatSession {
     this.changeFinished = operation();
     try { await this.changeFinished; } finally { this.changing = false; this.changeFinished = undefined; }
   }
-  async reload() { return this.change(async () => {
-    const config = await loadWorkspaceModels(this.paths.home, this.injected);
-    const extensions = await registry(this.paths);
-    try {
-      const agent = await this.conversation.agent(ctx);
-      if (agent.model) {
-        const model = await requireAvailableModel(config.models, { provider: agent.model.provider, model: agent.model.modelId });
-        if (!getSupportedThinkingLevels(model).includes(agent.thinkingLevel)) throw new Error("The current thinking level is not supported by the updated model.");
-      }
-    } catch (error) { await extensions.dispose(); throw error; }
-    const oldConfig = this.config, oldExtensions = this.extensions;
-    await this.closeNative();
-    try { await this.open(config, extensions, false); }
-    catch (error) { await extensions.dispose(); await this.open(oldConfig, oldExtensions, false); throw error; }
-    await oldExtensions.dispose();
-  }); }
   async configure(selection: RuntimeSelection) { return this.change(async () => {
     const agent = await this.conversation.agent(ctx);
     const profile = "profile" in selection ? (Object.hasOwn(this.config.profiles, selection.profile) ? this.config.profiles[selection.profile] : undefined)
@@ -270,7 +254,6 @@ export function createPiRuntime(paths: WorkspacePaths, options: { models?: Model
     }),
     describe: input => serial(async () => (await get(input)).describe()),
     configure: (input, selection) => serial(async () => (await get(input)).configure(selection)),
-    reload: input => serial(async () => (await get(input)).reload()),
     compact: async input => { const session = await serial(() => get(input)); await session.compact(); },
     stop: async input => { const session = await serial(() => get(input)); await session.abort(); },
     dispose: () => serial(async () => { for (const session of [...sessions.values()]) await session.dispose(); }),

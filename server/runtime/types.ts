@@ -24,7 +24,6 @@ export interface ChatRuntime {
   readHistory: HistoryReader;
   describe?(context: SessionContext): Promise<RuntimeDescription>;
   configure?(context: SessionContext, selection: RuntimeSelection): Promise<void>;
-  reload?(context: SessionContext): Promise<void>;
   compact?(context: SessionContext): Promise<void>;
   stop?(context: SessionContext): Promise<void>;
   dispose?(): Promise<void>;

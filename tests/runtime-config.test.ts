@@ -22,12 +22,12 @@ await api.commit(async tx => { const state = await tx.doc(State, api.conversatio
 return { content: [{ type: "text", text: ${JSON.stringify(value)} + label }] }; } })] });
 `;
 
-test("native workspace plugins execute tools and docs; transitive reload works and broken candidates preserve the runtime", async () => {
+test("native workspace plugins execute tools and preserve docs; code changes take effect after restart", async () => {
   const f = await fixture();
   const directory = join(f.paths.home, "extensions/remember"); await mkdir(join(directory, "lib"), { recursive: true });
   await writeFile(join(directory, "index.ts"), plugin("one-"));
   await writeFile(join(directory, "lib/helper.ts"), 'export const label = "a";');
-  const session = await f.createSession();
+  let session = await f.createSession();
   expect((await f.runtime.describe!(f.input)).plugins[0]).toMatchObject({ name: "remember", tools: ["remember"] });
   const run = async (expected: string) => {
     f.faux.setResponses([fauxAssistantMessage(fauxToolCall("remember", {}), { stopReason: "toolUse" }),
@@ -36,17 +36,24 @@ test("native workspace plugins execute tools and docs; transitive reload works a
   };
   await run("one-a");
   await writeFile(join(directory, "lib/helper.ts"), 'export const label = "b";');
-  await f.runtime.reload!(f.input); await run("one-b");
+  await run("one-a");
+  await f.runtime.dispose!();
+  const restarted = f.createRuntime();
+  session = await restarted.createSession(f.input);
+  await run("one-b");
   await writeFile(join(directory, "index.ts"), "syntax is broken ???");
-  await expect(f.runtime.reload!(f.input)).rejects.toThrow("Cannot load plugin");
   await run("one-b");
   const state = session.exportState!(); await session.dispose();
-  expect((await f.runtime.readHistory({ ...f.input, state })).messages.at(-1)?.content).toBe("one-b");
+  await expect(restarted.createSession(f.input)).rejects.toThrow("Cannot load plugin");
+  await writeFile(join(directory, "index.ts"), plugin("one-"));
+  session = await restarted.createSession(f.input);
+  expect(session.messages.at(-1)?.content).toBe("one-b");
+  expect((await restarted.readHistory({ ...f.input, state })).messages.at(-1)?.content).toBe("one-b");
   const data = await readFile(join(f.paths.home, "state/durable-sessions", f.input.threadId, "main.jsonl"), "utf8");
   expect(data).toContain("test.remember");
 });
 
-test("model profiles and thinking selections persist, invalid reload preserves the active model, and API lists only safe metadata", async () => {
+test("model profiles and thinking selections persist across restart; file edits leave the active runtime unchanged", async () => {
   const f = await fixture(); const settings = join(f.paths.home, "config/settings.json");
   await writeFile(settings, JSON.stringify({ version: 1, defaultProfile: "quick", profiles: {
     quick: { provider: "faux", model: "fast", thinking: "off" }, review: { provider: "faux", model: "reasoning", thinking: "high" },
@@ -63,7 +70,7 @@ test("model profiles and thinking selections persist, invalid reload preserves t
   expect((await post("selection", { thinking: "bogus" })).status).toBe(422);
   expect((await post("selection", { provider: "faux", model: "fast", thinking: "high" })).status).toBe(409);
   await writeFile(settings, '{"credential":"must-not-leak"');
-  const response = await post("reload"); expect(response.status).toBe(409); expect(await response.text()).not.toContain("must-not-leak");
+  const response = await post("reload"); expect(response.status).toBe(404); expect(await response.text()).not.toContain("must-not-leak");
   f.faux.setResponses([fauxAssistantMessage("still works")]);
   const session = await f.runtime.createSession(input);
   await session.prompt("hello", { id: crypto.randomUUID(), createdAt: 1 });
@@ -118,34 +125,21 @@ test("credential writes serialize and invalid file edits do not replace the acti
   expect(await store.read("test")).toEqual({ type: "api_key", key: "10" });
 });
 
-test("a model-free conversation can activate newly configured credentials and profile on reload", async () => {
+test("a model-free conversation can activate newly configured credentials and profile after restart", async () => {
   const f = await fixture(); const models = createModels();
   const runtime = createPiRuntime(f.paths, { models }); cleanup(() => runtime.dispose!());
-  const session = await runtime.createSession(f.input);
+  await runtime.createSession(f.input);
   expect((await runtime.describe!(f.input)).selection).toBeUndefined();
   models.setProvider(f.faux.provider);
   await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, defaultProfile: "main",
     profiles: { main: { provider: "faux", model: "reasoning", thinking: "high" } } }));
-  await runtime.reload!(f.input);
-  expect((await runtime.describe!(f.input)).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
+  await runtime.dispose!();
+  const restarted = createPiRuntime(f.paths, { models }); cleanup(() => restarted.dispose!());
+  const session = await restarted.createSession(f.input);
+  expect((await restarted.describe!(f.input)).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
   f.faux.setResponses([fauxAssistantMessage("configured")]);
   await session.prompt("hello", { id: crypto.randomUUID(), createdAt: 1 });
   expect(session.messages.at(-1)?.content).toBe("configured");
-});
-
-test("configuration reload reserves the idle boundary against concurrent input", async () => {
-  const f = await fixture(); const session = await f.createSession();
-  await writeFile(join(f.paths.home, "extensions/slow.ts"), `
-import { defineExtension } from "@earendil-works/pi-durable";
-await new Promise(resolve => setTimeout(resolve, 100));
-export default defineExtension({ name: "slow" });`);
-  const reloading = f.runtime.reload!(f.input);
-  await waitUntil(() => session.isStreaming);
-  await expect(session.prompt("must not race", { id: crypto.randomUUID(), createdAt: 1 })).rejects.toThrow("reconfiguring");
-  await reloading;
-  expect(session.isStreaming).toBe(false);
-  expect(f.faux.state.callCount).toBe(0);
-  expect(session.messages).toEqual([]);
 });
 
 test("runtime cancel preserves the Run cancellation state while generation is busy", async () => {
@@ -156,8 +150,10 @@ test("runtime cancel preserves the Run cancellation state while generation is bu
   f.faux.setResponses([fauxAssistantMessage("A long answer that should be stopped while streaming.")]);
   const run = await store.startRun(repo.main.sessionId, crypto.randomUUID(), "stop this");
   await waitUntil(() => f.faux.state.callCount > 0);
-  const reload = await app(new Request("http://local/api/runtime/reload", { method: "POST" }));
-  expect(reload.status).toBe(409);
+  const compact = await app(new Request("http://local/api/runtime/compact", { method: "POST" }));
+  expect(compact.status).toBe(409);
+  const removed = await app(new Request("http://local/api/runtime/reload", { method: "POST" }));
+  expect(removed.status).toBe(404);
   const response = await app(new Request("http://local/api/runtime/cancel", { method: "POST" }));
   expect(response.status).toBe(200);
   await waitUntil(() => !run.active);

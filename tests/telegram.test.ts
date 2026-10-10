@@ -12,7 +12,7 @@ import type { ChatRuntime, ChatSession } from "../server/runtime/types";
 import type { Message, StreamEvent } from "../shared/chat";
 import type { RuntimeDescription, RuntimeSelection } from "../shared/runtime";
 import type { TelegramCallback } from "../server/channels/telegram/menus";
-import { TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
+import { TELEGRAM_COMMANDS, TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
 import { TelegramBot } from "../server/channels/telegram/bot";
 import { TelegramReply, deliverRun, splitReply, TELEGRAM_RICH_LIMIT, TELEGRAM_PLAIN_LIMIT } from "../server/channels/telegram/output";
 import { isFormatError, telegramRequest, TelegramApi, type TelegramTransport, type TelegramKeyboard } from "../server/channels/telegram/api";
@@ -520,9 +520,21 @@ describe("Telegram runtime controls", () => {
     expect(s.api.writes[0].text).not.toContain("private");
   });
 
+  test("reload is absent from commands and help, and does not enter the conversation", async () => {
+    const s = setup(); controls(s);
+    expect(TELEGRAM_COMMANDS.some(item => item.command === "reload")).toBe(false);
+    await s.channel.handle({ ...message, text: "/help" });
+    await waitUntil(() => s.api.writes.length > 0);
+    expect(s.api.writes[0].text).not.toContain("/reload");
+    await s.channel.handle({ ...message, text: "/reload" });
+    await waitUntil(() => s.api.writes.some(write => write.text.includes("Unknown command")));
+    expect(s.session.calls).toBe(0);
+    expect(s.repo.db.query("SELECT * FROM runs").all()).toEqual([]);
+  });
+
   test("busy and queued runs reject mutations while read-only menus and status remain available", async () => {
     const s = setup(); const c = controls(s); let operations = 0;
-    s.runtime.reload = s.runtime.compact = async () => { operations++; };
+    s.runtime.compact = async () => { operations++; };
     const opening = Promise.withResolvers<ChatSession>();
     const prompt = s.session.prompt.bind(s.session);
     s.session.prompt = async (...args) => { await opening.promise; await prompt(...args); };
@@ -534,24 +546,22 @@ describe("Telegram runtime controls", () => {
     await waitUntil(() => s.api.buttons.get("1")![0][0].text === "Fast ✓");
     await click(s, "1", "Reasoning");
     expect(s.api.answers.at(-1)?.text).toContain("Piko is busy");
-    for (const text of ["/compact", "/reload", "/status"]) await s.channel.handle({ ...message, text });
+    for (const text of ["/compact", "/status"]) await s.channel.handle({ ...message, text });
     await waitUntil(() => s.api.writes.some(write => write.text.includes("Thinking: off")));
     expect(c.changes).toEqual([]); expect(operations).toBe(0);
     opening.resolve(s.session); await waitUntil(() => s.session.calls === 1); await run.cancel();
   });
 
-  test("reload/compact reserve before initialization, block RN/TG admission and release after failure", async () => {
+  test("compact reserves before initialization, blocks RN/TG admission and releases after failure", async () => {
     const s = setup(); controls(s);
-    const held = Promise.withResolvers<void>(); let reloads = 0;
+    const held = Promise.withResolvers<void>();
     s.runtime.compact = async () => held.promise;
-    s.runtime.reload = async () => { reloads++; };
     await s.channel.handle({ ...message, text: "/compact" });
     await waitUntil(() => s.store.isStreaming(s.store.main.sessionId));
     await expect(s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN")).rejects.toThrow("already responding");
     expect((await s.store.startTelegram({ ...input, messageId: "during" }, "TG")).disposition).toBe("busy");
     const app = createApp({ config: defaultServerConfig(), runtime: s.runtime, conversations: s.store });
-    expect((await app(new Request("http://localhost/api/runtime/reload", { method: "POST" }))).status).toBe(409);
-    expect(reloads).toBe(0);
+    expect((await app(new Request("http://localhost/api/runtime/compact", { method: "POST" }))).status).toBe(409);
     held.reject(new Error("secret token must not leak"));
     await waitUntil(() => !s.store.isStreaming(s.store.main.sessionId));
     await waitUntil(() => s.api.writes.some(write => write.text.includes("Couldn't complete that action")));
@@ -559,10 +569,8 @@ describe("Telegram runtime controls", () => {
     await s.channel.handle({ ...message, text: "/models" });
     await waitUntil(() => s.api.buttons.size === 1);
     const menuId = [...s.api.buttons.keys()][0];
-    await s.channel.handle({ ...message, text: "/reload" });
-    await waitUntil(() => s.api.writes.some(write => write.text.includes("Settings reloaded.")));
     await click(s, menuId, "alpha");
-    expect(s.api.answers.at(-1)?.text).toContain("expired"); expect(reloads).toBe(1);
+    expect(s.api.answers.at(-1)?.alert).not.toBe(true);
     s.runtime.compact = async () => {};
     await s.channel.handle({ ...message, text: "/compact" });
     await waitUntil(() => s.api.writes.some(write => write.text.includes("Context compacted.")));
@@ -658,7 +666,7 @@ describe("Telegram runtime controls", () => {
     expect(api.writes.every(write => !write.rich)).toBe(true);
   });
 
-  test("native selection persists across reload/restart and control messages never enter history", async () => {
+  test("native selection persists across restart and control messages never enter history", async () => {
     const f = await fixture(); const repo = repository(f.paths);
     const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
     cleanup(() => store.close()); const api = new Transport();
@@ -672,8 +680,7 @@ describe("Telegram runtime controls", () => {
     };
     await clickNative("1", "faux"); await waitUntil(() => api.buttons.get("1")!.flat().some(button => button.text.startsWith("Reasoning")));
     await clickNative("1", "Reasoning"); await waitUntil(() => api.buttons.has("2"));
-    await clickNative("2", "high"); await channel.handle({ ...message, text: "/reload" });
-    await waitUntil(() => api.writes.some(write => write.text.includes("Settings reloaded.")));
+    await clickNative("2", "high");
     await channel.handle({ ...message, text: "/status" });
     await waitUntil(() => api.writes.some(write => write.text.includes("Context limit: 250,000 tokens")));
     const selection = (await f.runtime.describe!(store.context())).selection;

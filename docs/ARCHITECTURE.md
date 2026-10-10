@@ -32,7 +32,7 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
 
 默认根目录为后端机器上的 `~/.piko`，独立于源码。进程环境 `PIKO_HOME` 定位根目录；应用配置 `workspace.path` 或 `PIKO_WORKSPACE` 可单独指定工作区，均要求绝对路径。
 
-`server/config.ts` 是应用配置入口，env 只映射和转换字段，按默认值 < `config/piko.json` < `config/.env` < 进程环境合并后，统一校验 HTTP、工作区及 Telegram，再注入使用处。开发脚本使用同一入口。模型文件独立，复用通用 JSON/env 读取函数；不把 Pi SDK 配置类型移出 runtime。应用配置修改后重启，模型 reload 不重载应用配置。细节见 [应用配置](features/application-config.md)。
+`server/config.ts` 是应用配置入口，env 只映射和转换字段，按默认值 < `config/piko.json` < `config/.env` < 进程环境合并后，统一校验 HTTP、工作区及 Telegram，再注入使用处。开发脚本使用同一入口。模型文件独立，复用通用 JSON/env 读取函数；不把 Pi SDK 配置类型移出 runtime。应用配置与模型配置修改后均重启后端生效。细节见 [应用配置](features/application-config.md)。
 
 ```text
 ~/.piko/
@@ -66,7 +66,7 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
 
 pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可指定 API、地址、模型能力、请求参数、headers 和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
 
-配置重载先解析模型、验证当前选择、编译并注册候选插件，再关闭和重新打开原生 Harness；失败保留旧配置，重新打开失败则回退旧 registry。重载和选择期间占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
+模型配置和插件在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
 - 技能优先级：工作区 `.agents/skills` > `PIKO_HOME/skills` > 应用 `server/resources/skills`。同名覆盖有诊断，非法 YAML 跳过。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。注入时标注来源和角色，职责与冲突处理见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core/AGENTS 各上限 8,000 字节，MEMORY 上限 4,000 字节，超量截断。技能只注入索引，正文按需 read。
@@ -102,7 +102,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 - GET `/api/sessions/:id/runs/:runId/events?after=N`：内存事件重放；过期/越界/重启后返回 409，客户端加载快照。
 - POST `/api/sessions/:id/runs/:runId/cancel`：独立停止；断开观察连接只退订。
 - GET `/api/runtime`：模型能力、选择、预设、技能、插件元数据；不返回凭据。
-- POST `/api/runtime/selection|reload|compact|cancel`：模型选择、重载、手动压缩与停止；配置管理 UI 未实现。
+- POST `/api/runtime/selection|compact|cancel`：模型选择、手动压缩与停止；配置管理 UI 未实现。
 - 不允许删除主会话或通过任意客户端 UUID 创建会话。
 
 同 Thread 只允许一个活跃 Run，SQL 唯一约束保证。先预留身份/输入哈希，再调用 durable submit，requestId 为 run.id；重复身份和相同输入复用，不同输入拒绝。显式重试使用新 UUID、相同输入、失败 Run 引用。
@@ -125,7 +125,7 @@ SQL 遗留活跃 Run 标记 failed + interrupted。第一次打开 Harness 时�
 
 Telegram 适配器与 RN 共用 ConversationStore、主 Thread 和 runtime，进程内直接调用会话业务。TG 收据与 Run 在同一 SQL 事务内预留，忙碌拒绝也保持去重；轮询在持久化接纳成功后才确认 update。停止命令保存当时的目标 Run，重投不能停止之后的任务。
 
-TG 模型/思考按钮、重载与压缩复用运行时接口；HTTP/TG 管理操作先通过 ConversationStore 预留空闲边界，queued Run 和异步初始化也受互斥保护。按钮菜单仅在内存保存来源和目录快照，点击时再次鉴权及验证当前能力，不写另一套聊天正文。当前选择由 durable Agent 文档持久化，状态详情使用运行时安全元数据。
+TG 模型/思考按钮与压缩复用运行时接口；HTTP/TG 管理操作先通过 ConversationStore 预留空闲边界，queued Run 和异步初始化也受互斥保护。按钮菜单仅在内存保存来源和目录快照，点击时再次鉴权及验证当前能力，不写另一套聊天正文。当前选择由 durable Agent 文档持久化，状态详情使用运行时安全元数据。
 
 TG 只投递自身发起的回复，命令提示不写入 Pi 历史；RN 展示两端聊天的原生投影。RN 前台空闲时每 3 秒发现变化，活跃 Run 使用既有 SSE。TG 网络发送与执行分离，平台消息 ID 不持久化，不承诺重启补发；共享主会话中断不自动执行。配置、命令、生命周期和边界见 [双通道说明](features/telegram-channel.md)。
 

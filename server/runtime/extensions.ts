@@ -122,7 +122,7 @@ function validate(value: unknown, path: string): asserts value is Extension {
   }
 }
 
-/** Fresh local bundles reload transitive helpers while sharing the host's pi/chord modules. */
+/** Compile local helpers into a fresh bundle while sharing the host's pi/chord modules. */
 async function compile(
   entry: string,
   directory: string,
