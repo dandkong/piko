@@ -11,7 +11,7 @@ RN 继续提供完整产品体验，Telegram 提供适合聊天界面的能力�
 | 能力 | 已接入范围 |
 | --- | --- |
 | 私聊文本 | 接受一个明确配置的用户；复用主会话、工作区、技能和现有工具 |
-| 助手回复 | typing、节流更新、原生富文本、长消息拆分与纯文本降级 |
+| 助手回复 | typing、800ms 节流更新、流式 Rich Markdown、长消息拆分与纯文本降级 |
 | 停止与状态 | `/stop`、`/status`；停止作用于共享主会话，包括 RN 发起的当前 Run |
 | 查询 | `/recent`、`/skills`、`/plugins`；只读查询已有能力 |
 | 帮助 | `/start`、`/help`，说明共享会话、忙碌策略与支持范围 |
@@ -37,7 +37,9 @@ RN 继续提供完整产品体验，Telegram 提供适合聊天界面的能力�
 
 参考的是当前 pi-pilot 源码，具体文件为 `src/adapters/{types,telegram}.ts`、`src/runtime/{chat-runtime,chat-commands}.ts`、`src/render/{turn-stream,chunking}.ts` 与 `docs/durable-experiment.md`，不依赖另一份项目在用户机器上的位置。
 
-不能直接复制的细节：pi-pilot 的 800ms 更新间隔只是实现选择；网络错误不能一概按富文本不支持来降级；其附件接收流程先下载、再由 ChatRuntime 检查用户，Piko 必须在任何下载或执行前验证身份。它的多段消息更新也不能代替对正文缩短、分段变少和重试 replace 的专门处理。
+消息展示已对齐 pi-pilot 的持久 Rich Message 与编辑更新：从流式首条开始使用富文本，通过 remend 1.3.1 补全未闭合 Markdown，使用 30,000 单位的富文本拆分上限与 800ms 更新间隔。工具展示尚未接入；后续工具信息按独立普通消息呈现，使用通道已有的 plain 模式，不混入助手 Rich Markdown。
+
+继续保留 Piko 的投递保护：网络错误不能一概按富文本不支持来降级；附件必须在任何下载或执行前验证身份。多段消息更新还需要处理正文缩短、分段变少和重试 replace。
 
 ## 依赖方向与接入位置
 
@@ -81,16 +83,20 @@ RN 继续使用客户端 runId 和现有去重规则。收据是外部请求的�
 
 TG 发起的 Run 只回复已验证的输入私聊，第一条回复关联输入 `messageId`。所有内容仍来自原生历史与当前 Run 的内存快照。RN 发起的 Run 默认不产生 TG 推送；`/recent` 可主动查看。帮助、状态、忙碌和错误提示属于通道反馈，不额外写成 Agent 对话。
 
-首期采用“发送消息后节流编辑”：流式阶段用纯文本避免未闭合 Markdown 的解析失败，完成后以 Telegram Rich Markdown 编辑或发送；明确格式/能力错误时降级为纯文本。当前 Telegram 也支持原生 draft 流式预览，但 draft 不是持久消息；draft、预览保活及原生停止事件留作后续呈现优化。[Bot API 文档](https://core.telegram.org/bots/api#sendrichmessagedraft)
+采用与 pi-pilot 相同的“发送持久 Rich Message 后节流编辑”：首条与后续流式更新均通过 `sendRichMessage` / `editMessageText` 的 `{ markdown }` 呈现，支持 Telegram 原生标题、列表、表格和代码块。流式阶段用 remend 补全未闭合 Markdown，未完成链接只展示文本，不生成 `streamdown:` 占位链接，单个美元符号不自动补为数学公式；最终更新使用正文，不保留流式补全的标记。渲染补全仅作用于 TG 展示，不修改 Run 快照、原生历史或 RN 内容。[Rich Messages](https://core.telegram.org/bots/api#rich-messages)
+
+这套实现使用持久消息编辑，不使用 `sendRichMessageDraft`。Telegram draft 是临时预览；draft、预览保活及原生停止事件仍留作后续优化。[Bot API 文档](https://core.telegram.org/bots/api#sendrichmessagedraft)
 
 当前处理规则：
 
-- 以约 1 秒合并最新快照，串行发送/编辑；吞掉无变化编辑，遵守 429 的 `retry_after`。typing 在等待工具或模型期间按平台需要续发。更新间隔是保守初值，实际以 API 响应调整。[官方频率说明](https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this)
+- 以 800ms 合并最新快照，串行发送/编辑；吞掉无变化编辑，遵守 429 的 `retry_after`。typing 在等待工具或模型期间按平台需要续发。更新间隔与 pi-pilot 一致，实际以 API 响应调整。[官方频率说明](https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this)
 - RN 保持现有 delta/replace；TG 将两者映射为完整文本更新。不能只追加 delta，否则模型重试会留下被撤回文字。
-- 超长正文使用保守的 4,000 UTF-16 单位上限拆分，两种呈现共用上限以便降级；避免拆开代理对，优先按行切分，代码围栏在分段间补全。正文缩短时编辑已有消息、删除多余段落。
+- 富文本使用与 pi-pilot 相同的 30,000 UTF-16 单位上限；普通消息使用保守的 4,000 单位上限。避免拆开代理对，优先按行切分，富文本代码围栏在分段间补全。明确格式/能力拒绝后，将整份快照重新按普通消息上限拆分，并让该次回复的后续更新保持纯文本；普通消息保留字面内容。正文缩短时编辑已有消息、删除多余段落。
 - 收到 done/cancelled/error 后，以最终快照或原生历史核对正文，并标明停止/失败；先完成 Piko 原生保存，再认定执行完成。
 - 网络超时、429 与永久权限错误分别处理；每次请求最多 3 次尝试，429 遵守 `retry_after`，超过 15 秒的冷却直接报告投递失败；确认格式拒绝才切换渲染方式。不把发送超时后再次发送描述为恰好一次投递。
 - 发送失败不改变 Run 的成功状态，不取消模型任务，不以重新执行模型来补发。有限重试仍失败时保留原生历史，日志不包含 token/完整请求 URL，用户可在 RN 或 `/recent` 查询。
+
+帮助、状态、忙碌、错误反馈与 `/recent` 查询使用普通消息；当前不推送工具调用、参数或结果。后续工具展示可复用 plain 模式，但运行时事件投影、工具格式与分段时序需在接入时实现。
 
 首期发送进度和平台消息 ID 只在内存中。进程在回复保存后、TG 接收前退出，可能漏发；发送超时也可能造成重复平台消息。不自动补发旧回复、不重建 TG 全量历史、不承诺重启后恢复正在编辑的消息。将来需要主动通知或可靠补发时，再设计只保存原生 entry/Run 引用与投递状态的 outbox。
 
@@ -147,7 +153,7 @@ TG 启用失败或运行中失联报告到后端日志，并保留 RN 使用能�
 - 同一 TG 消息重投、重启后重投不重复执行；重复忙碌消息不会后来自动执行；不同正文复用同一身份拒绝。
 - RN/TG 并发只有一个输入被接纳，另一个明确忙碌；跨通道停止实际取消同一 Run。
 - 发送延迟不阻塞 `/stop`，TG 发送失败不破坏 Run/SSE；429、超时、格式错误分开处理。
-- Unicode/代码块长回复、正文 replace/缩短、取消/失败与空回复正确呈现；原生历史不受 TG 分段或命令查询影响。
+- 通过本机模拟 Bot API 验证流式首条 `sendRichMessage`、后续富文本 `editMessageText` 与最终正文；Unicode/代码块长回复、表格、未闭合 Markdown、超长富文本降级后的重新拆分、正文 replace/缩短、取消/失败与空回复正确呈现；原生历史不受 TG 渲染、分段或命令查询影响，内建工具结果不推送。
 - RN 前台发现新 Run、错过短 Run、过期快照竞争、后台恢复及观察者去重。
 - TG 未启用/失联时 RN 可用；启动和退出没有未处理 promise 或遗留轮询/订阅。
 

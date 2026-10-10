@@ -1,7 +1,7 @@
 import type { ConversationStore } from "../../chat/conversations";
 import type { ChatRuntime } from "../../runtime/types";
 import { telegramErrorCode, type TelegramTransport } from "./api";
-import { deliverRun, TelegramReply } from "./output";
+import { deliverRun, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 
 export type TelegramMessage = {
   chatId: string; messageId: string; actorId: string; chatType: string; text?: string;
@@ -26,7 +26,7 @@ export class TelegramChannel {
   private readonly deliveries = new Set<string>();
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
-    private readonly api: TelegramTransport, private readonly intervalMs = 1000) {}
+    private readonly api: TelegramTransport, private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {}
 
   async handle(message: TelegramMessage): Promise<void> {
     if (!this.accepting || message.actorId !== this.identity.userId || message.chatType !== "private" ||
@@ -80,11 +80,11 @@ export class TelegramChannel {
       text = command === "skills" ? description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "没有可用技能。"
         : description.plugins.map(item => `${item.name}${item.tools.length ? ` — ${item.tools.join(", ")}` : ""}`).join("\n") || "没有已加载插件。";
     } else text = "不支持此命令。使用 /help 查看可用命令。";
-    await new TelegramReply(this.api, message.chatId, message.messageId).update(text);
+    await new TelegramReply(this.api, message.chatId, message.messageId, "plain").update(text, true);
   }
 
   private feedback(message: TelegramMessage, text: string): void {
-    this.track(new TelegramReply(this.api, message.chatId, message.messageId).update(text));
+    this.track(new TelegramReply(this.api, message.chatId, message.messageId, "plain").update(text, true));
   }
 
   private track(promise: Promise<void>): void {

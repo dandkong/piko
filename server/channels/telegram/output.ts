@@ -1,8 +1,14 @@
 import type { ChatRun } from "../../chat/run";
 import { isFormatError, type TelegramTransport } from "./api";
+import remend from "remend";
 
-/** Conservative 4,000 UTF-16 units also fit the plain-text fallback. Preserve code fences across chunks. */
-export function splitReply(text: string, limit = 4000): string[] {
+export const TELEGRAM_RICH_LIMIT = 30_000;
+export const TELEGRAM_PLAIN_LIMIT = 4000;
+export const TELEGRAM_STREAM_INTERVAL_MS = 800;
+export type TelegramRenderMode = "markdown" | "plain";
+
+/** Bound UTF-16 chunks without splitting surrogate pairs; repair fences only for Markdown. */
+export function splitReply(text: string, limit = TELEGRAM_PLAIN_LIMIT, preserveFences = true): string[] {
   if (limit < 256) throw new Error("Reply chunk limit is too small.");
   const result: string[] = [];
   let remaining = text;
@@ -18,7 +24,7 @@ export function splitReply(text: string, limit = 4000): string[] {
       if (unit >= 0xd800 && unit <= 0xdbff) end--;
     }
     const body = remaining.slice(0, end);
-    for (const match of body.matchAll(/^\s*(`{3,}|~{3,})([^\n]*)/gm)) {
+    if (preserveFences) for (const match of body.matchAll(/^\s*(`{3,}|~{3,})([^\n]*)/gm)) {
       if (!fence) fence = match[0].trim().slice(0, 80);
       else if (match[1][0] === fence[0] && match[1].length >= /^(`+|~+)/.exec(fence)![0].length && !match[2].trim()) fence = "";
     }
@@ -32,30 +38,34 @@ export function splitReply(text: string, limit = 4000): string[] {
 export class TelegramReply {
   private readonly messages: { id: string; text: string; rich: boolean }[] = [];
   private richSupported = true;
-  constructor(private readonly api: TelegramTransport, private readonly chatId: string, private readonly replyTo?: string) {}
+  constructor(private readonly api: TelegramTransport, private readonly chatId: string, private readonly replyTo?: string,
+    private readonly render: TelegramRenderMode = "markdown") {}
 
   async update(text: string, final = false): Promise<void> {
-    const chunks = splitReply(text);
+    const rich = this.render === "markdown" && this.richSupported;
+    try { await this.sync(text, final, rich); }
+    catch (error) {
+      if (!rich || !isFormatError(error)) throw error;
+      this.richSupported = false;
+      // Re-split the entire snapshot: a rich chunk can exceed the plain-text limit.
+      await this.sync(text, final, false);
+    }
+  }
+
+  private async sync(text: string, final: boolean, rich: boolean): Promise<void> {
+    const chunks = text.trim() ? splitReply(text, rich ? TELEGRAM_RICH_LIMIT : TELEGRAM_PLAIN_LIMIT, rich) : [];
     for (const [index, chunk] of chunks.entries()) {
       const existing = this.messages[index];
-      // Plain during streaming avoids parsing incomplete Markdown; rich rendering at completion.
-      let rich = final && this.richSupported;
-      if (existing?.text === chunk && existing.rich === rich) continue;
-      const write = async () => {
-        if (existing) await this.api.edit(this.chatId, existing.id, chunk, rich);
-        else {
-          const id = await this.api.send(this.chatId, chunk, rich, index === 0 ? this.replyTo : undefined);
-          this.messages.push({ id, text: chunk, rich });
-        }
-      };
-      try { await write(); }
-      catch (error) {
-        if (!rich || !isFormatError(error)) throw error;
-        this.richSupported = false;
-        rich = false;
-        await write();
+      // Match pi-pilot's Rich Markdown stream repair; never modify stored model text.
+      const rendered = rich && !final ? remend(chunk, { linkMode: "text-only", inlineKatex: false }) : chunk;
+      if (existing?.text === rendered && existing.rich === rich) continue;
+      if (existing) {
+        await this.api.edit(this.chatId, existing.id, rendered, rich);
+        existing.text = rendered; existing.rich = rich;
+      } else {
+        const id = await this.api.send(this.chatId, rendered, rich, index === 0 ? this.replyTo : undefined);
+        this.messages.push({ id, text: rendered, rich });
       }
-      if (existing) { existing.text = chunk; existing.rich = rich; }
     }
     while (this.messages.length > chunks.length) {
       await this.api.remove(this.chatId, this.messages.at(-1)!.id);
@@ -66,7 +76,7 @@ export class TelegramReply {
 
 /** Snapshot coalescing and all network waits happen outside the synchronous Run listener. */
 export async function deliverRun(run: ChatRun, reply: TelegramReply, api: TelegramTransport, chatId: string,
-  signal: AbortSignal, intervalMs = 1000): Promise<void> {
+  signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
   let changed = true;
   let failure: unknown;
   const unsubscribe = run.subscribe(run.snapshot.lastEventId, () => { changed = true; });

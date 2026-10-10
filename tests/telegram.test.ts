@@ -12,10 +12,10 @@ import type { ChatRuntime, ChatSession } from "../server/runtime/types";
 import type { Message, StreamEvent } from "../shared/chat";
 import { TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
 import { TelegramBot } from "../server/channels/telegram/bot";
-import { TelegramReply, deliverRun, splitReply } from "../server/channels/telegram/output";
-import { isFormatError, telegramRequest, type TelegramTransport } from "../server/channels/telegram/api";
+import { TelegramReply, deliverRun, splitReply, TELEGRAM_RICH_LIMIT, TELEGRAM_PLAIN_LIMIT } from "../server/channels/telegram/output";
+import { isFormatError, telegramRequest, TelegramApi, type TelegramTransport } from "../server/channels/telegram/api";
 import { waitUntil, fixture, repository, cleanup } from "./fixtures/durable";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 
 const cleanups: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -221,11 +221,11 @@ describe("Telegram rendering and network errors", () => {
   }, "sendMessage", {});
 
   test("long code/Unicode responses respect limits and replacement removes stale segments", async () => {
-    const text = "```ts\n" + "😀code\n".repeat(1300) + "```\nend";
-    const chunks = splitReply(text);
+    const text = "```ts\n" + "😀code\n".repeat(9000) + "```\nend";
+    const chunks = splitReply(text, TELEGRAM_RICH_LIMIT);
     expect(chunks.length).toBeGreaterThan(1);
     for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(4000);
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_RICH_LIMIT);
       expect(chunk).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
       expect((chunk.match(/```/g) ?? []).length % 2).toBe(0);
     }
@@ -235,6 +235,72 @@ describe("Telegram rendering and network errors", () => {
     expect(api.messages.size).toBe(1); expect(api.deleted.length).toBe(chunks.length - 1);
     expect([...api.messages.values()]).toEqual([{ text: "corrected", rich: true }]);
     await reply.update(""); expect(api.messages.size).toBe(0);
+  });
+
+  test("rich replies stream as one large message while explicit plain output preserves literal text", async () => {
+    const body = "## Heading\n\n| Name | Value |\n| --- | --- |\n| Piko | Rich |\n\n" + "正文😀\n".repeat(1300);
+    const api = new Transport(); const reply = new TelegramReply(api, "42", "1");
+    await reply.update(body);
+    expect(api.writes).toHaveLength(1);
+    expect(api.writes[0]).toMatchObject({ rich: true, replyTo: "1" });
+    expect(api.messages.get("1")?.text).toContain("| Piko | Rich |");
+    await reply.update(body, true);
+    expect(api.messages.get("1")).toEqual({ text: body, rich: true });
+    const literal = "```unfinished\n**do not format**\n" + "output😀\n".repeat(1000);
+    const plain = new Transport();
+    await new TelegramReply(plain, "42", "1", "plain").update(literal);
+    expect(plain.writes.length).toBeGreaterThan(1);
+    expect(plain.writes.every(item => !item.rich && item.text.length <= TELEGRAM_PLAIN_LIMIT)).toBe(true);
+    expect(plain.writes.map(item => item.text).join("")).toBe(literal);
+    expect(plain.writes[0].replyTo).toBe("1");
+    expect(plain.writes.slice(1).every(item => item.replyTo === undefined)).toBe(true);
+  });
+
+  test("SDK sends and edits Rich Markdown from the first partial reply and finalizes raw output", async () => {
+    const calls: { method: string; body: Record<string, any> }[] = [];
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
+      calls.push({ method: new URL(request.url).pathname.split("/").at(-1)!, body: await request.json() });
+      return Response.json({ ok: true, result: { message_id: 3 } });
+    } });
+    cleanups.push(() => server.stop(true));
+    const api = new TelegramApi(new Bot("77:test", { client: { apiRoot: `http://127.0.0.1:${server.port}` } }));
+    cleanups.push(() => api.controller.abort());
+    const reply = new TelegramReply(api, "42", "1");
+    await reply.update("## Heading\n\n**partial");
+    expect(calls[0]).toMatchObject({ method: "sendRichMessage", body: {
+      chat_id: "42", rich_message: { markdown: "## Heading\n\n**partial**" }, reply_parameters: { message_id: 1 },
+    } });
+    const partial = "**partial** [reference](https://exa";
+    await reply.update(partial);
+    expect(calls[1]).toMatchObject({ method: "editMessageText", body: { message_id: 3, rich_message: { markdown: "**partial** reference" } } });
+    expect(calls[1].body).not.toHaveProperty("text");
+    await reply.update(partial, true);
+    expect(calls[2]).toMatchObject({ method: "editMessageText", body: { rich_message: { markdown: partial } } });
+    const count = calls.length;
+    await reply.update(partial, true); expect(calls).toHaveLength(count);
+    await new TelegramReply(api, "42", undefined, "plain").update("**literal** $5", true);
+    expect(calls.at(-1)).toMatchObject({ method: "sendMessage", body: { text: "**literal** $5" } });
+    expect(calls.every(call => !call.method.includes("Draft"))).toBe(true);
+  });
+
+  test("a rejected rich segment re-splits all output safely and stays plain for later updates", async () => {
+    const api = new Transport(); const send = api.send.bind(api); let richCalls = 0;
+    api.send = async (...args) => {
+      if (args[2] && ++richCalls === 2) throw error(400, "can't parse entities");
+      return send(...args);
+    };
+    const text = "line **raw** 😀\n".repeat(2500);
+    const reply = new TelegramReply(api, "42", "1");
+    await reply.update(text);
+    const delivered = [...api.messages.values()];
+    expect(richCalls).toBe(2);
+    expect(delivered.length).toBeGreaterThan(2);
+    expect(delivered.every(item => !item.rich && item.text.length <= TELEGRAM_PLAIN_LIMIT)).toBe(true);
+    expect(delivered.map(item => item.text).join("")).toBe(text);
+    await reply.update("**shorter**", true);
+    expect([...api.messages.values()]).toEqual([{ text: "**shorter**", rich: false }]);
+    expect(api.deleted.length).toBe(delivered.length - 1);
+    expect(richCalls).toBe(2);
   });
 
   test("only explicit formatting failures downgrade; 429 respects cooldown and auth never retries", async () => {
@@ -265,6 +331,7 @@ describe("Telegram rendering and network errors", () => {
     s.session.emit({ type: "replace", text: "replacement" });
     await waitUntil(() => [...s.api.messages.values()][0]?.text === "replacement");
     s.api.failure = error(403, "Forbidden");
+    s.session.emit({ type: "replace", text: "final correction" });
     // Finish normally by resolving the held tool/model work without invoking Run.cancel.
     await s.session.abort();
     expect(await delivered).toBeInstanceOf(GrammyError);
@@ -288,7 +355,7 @@ test("poller checks webhook and advances confirmation only after successful dura
         chat: { id: 42, type: "private", first_name: "User" }, from: { id: 42, is_bot: false, first_name: "User" }, text: "from TG" } }];
       else { await held.promise; result = []; }
     }
-    if (method === "sendMessage") result = { message_id: 3 };
+    if (method === "sendMessage" || method === "sendRichMessage") result = { message_id: 3 };
     return Response.json({ ok: true, result });
   } });
   cleanups.push(() => { held.resolve(); server.stop(true); });
@@ -323,17 +390,19 @@ test("Telegram and RN share one native durable conversation and model context", 
   const api = new Transport();
   const channel = new TelegramChannel({ botId: "77", username: "piko_bot", userId: "42" }, store, f.runtime, api, 5);
   cleanup(async () => { channel.stopAccepting(); await store.close(); await channel.drain(100); });
-  f.faux.setResponses([fauxAssistantMessage("TG reply"), fauxAssistantMessage("RN reply")]);
+  f.faux.setResponses([fauxAssistantMessage(fauxToolCall("read", { path: "AGENTS.md" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage("**TG reply**"), fauxAssistantMessage("RN reply")]);
   await channel.handle(message);
   await waitUntil(async () => (await store.run(store.main.sessionId))?.snapshot.status === "succeeded");
-  await waitUntil(() => [...api.messages.values()].some(item => item.text === "TG reply" && item.rich));
+  await waitUntil(() => [...api.messages.values()].some(item => item.text === "**TG reply**" && item.rich));
   const writes = api.writes.length;
   const rn = await store.startRun(store.main.sessionId, crypto.randomUUID(), "continue from RN");
   await waitUntil(() => !rn.active);
   const history = await store.history(store.main.sessionId);
-  expect(history.map(item => item.content)).toEqual(["from TG", "TG reply", "continue from RN", "RN reply"]);
-  expect(f.faux.state.callCount).toBe(2);
+  expect(history.map(item => item.content)).toEqual(["from TG", "**TG reply**", "continue from RN", "RN reply"]);
+  expect(f.faux.state.callCount).toBe(3);
   await channel.drain(100);
   expect(api.writes.length).toBe(writes);
   expect([...api.messages.values()].map(item => item.text).join("\n")).toContain("TG reply");
+  expect(api.writes.every(item => !item.text.includes("助手指导") && !item.text.includes("AGENTS.md"))).toBe(true);
 });
