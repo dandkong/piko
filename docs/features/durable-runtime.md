@@ -4,6 +4,14 @@
 
 1.1.0 的原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
 
+## 实时事件与历史
+
+实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`，替代直接解析 `subscribeCommits` / `pi.live`。Pi 适配器把 `message_start/update/end` 转成 Piko 的 delta/replace 和助手消息结束偏移；SDK 类型与事件只留在 `server/runtime/`，RN HTTP/SSE 和 Telegram 投递接口保持现有契约。
+
+初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整 JSONL entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。Run 完成前等待终态事件消费，并用完整原生历史作最终核对。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
+
+会话关闭时停止事件订阅；订阅异常会报告并阻止该会话继续接纳新生成，避免静默丢失实时输出。工具、思考、压缩和 usage 事件已有原生来源，但本次只消费消息与提交状态，不新增这些内容的产品展示，不另建永久事件存储。`watchEvents` 的实验性协议通过运行时适配器隔离，后续升级依赖时需验证事件映射和 snapshot 行为。
+
 ## 首次配置
 
 启动前指定新的测试数据目录（已存在旧版状态时尤其如此）：

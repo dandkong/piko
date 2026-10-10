@@ -28,7 +28,7 @@ Expo / React Native ── HTTP + SSE ──┐
 Telegram 私聊 ── Bot API 适配器 ────┘
 ```
 
-RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务、领域存储和 Pi 适配器拆分。目前使用 Piko 的轻量事件格式，后续功能见 [ROADMAP.md](ROADMAP.md)。
+RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务、领域存储和 Pi 适配器拆分。Pi 适配器通过 durable `watchEvents` 监听原生消息并转换为 Piko 的轻量事件格式，历史仍读取完整原生 entries，后续功能见 [ROADMAP.md](ROADMAP.md)。
 
 目录职责、依赖方向与后续实施顺序见 [架构说明](docs/ARCHITECTURE.md)。
 

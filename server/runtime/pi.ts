@@ -1,14 +1,14 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { createRegistry, defineDoc, Harness, ROOT_CONVERSATION_ID, type Conversation, type EntryRecord, type LiveState } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
-import type { StreamEvent } from "../../shared/chat";
 import type { RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
 import type { ChatRuntime, ChatSession, SessionContext, SessionEvent } from "./types";
 import { exportPiReference, readPiContext, sessionDirectory } from "./pi-context";
-import { messageText, projectPiHistory, readPiEntries } from "./pi-history";
+import { projectPiHistory, readPiEntries } from "./pi-history";
+import { PiReplyEvents } from "./pi-events";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, type WorkspaceModelConfig } from "./model-config";
@@ -32,8 +32,11 @@ export class DurableChatSession implements ChatSession {
   private config!: WorkspaceModelConfig;
   private extensions!: WorkspaceRegistry;
   private entries: EntryRecord[] = [];
-  private unsubscribe?: () => void;
-  private releaseView?: () => void;
+  private eventStream!: AgentEventStream;
+  private observed?: { runId: string; resolve: () => void; reject: (error: Error) => void };
+  private observationError?: Error;
+  private delivery?: Promise<void>;
+  private reply = new PiReplyEvents(event => this.emit(event));
   private listeners = new Set<(event: SessionEvent) => void>();
   private busy = false;
   private changing = false;
@@ -41,10 +44,6 @@ export class DurableChatSession implements ChatSession {
   private abortRequested = false;
   private disposed = false;
   private closing?: Promise<void>;
-  private emitted = "";
-  private completedText = "";
-  private partial = "";
-  private attempt?: string;
 
   constructor(readonly paths: WorkspacePaths, readonly input: SessionContext, private readonly injected?: Models,
     private readonly onDispose?: () => void) {}
@@ -98,39 +97,41 @@ export class DurableChatSession implements ChatSession {
         }
       }, ctx);
       this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
+      const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
-      const view = await conversation.viewState(ctx);
-      this.releaseView = () => view.dispose();
-      this.unsubscribe = harness.subscribeCommits(publication => {
-        let live: LiveState | undefined;
-        for (const change of publication.changes) {
-          if (change.type === "entry" && change.value.conversationId === conversation.id) {
-            this.entries.push(change.value);
-            const message = change.value.kind === "pi.assistant" && change.value.model?.[0];
-            if (this.busy && message && message.role === "assistant") {
-              this.partial = messageText(message.content); this.publishText();
-              this.completedText += this.partial; this.partial = ""; this.attempt = undefined;
-              this.emit({ type: "message_end", offset: this.completedText.length });
-            }
-          } else if (change.type === "document" && change.conversationId === conversation.id
-            && change.record.kind === "pi.live" && change.value !== null) live = change.value as LiveState;
-        }
-        if (this.busy && live?.generation?.message && live.run) {
-          const attempt = `${live.run.taskId}:${live.generation.attempt}`;
-          if (attempt !== this.attempt) { this.partial = ""; this.attempt = attempt; }
-          this.partial = messageText(live.generation.message.content); this.publishText();
-        }
+      const through = stream.snapshot.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
+      this.reply.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot);
+      stream.start(events => this.delivery = this.observe(events));
+      void stream.closed.then(end => {
+        this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
+        this.observed?.reject(this.observationError);
+        if (!this.disposed) console.error("Piko durable event stream closed:", end);
       });
     } catch (error) { await harness.close(ctx); throw error; }
   }
 
-  private publishText() {
-    const text = this.completedText + this.partial;
-    if (text === this.emitted) return;
-    const event: StreamEvent = text.startsWith(this.emitted)
-      ? { type: "delta", text: text.slice(this.emitted.length) } : { type: "replace", text };
-    this.emitted = text;
-    this.emit(event);
+  private async observe(events: readonly AgentEvent[]) {
+    for (const event of events) {
+      if (event.type === "snapshot") {
+        // The read can see later commits. Project only through this snapshot's revision; queued events follow it.
+        this.entries = await readPiEntries(this.harness);
+        // Compaction/reset can put a newer head marker before retained older entries.
+        const through = event.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
+        this.reply.restore(this.entries.filter(entry => entry.id <= through), event);
+        const observed = this.observed;
+        if (!event.run && observed) {
+          const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, observed.runId), ctx);
+          if ((record?.status === "done" && record.type === "input" && record.answer <= through)
+            || (record?.status === "unanswered" && (record.entry === undefined || record.entry <= through))) observed.resolve();
+        }
+      } else {
+        if ((event.type === "entry_appended" || event.type === "message_end")
+          && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
+        this.reply.apply(event);
+        if (event.type === "submission" && event.record.requestId === this.observed?.runId
+          && (event.record.status === "done" || event.record.status === "unanswered")) this.observed?.resolve();
+      }
+    }
   }
 
   private emit(event: SessionEvent) {
@@ -143,34 +144,47 @@ export class DurableChatSession implements ChatSession {
   async prompt(text: string, run?: { id: string; createdAt: number }): Promise<void> {
     if (!run) throw new Error("A Piko Run identity is required.");
     if (this.disposed || this.busy || this.changing) throw new Error("This conversation is already responding, reconfiguring or closed.");
-    this.busy = true; this.completedText = ""; this.partial = ""; this.emitted = ""; this.attempt = undefined;
+    if (this.observationError) throw this.observationError;
+    this.busy = true; this.reply.begin(run.id);
+    const observed = Promise.withResolvers<void>();
+    // A stream can close while the provider is still settling; attach a handler immediately.
+    void observed.promise.catch(() => {});
+    this.observed = { runId: run.id, resolve: () => observed.resolve(), reject: observed.reject };
     this.abortRequested = false;
     try {
       const agent = await this.conversation.agent(ctx);
       if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
       await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
       if (this.abortRequested) return;
-      await this.conversation.commit(async tx => {
-        if (!await tx.submissionByRequest(this.conversation.id, run.id)) await tx.appendEntry(this.conversation.id,
+      const existing = await this.conversation.commit(async tx => {
+        const record = await tx.submissionByRequest(this.conversation.id, run.id);
+        if (!record) await tx.appendEntry(this.conversation.id,
           { kind: "piko.run", data: { runId: run.id, createdAt: run.createdAt } });
+        return record;
       }, ctx);
       if (this.abortRequested) return;
       const submission = await this.conversation.submit({ type: "input", content: text, requestId: run.id }, ctx);
       const settled = await submission.wait(ctx);
       await this.conversation.waitForIdle(ctx);
+      // Submission.wait tracks execution, not delivery. Preserve all message boundaries before Run publishes done.
+      if (!existing || (existing.status !== "done" && existing.status !== "unanswered")) await observed.promise;
       this.entries = await readPiEntries(this.harness);
       // Final history is authoritative, including multi-tool turns and recovered/aborted output.
-      const saved = projectPiHistory(this.entries).runs.get(run.id)?.text ?? "";
-      this.completedText = saved; this.partial = ""; this.publishText();
+      this.reply.restore(this.entries);
       if (settled.status === "unanswered" && settled.reason !== "aborted") throw new Error(
         typeof settled.detail === "string" ? settled.detail : `Pi could not complete this reply: ${settled.reason}`);
-    } finally { this.busy = false; }
+    } finally { this.reply.finish(); this.observed = undefined; this.busy = false; }
   }
 
   abort() { this.abortRequested = true; return this.conversation.abort(ctx, { background: true }); }
   exportState() { return exportPiReference(runtimePaths(this.paths.home).sessions, this.input.threadId); }
   async history() { this.entries = await readPiEntries(this.harness); return projectPiHistory(this.entries); }
-  private async closeNative() { this.unsubscribe?.(); this.releaseView?.(); await this.harness.close(ctx); }
+  private async closeNative() {
+    await this.eventStream.stop();
+    // Listener errors are already reported by stream.closed; still release the store and plugin resources.
+    await this.delivery?.catch(() => {});
+    await this.harness.close(ctx);
+  }
   dispose(): Promise<void> {
     if (this.closing) return this.closing;
     this.disposed = true;

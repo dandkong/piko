@@ -109,6 +109,8 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 queued → running → succeeded / failed；停止经过 cancelling → cancelled。终态先 fsync 原生 main 事务日志，再写 SQL 元数据，再发布终态；原生 storage 启用 fsync，doc 日志由其提交协议管理。存储失败阻止成功发布，并停止后续提交。流式文本最多 50 毫秒合并，不落盘；retry 导致文本修正时发送 replace，客户端整体替换。
 
+Pi 适配器通过 durable `watchEvents` 消费提交后的原生消息事件，转换为 Piko 的 delta/replace 和助手消息结束偏移；不再直接解析 commit publication / `pi.live`。初始与积压替换 snapshot 用完整原生 entries 校正当前回复及边界，不以有效上下文覆盖 UI 历史。执行等待和事件消费分开：Run 发布终态前等待对应 submission 终态事件消费，并核对完整原生历史。SDK 事件不直接进入 shared 或通道层，工具与压缩展示仍待接入。
+
 SSE 15 秒心跳，客户端 45 秒无数据恢复并有限退避。观察者断线不取消任务，回前台加载快照。正在运行的快照与重放在内存中，重启不承诺恢复未保存片段。
 
 ## 恢复、退出与备份
