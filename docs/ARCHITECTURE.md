@@ -32,7 +32,7 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
 
 默认根目录为后端机器上的 `~/.piko`，独立于源码。进程环境 `PIKO_HOME` 定位根目录；应用配置 `workspace.path` 或 `PIKO_WORKSPACE` 可单独指定工作区，均要求绝对路径。
 
-`server/config.ts` 是应用配置入口，统一加载和校验 HTTP、工作区及 Telegram，再注入使用处；优先级为默认值 < `config/piko.json` < `config/.env` < 进程环境。开发脚本使用同一入口。模型文件独立，复用通用 JSON/env 读取函数；不把 Pi SDK 配置类型移出 runtime。应用配置修改后重启，模型 reload 不重载应用配置。细节见 [应用配置](features/application-config.md)。
+`server/config.ts` 是应用配置入口，env 只映射和转换字段，按默认值 < `config/piko.json` < `config/.env` < 进程环境合并后，统一校验 HTTP、工作区及 Telegram，再注入使用处。开发脚本使用同一入口。模型文件独立，复用通用 JSON/env 读取函数；不把 Pi SDK 配置类型移出 runtime。应用配置修改后重启，模型 reload 不重载应用配置。细节见 [应用配置](features/application-config.md)。
 
 ```text
 ~/.piko/
@@ -52,17 +52,15 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
 │       ├── main.jsonl              # 会话、entries、任务与提交事务
 │       └── doc-*.jsonl             # 运行时/插件持久化文档
 └── workspace/
-    ├── AGENTS.md                   # 工作指导
-    ├── SOUL.md                     # 人格与语气
-    ├── USER.md                     # 用户偏好
-    ├── MEMORY.md                   # 精简长期记忆
+    ├── AGENTS.md                   # 助手身份、表达和做事约定
+    ├── MEMORY.md                   # 用户资料、环境事实和长期结论
     ├── .agents/skills/<name>/SKILL.md
     ├── memory/
     ├── projects/
     └── artifacts/
 ```
 
-初始化只补缺失文件，保留用户内容，拒绝工作区类型冲突与越界链接。state 必须在工作区外。当前 SQLite schema 为 4，新增 TG 输入/停止命令身份和决定元数据；旧 schema 明确拒绝，不迁移或删除旧数据。配置不继承 `~/.pi/agent`。
+初始化只补缺失文件，保留用户内容，拒绝工作区类型冲突与越界链接。state 必须在工作区外。当前 SQLite schema 为 1，包含 TG 输入/停止命令身份和决定元数据；旧 schema 明确拒绝，不迁移或删除旧数据。配置不继承 `~/.pi/agent`。
 
 ## 模型、资源与插件
 
@@ -71,7 +69,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 配置重载先解析模型、验证当前选择、编译并注册候选插件，再关闭和重新打开原生 Harness；失败保留旧配置，重新打开失败则回退旧 registry。重载和选择期间占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
 - 技能优先级：工作区 `.agents/skills` > `PIKO_HOME/skills` > 应用 `server/resources/skills`。同名覆盖有诊断，非法 YAML 跳过。
-- 核心指导保留在 `server/resources/prompts/core.md`；工作区 AGENTS.md 上限 8,000 字节，SOUL/USER/MEMORY 各 4,000 字节。注明来源，超量截断。技能只注入索引，正文按需 read。
+- 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。注入时标注来源和角色，职责与冲突处理见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core/AGENTS 各上限 8,000 字节，MEMORY 上限 4,000 字节，超量截断。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
 - 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
 - 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。

@@ -46,7 +46,7 @@ test("literal submissions, multiple turns and passive results survive restart wi
   const f = await fixture(); const session = await f.createSession() as DurableChatSession;
   const events: StreamEvent[] = []; session.subscribe(event => events.push(event));
   f.faux.setResponses([
-    fauxAssistantMessage([{ type: "text", text: "Checking. " }, fauxToolCall("read", { path: "USER.md" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([{ type: "text", text: "Checking. " }, fauxToolCall("read", { path: "MEMORY.md" })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Done."),
     context => { expect(JSON.stringify(context.messages)).toContain("scheduled summary"); return fauxAssistantMessage("Explanation."); },
   ]);

@@ -81,7 +81,7 @@ test("home is a bootstrap parameter and both home and workspace require absolute
   f.file({ workspace: { path: "relative" } });
   expect(() => f.load()).toThrow("workspace.path");
   f.file({});
-  expect(() => f.load({ PIKO_WORKSPACE: "relative" })).toThrow("PIKO_WORKSPACE");
+  expect(() => f.load({ PIKO_WORKSPACE: "relative" })).toThrow("workspace.path");
   expect(() => initializeWorkspace(f.load({ PIKO_WORKSPACE: f.home }).paths)).toThrow("outside");
 });
 
@@ -100,7 +100,8 @@ test("HTTP parsing rejects invalid ports, hosts and CORS origins with safe field
 
 test("malformed JSON, unknown core fields and invalid field types are rejected without exposing values", () => {
   const f = fixture();
-  for (const value of [{ http: { port: "private-value" } }, { workspace: { path: 1 } }, { http: { post: 8787 } }, { unknown: "private-value" }]) {
+  for (const value of [{ http: { port: "private-value" } }, { workspace: { path: 1 } }, { http: { post: 8787 } }, { unknown: "private-value" },
+    { http: null }, { workspace: [] }, { channels: "private-value" }, { http: { port: {} } }, { http: { corsOrigins: {} } }]) {
     f.file(value);
     expect(() => f.load()).toThrow("Invalid configuration");
     expect(() => f.load()).not.toThrow("private-value");
@@ -108,6 +109,70 @@ test("malformed JSON, unknown core fields and invalid field types are rejected w
   writeFileSync(join(f.config, "piko.json"), '{"secret":"private-json-value"');
   expect(() => f.load()).toThrow("Invalid JSON");
   expect(() => f.load()).not.toThrow("private-json-value");
+});
+
+test("file and environment values share validation errors for HTTP, paths and Telegram", () => {
+  const f = fixture();
+  const errorMessage = (run: () => unknown) => {
+    try { run(); } catch (error) { return (error as Error).message; }
+    throw new Error("Expected configuration rejection");
+  };
+  for (const [file, env] of [
+    [{ http: { port: 0 } }, { PIKO_PORT: "0" }],
+    [{ http: { port: 65536 } }, { PIKO_PORT: "65536" }],
+    [{ http: { port: 12.5 } }, { PIKO_PORT: "12.5" }],
+    [{ http: { host: "bad host" } }, { PIKO_HOST: "bad host" }],
+    [{ http: { corsOrigins: ["https://example.com/path"] } }, { PIKO_CORS_ORIGINS: "https://example.com/path" }],
+    [{ workspace: { path: "relative" } }, { PIKO_WORKSPACE: "relative" }],
+  ] as [unknown, Record<string, string>][]) {
+    f.file(file);
+    const fileError = errorMessage(() => f.load());
+    f.file({});
+    expect(errorMessage(() => f.load(env))).toBe(fileError);
+  }
+  for (const [telegram, env] of [
+    [{ enabled: "yes" }, { PIKO_TELEGRAM_ENABLED: "yes" }],
+    [{ enabled: true, userId: "@name", botToken: "token" }, { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "@name", PIKO_TELEGRAM_BOT_TOKEN: "token" }],
+    [{ enabled: true, userId: "42", botToken: " " }, { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: " " }],
+  ] as [unknown, Record<string, string>][]) {
+    f.file({ channels: { telegram } });
+    const fileWarnings = f.load().warnings;
+    expect(fileWarnings).toHaveLength(1);
+    f.file({});
+    expect(f.load(env).warnings).toEqual(fileWarnings);
+  }
+});
+
+test("only final merged values are validated and a higher-priority override can repair a field", () => {
+  const f = fixture();
+  f.file({ http: { port: "invalid-file-port", host: "bad host", corsOrigins: ["bad origin"] }, workspace: { path: 1 },
+    channels: { telegram: { enabled: "invalid", userId: 42, botToken: 123 } } });
+  f.dotenv("PIKO_PORT=invalid-local-port\nPIKO_TELEGRAM_ENABLED=invalid-local-flag\n");
+  const repaired = f.load({ PIKO_PORT: "9191", PIKO_HOST: "127.0.0.1", PIKO_CORS_ORIGINS: "", PIKO_WORKSPACE: join(f.home, "custom-workspace"),
+    PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: "token" });
+  expect(repaired.http).toMatchObject({ port: 9191, hostname: "127.0.0.1" });
+  expect([...repaired.http.allowedOrigins]).toEqual([]);
+  expect(repaired.channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
+  expect(repaired.warnings).toEqual([]);
+  f.file({ http: { port: "invalid-file-port" } });
+  f.dotenv("PIKO_PORT=9292\n");
+  expect(f.load().http.port).toBe(9292);
+  f.file({ http: { port: 8787, typo: "private-value" } });
+  expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("http.typo");
+});
+
+test("undefined overrides retain defaults and malformed sections while JSON roots must be objects", () => {
+  const f = fixture();
+  f.file({ http: { port: 9191 }, channels: { telegram: { enabled: true, userId: "42", botToken: "token" } } });
+  const config = f.load({ PIKO_PORT: undefined, PIKO_TELEGRAM_ENABLED: undefined });
+  expect(config.http.port).toBe(9191);
+  expect(config.channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
+  f.file({ channels: null });
+  expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("channels");
+  for (const value of [null, [], "private-value"]) {
+    f.file(value);
+    expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("JSON object");
+  }
 });
 
 test("Telegram requires explicit enablement and disabling skips credential resolution", () => {
@@ -145,6 +210,8 @@ test("invalid enabled Telegram settings disable only that channel and redact cre
   f.file({ channels: { telegram: { enabled: true, userId: "42", botToken: "token", typo: "private-value" } } });
   expect(f.load().warnings).toHaveLength(1);
   expect(f.load().warnings[0]).not.toContain("private-value");
+  f.file({ channels: { telegram: { enabled: {} } } });
+  expect(f.load().warnings[0]).toContain("channels.telegram.enabled");
 });
 
 test("shared dotenv parsing supports quoted values and ambient precedence without global mutation", () => {

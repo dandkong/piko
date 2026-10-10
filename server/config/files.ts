@@ -12,20 +12,24 @@ export function optionalText(path: string): string | undefined {
   }
 }
 
+/** Parse without validating so application sources can be merged first. */
+export function readJsonValue(path: string, fallback: unknown): unknown {
+  const text = optionalText(path);
+  if (text === undefined) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Parser errors can contain credential values; report only the file.
+    throw new Error(`Invalid JSON in ${path}`);
+  }
+}
+
 export function readJson<T extends TSchema>(
   path: string,
   schema: T,
   fallback: Static<T>,
 ): Static<T> {
-  const text = optionalText(path);
-  if (text === undefined) return fallback;
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    // Parser errors can contain credential values; report only the file.
-    throw new Error(`Invalid JSON in ${path}`);
-  }
+  const value = readJsonValue(path, fallback);
   const validator = Compile(schema);
   if (!validator.Check(value)) {
     const error = [...validator.Errors(value)][0];

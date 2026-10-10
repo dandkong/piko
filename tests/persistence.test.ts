@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,12 +17,16 @@ import { DurableChatSession } from "../server/runtime/pi";
 
 test("initialization preserves guidance and JSON configuration, bounds reads and rejects conflicting paths", async () => {
   const f = await fixture();
-  await writeFile(join(f.paths.workspace, "USER.md"), "mine".repeat(100));
+  for (const name of ["AGENTS.md", "MEMORY.md"]) await writeFile(join(f.paths.workspace, name), "mine".repeat(100));
   await writeFile(join(f.paths.home, "config/auth.json"), '{"test":{"type":"api_key","key":"private"}}');
   initializeWorkspace(f.paths);
-  expect(await readFile(join(f.paths.workspace, "USER.md"), "utf8")).toBe("mine".repeat(100));
+  for (const name of ["AGENTS.md", "MEMORY.md"]) {
+    expect(await readFile(join(f.paths.workspace, name), "utf8")).toBe("mine".repeat(100));
+    expect(readGuidance(f.paths.workspace, name, 4)).toStartWith("mine\n[Guidance truncated");
+  }
+  expect(existsSync(join(f.paths.workspace, "SOUL.md"))).toBe(false);
+  expect(existsSync(join(f.paths.workspace, "USER.md"))).toBe(false);
   expect(await readFile(join(f.paths.home, "config/auth.json"), "utf8")).toContain("private");
-  expect(readGuidance(f.paths.workspace, "USER.md", 4)).toStartWith("mine\n[Guidance truncated");
   expect(existsSync(join(f.paths.workspace, ".agents/skills"))).toBe(true);
   expect(() => loadPikoConfig({ PIKO_HOME: "relative" })).toThrow("absolute");
   expect(() => initializeWorkspace({ ...f.paths, state: join(f.paths.workspace, "state") })).toThrow("outside");
@@ -132,8 +137,15 @@ test("stream deltas remain transient and a failed terminal flush cannot publish 
   expect(writes.map(snapshot => snapshot.status)).toEqual(["running", "succeeded"]);
 });
 
-test("old development schemas fail closed without deleting user data", async () => {
-  const f = await fixture(); const repo = repository(f.paths); repo.db.exec("PRAGMA user_version=2"); repo.close();
-  expect(() => repository(f.paths)).toThrow("Incompatible development database");
-  expect(existsSync(f.paths.database)).toBe(true);
+test("the initial schema includes Telegram receipts and incompatible development schemas preserve user data", async () => {
+  const f = await fixture(); const repo = repository(f.paths);
+  expect(repo.db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(1);
+  expect(repo.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='telegram_inputs'").get()).toBeTruthy();
+  repo.close();
+  for (const version of [2, 3, 4]) {
+    const db = new Database(f.paths.database);
+    db.exec(`PRAGMA user_version=${version}`); db.close();
+    expect(() => repository(f.paths)).toThrow("Incompatible development database");
+    expect(existsSync(f.paths.database)).toBe(true);
+  }
 });

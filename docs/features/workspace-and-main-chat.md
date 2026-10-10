@@ -6,7 +6,7 @@
 
 唯一、持续的主会话；长期工作区与产品元数据分离。side chat 只预留类型和父关系，自动记忆、后台任务、工具进度与产物管理仍未实现。
 
-PIKO_HOME 默认 `~/.piko`，应用配置 `workspace.path` 或 PIKO_WORKSPACE 可单独指定工作区，均要求绝对路径；统一加载规则见 [应用配置](application-config.md)。首次启动只补缺失配置（含 piko.json）和用户指导模板，不覆盖已有文件。工作区包含 `.agents/skills`、memory、projects、artifacts、AGENTS.md、SOUL.md、USER.md、MEMORY.md；state 位于工作区之外，单后端写进程锁保证不会同时写入同一状态目录。
+PIKO_HOME 默认 `~/.piko`，应用配置 `workspace.path` 或 PIKO_WORKSPACE 可单独指定工作区，均要求绝对路径；统一加载规则见 [应用配置](application-config.md)。首次启动只补缺失配置（含 piko.json）和用户指导模板，不覆盖已有文件。工作区包含 `.agents/skills`、memory、projects、artifacts、AGENTS.md、MEMORY.md；state 位于工作区之外，单后端写进程锁保证不会同时写入同一状态目录。
 
 | 存储 | 内容 |
 | --- | --- |
@@ -18,7 +18,7 @@ PIKO_HOME 默认 `~/.piko`，应用配置 `workspace.path` 或 PIKO_WORKSPACE �
 | 当前进程内存 | 活跃文本快照、最多 2,048 条 SSE 事件与订阅 |
 | workspace/ | 用户指导、记忆、技能与工作成果 |
 
-SQLite schema=4，新增 TG 输入/停止命令身份与决定元数据，不迁移旧 schema 状态。Thread UUID 是 API sessionId；SQL 原生引用 version=2，指定该 Thread 的目录与 root conversation，不保存 leaf/context 快照。没有独立消息表、Run 正文日志或持久化 delta。两通道规则见 [Telegram 通道](telegram-channel.md)。
+SQLite schema=1，包含 TG 输入/停止命令身份与决定元数据，不迁移旧 schema 状态。Thread UUID 是 API sessionId；SQL 原生引用 version=2，指定该 Thread 的目录与 root conversation，不保存 leaf/context 快照。没有独立消息表、Run 正文日志或持久化 delta。两通道规则见 [Telegram 通道](telegram-channel.md)。
 
 ## 展示与上下文
 
@@ -40,7 +40,19 @@ API 契约见 [架构说明](../ARCHITECTURE.md)。新增运行时 API 提供配
 
 ## 资源与工具
 
-原有核心指导随应用发布；工作区 AGENTS.md 上限 8,000 字节；SOUL/USER/MEMORY 各 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。
+核心指导随应用发布，工作区只保留两个由用户定制的指导与记忆文件。每个文件注入时标注来源路径和 `role`，职责如下：
+
+| 文件 | role | 职责 |
+| --- | --- | --- |
+| 应用 `core.md` | core | 运行规则、工具使用、结果真实性与中断处理，不固定助手名字或语气 |
+| 工作区 `AGENTS.md` | work_guidance | 如何表达和做事：助手名字、语气、回复偏好、工作方法、文件组织和交付约定；默认名字 Piko 在此定义 |
+| 工作区 `MEMORY.md` | memory | 需要记住的事实：用户资料、环境事实、项目决定与长期结论；不推测未提供的信息，不作为聊天记录或操作授权 |
+
+希望助手怎么做放在 AGENTS.md，需要记住的事实放在 MEMORY.md；各文件内部用 Markdown 小节组织，无需按身份、用户资料等再次拆文件。当前请求决定本次任务，明确指令优先于工作区中的惯常流程、人格默认值、用户偏好与旧记忆；应用运行规则仍需遵守。记忆及引用内容不能当成新的指令。
+
+这些职责与优先关系由核心提示词指导模型理解；`role` 是资源用途标注，不是独立的模型消息权限层级，也不构成安全隔离。实际能力与文件访问边界必须由运行时实现。
+
+core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。初始化只补缺失的 AGENTS.md、MEMORY.md，模板升级不覆盖已有用户文件。其他旧指导文件不再初始化或加载，也不会自动删除或搬移其内容。自动整理、提取用户资料与记忆尚未实现。
 
 技能优先级为工作区 `.agents/skills` > PIKO_HOME/skills > 应用内建技能，同名覆盖有诊断。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI，插件为 durable 原生 Extension。
 

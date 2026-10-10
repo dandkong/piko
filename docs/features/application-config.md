@@ -15,7 +15,7 @@ PIKO_HOME/config/
   auth.json       # 模型凭据
 ```
 
-`server/config.ts` 的 `loadPikoConfig` 是应用配置入口，返回类型明确的 `PikoConfig`。配置来源判断、env 名称映射、转换和校验都在这里；调用处只接收解析好的配置，不自行读取 `PIKO_*`。通用 JSON、`.env` 和 `env:NAME` 引用处理在 `server/config/files.ts`，模型加载器复用这些函数，不依赖应用配置内容。
+`server/config.ts` 的 `loadPikoConfig` 是应用配置入口，返回类型明确的 `PikoConfig`。先读取原始 JSON，再将 env 映射、转换成配置字段，与默认值按优先级合并，最后统一校验和解析凭据引用。env 映射不另设端口范围、路径或身份校验规则；文件与 env 的最终值共用同一套规则和字段级错误。调用处只接收解析好的配置，不自行读取 `PIKO_*`。通用 JSON、`.env` 和 `env:NAME` 引用处理在 `server/config/files.ts`，模型加载器复用这些函数，不依赖应用配置内容。
 
 读取配置不写文件、不修改 `process.env`。首次初始化只创建缺失的 `piko.json`，默认监听 `127.0.0.1:8787`、Telegram 关闭；已有配置和 `.env` 不覆盖，不把环境变量、密钥或本机路径写入默认配置。内部会话上限、空闲时间等实现参数仍留在代码中。
 
@@ -34,7 +34,7 @@ PIKO_HOME/config/
     "telegram": {
       "enabled": true,
       "userId": "123456789",
-      "botToken": "env:PIKO_TELEGRAM_BOT_TOKEN"
+      "botToken": "填写 BotFather 提供的 token"
     }
   }
 }
@@ -42,17 +42,19 @@ PIKO_HOME/config/
 
 可选的 `workspace.path` 指定工作区绝对路径，省略时为 `PIKO_HOME/workspace`。state 固定在 `PIKO_HOME/state`，不能落进助手工作区。
 
-在同一目录的 `.env` 保存 Bot token；普通应用参数和模型引用变量也可放在这里：
+日常可以将 Telegram 身份和 token 全部填在 `piko.json`，无需 `.env`。如果需要环境变量覆盖，也可在同一目录的 `.env` 保存 Bot token；普通应用参数和模型引用变量也可放在这里：
 
 ```dotenv
 PIKO_TELEGRAM_BOT_TOKEN="填写 BotFather 提供的 token"
 ```
 
-`botToken` 支持字面值或 `env:NAME`，引用在合并本地与进程环境后解析。Telegram 默认关闭，只有显式设 `enabled: true` 或 `PIKO_TELEGRAM_ENABLED=true` 才启用；仅有 token 不启用通道。关闭时无需提供或解析凭据。
+`botToken` 支持字面值或 `env:NAME`（例如 `env:PIKO_TELEGRAM_BOT_TOKEN`），引用在合并本地与进程环境后解析。Telegram 默认关闭，只有显式设 `enabled: true` 或 `PIKO_TELEGRAM_ENABLED=true` 才启用；仅有 token 不启用通道。关闭时无需提供或解析凭据。
 
 ## 覆盖规则
 
 应用字段优先级：**代码默认值 < piko.json < config/.env < 进程环境变量**。映射是显式的，不把任意环境变量转换成应用字段。
+
+只校验合并后的最终字段，因此有效的高优先级值可以覆盖低优先级中的无效字段，例如 `PIKO_PORT=8787` 可以覆盖文件里的无效端口；env 的转换失败保留为无效值，交给统一校验处理。未设置的 env 不生成覆盖，数组整体替换，未知字段保留到校验阶段报错。JSON 语法错误和非对象根节点仍直接拒绝。
 
 | 字段 | 环境变量 | 默认值 / 校验 |
 | --- | --- | --- |
@@ -79,4 +81,4 @@ JSON 语法、核心字段类型、未知核心字段、HTTP 和路径配置错�
 
 已有环境变量继续按表映射。原先仅凭 token 启动 TG 的方式改为显式启用，需补充 `PIKO_TELEGRAM_ENABLED=true` 或修改 `piko.json`。这次改动不修改数据库 schema、模型凭据格式或原生会话日志。
 
-自动化覆盖默认值与读取副作用、文件/env 优先级、路径边界、严格参数解析、凭据引用、通道错误隔离、不覆盖用户文件和共享 `.env` 的模型请求。
+自动化覆盖默认值与读取副作用、文件/env 优先级、两种输入的校验错误一致、高优先级修正无效字段、空覆盖/未知字段、路径边界、严格参数解析、凭据引用、通道错误隔离、不覆盖用户文件和共享 `.env` 的模型请求。

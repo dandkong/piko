@@ -40,7 +40,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
     mkdirSync(path, { recursive: true });
     if (!isWithin(workspace, realpathSync(path))) throw new Error(`Workspace directory escapes its root: ${directory}`);
   }
-  for (const name of ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"]) {
+  for (const name of ["AGENTS.md", "MEMORY.md"]) {
     const path = join(workspace, name);
     const template = readGuidance(join(paths.resources, "templates"), name, 8000);
     try { writeFileSync(path, template, { flag: "wx" }); }

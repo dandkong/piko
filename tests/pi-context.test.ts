@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { UserEntry } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { fixture } from "./fixtures/durable";
 import { DurableChatSession } from "../server/runtime/pi";
 import { loadWorkspaceResources, formatWorkspaceResources } from "../server/runtime/resources";
@@ -62,8 +63,40 @@ test("workspace guidance and user-first YAML skills refresh without ancestor/glo
   expect(formatWorkspaceResources(resources)).toContain("workspace instructions");
   expect(formatWorkspaceResources(resources)).not.toContain("override instructions");
   expect(formatWorkspaceResources(resources)).not.toContain("ANCESTOR_MUST_NOT_LOAD");
-  await writeFile(join(f.paths.workspace, "USER.md"), "updated preference");
+  await writeFile(join(f.paths.workspace, "MEMORY.md"), "updated preference");
   expect(formatWorkspaceResources(await loadWorkspaceResources(f.paths))).toContain("updated preference");
+});
+
+test("model requests refresh the two workspace files without loading retired files", async () => {
+  const f = await fixture(); const session = await f.createSession();
+  await writeFile(join(f.paths.workspace, "SOUL.md"), "RETIRED_PERSONA_MUST_NOT_LOAD");
+  await writeFile(join(f.paths.workspace, "USER.md"), "RETIRED_PROFILE_MUST_NOT_LOAD");
+  const notes = [
+    ["AGENTS.md", "work_guidance", "名字：小溪。\n回复使用中文。", "名字：小雨。\n回复使用英文。"],
+    ["MEMORY.md", "memory", "用户位于上海。\n项目采用方案 A。", "用户位于北京。\n项目已决定改用方案 B。"],
+  ] as const;
+  for (const [name, , before] of notes) await writeFile(join(f.paths.workspace, name), before);
+  const prompts: string[] = [];
+  f.faux.setResponses([1, 2].map(() => context => {
+    prompts.push(getCurrentSystemPrompt(context.messages)); return fauxAssistantMessage("Acknowledged.");
+  }));
+  await session.prompt("first task", { id: crypto.randomUUID(), createdAt: 1 });
+  for (const [name, , , after] of notes) await writeFile(join(f.paths.workspace, name), after);
+  await session.prompt("next task", { id: crypto.randomUUID(), createdAt: 2 });
+  expect(prompts).toHaveLength(2);
+  for (const [index, prompt] of prompts.entries()) {
+    const files = [...prompt.matchAll(/<instructions_file role="([^"]+)" path="([^"]+)">\n([\s\S]*?)\n<\/instructions_file>/g)];
+    expect(files.map(file => file[1])).toEqual(["core", "work_guidance", "memory"]);
+    expect(files.find(file => file[1] === "core")?.[2]).toBe(join(f.paths.resources, "prompts/core.md"));
+    expect(prompt).not.toContain("RETIRED_PERSONA_MUST_NOT_LOAD");
+    expect(prompt).not.toContain("RETIRED_PROFILE_MUST_NOT_LOAD");
+    for (const [name, role, before, after] of notes) {
+      const file = files.find(file => file[1] === role)!;
+      expect(file[2]).toBe(join(f.paths.workspace, name));
+      expect(file[3]).toBe(index === 0 ? before : after);
+      expect(prompt).not.toContain(index === 0 ? after : before);
+    }
+  }
 });
 
 test("manual compaction preserves full native UI history and restart does not call the model", async () => {

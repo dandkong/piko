@@ -32,7 +32,7 @@ export class ChatRepository {
     try {
       this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
       const version = this.db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;
-      if (version !== 0 && version !== 4) throw new Error("Incompatible development database. Stop Piko and use a new PIKO_HOME; old data is not migrated or deleted.");
+      if (version !== 0 && version !== 1) throw new Error("Incompatible development database. Stop Piko and use a new PIKO_HOME; old data is not migrated or deleted.");
       if (version === 0) this.db.transaction(() => {
         this.db.exec(`
           CREATE TABLE workspaces (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
@@ -59,7 +59,7 @@ export class ChatRepository {
             disposition TEXT NOT NULL CHECK(disposition IN ('accepted','busy','invalid','stop')), run_id TEXT REFERENCES runs(id),
             created_at INTEGER NOT NULL, PRIMARY KEY(bot_id,chat_id,message_id),
             CHECK((disposition='accepted' AND run_id IS NOT NULL) OR disposition='stop' OR (disposition IN ('busy','invalid') AND run_id IS NULL)));
-          PRAGMA user_version=4;
+          PRAGMA user_version=1;
         `);
       }).immediate();
       this.main = this.db.transaction(() => {
