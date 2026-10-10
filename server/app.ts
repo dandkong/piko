@@ -56,7 +56,8 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
           catch { return withCors(request, json({ error: "Could not stop this reply. Try again." }, 500)); }
         }
       }
-      const response = await runtimeRequest(request, runtime, conversations.context(), conversations.isStreaming(conversations.main.sessionId));
+      const response = await runtimeRequest(request, runtime, conversations.context(), conversations.isStreaming(conversations.main.sessionId),
+        operation => conversations.changeRuntime(operation));
       if (response) return withCors(request, response);
     }
     if (request.method === "GET" && url.pathname === "/api/main") {

@@ -142,7 +142,7 @@ bun run dev:api
 
 默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。`PIKO_HOME/config/.env` 可保存这些参数。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
 
-支持文本交流、流式文本/最终富文本回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`。TG 发起的消息和回复会出现在 RN；RN 回复不主动发送到 TG，可用 `/recent` 查询。两端共享忙碌状态与停止能力；忙碌时的新消息拒绝、不排队。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
+支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`；`/models` 与 `/thinking` 使用按钮选择，`/reload` 重载运行时配置，`/compact` 压缩上下文。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能/插件数量。TG 发起的消息和回复会出现在 RN；RN 回复不主动发送到 TG，可用 `/recent` 查询。两端共享忙碌状态与停止能力；忙碌时的新消息拒绝、不排队。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
 
 通道错误不关闭 RN。身份、模型和工作区配置在后端，token 不提交到仓库；附件、群聊、语音和后台推送尚未接入。发送失败或后端重启可能漏发 TG 回复，原生历史可在 RN 或 `/recent` 查询。详见 [通道说明](docs/features/telegram-channel.md)。
 
@@ -164,7 +164,7 @@ bun run build:web
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过 Run 取消接口终止回复。
 - Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 2,048 条事件只保存在内存，过期或重启后加载快照。同 `runId` 的重复提交在重启后仍不会重复执行；遗留运行标记中断，不自动重跑。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。若在 Pi 保存用户输入前中断，只有去重元数据，用户需要重新发送；不从另一套日志重建正文。
-- JSON 模型配置、思考强度、模型预设、插件重载和手动压缩已接入服务端 API；配置管理界面尚未实现。Durable 插件使用 `defineExtension`，不直接兼容 coding-agent CLI 扩展。
+- JSON 模型配置、思考强度、模型预设、插件重载和手动压缩已接入服务端 API；TG 已提供模型/思考按钮与重载、压缩命令，RN 配置管理界面尚未实现。Durable 插件使用 `defineExtension`，不直接兼容 coding-agent CLI 扩展。
 - durable 1.1.0 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
 - 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
 - Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。

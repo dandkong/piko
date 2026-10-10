@@ -7,11 +7,16 @@ import { normalizeMessage } from "./input";
 type Conversation = { session: ChatSession; touchedAt: number };
 type StoreOptions = { idleSessionMs: number; maxSessions: number };
 
+export class RuntimeBusyError extends Error {
+  constructor() { super("Stop the current reply before changing runtime configuration."); }
+}
+
 export class ConversationStore {
   private readonly conversations = new Map<string, Conversation>();
   private readonly pending = new Map<string, Promise<Conversation>>();
   private readonly runs = new Map<string, ChatRun>();
   private readonly executions = new Set<Promise<void>>();
+  private readonly runtimeChanges = new Map<string, Promise<unknown>>();
   private storageFailure?: Error;
   private closing = false;
 
@@ -29,7 +34,17 @@ export class ConversationStore {
   accepts(sessionId: string): boolean { return this.main.thread.id === sessionId; }
 
   isStreaming(sessionId: string): boolean {
-    return this.runs.get(sessionId)?.active || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
+    return this.runtimeChanges.has(sessionId) || this.runs.get(sessionId)?.active || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
+  }
+
+  /** Reserve before any asynchronous runtime initialization, shared by HTTP and Telegram. */
+  async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {
+    this.requireAvailable();
+    const id = this.main.sessionId;
+    if (this.isStreaming(id)) throw new RuntimeBusyError();
+    const task = Promise.resolve().then(operation);
+    this.runtimeChanges.set(id, task);
+    try { return await task; } finally { this.runtimeChanges.delete(id); }
   }
 
   async run(sessionId: string, runId?: string): Promise<ChatRun | undefined> {
@@ -160,7 +175,7 @@ export class ConversationStore {
   }
 
   async dispose(): Promise<void> {
-    if ([...this.runs.values()].some((run) => run.active) || this.pending.size) throw new Error("Stop active replies before disposing the conversation store.");
+    if ([...this.runs.values()].some((run) => run.active) || this.pending.size || this.runtimeChanges.size) throw new Error("Stop active replies before disposing the conversation store.");
     for (const value of this.conversations.values()) await value.session.dispose();
     this.conversations.clear();
     this.runs.clear();
@@ -170,6 +185,7 @@ export class ConversationStore {
     this.closing = true;
     await Promise.all([...this.runs.values()].filter(run => run.active).map(run => run.cancel()));
     await Promise.all([...this.executions]);
+    await Promise.allSettled([...this.runtimeChanges.values()]);
     await this.dispose();
   }
 }

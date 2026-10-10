@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
-import { getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { createRegistry, defineDoc, Harness, ROOT_CONVERSATION_ID, type Conversation, type EntryRecord, type LiveState } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
@@ -205,7 +205,7 @@ export class DurableChatSession implements ChatSession {
       : agent.model && { provider: agent.model.provider, model: agent.model.modelId, thinking: selection.thinking };
     if (!profile) throw new Error("Unknown profile or no current model.");
     const model = await requireAvailableModel(this.config.models, profile);
-    const thinking = profile.thinking ?? "off";
+    const thinking = profile.thinking ?? ("provider" in selection ? clampThinkingLevel(model, agent.thinkingLevel) : "off");
     if (!getSupportedThinkingLevels(model).includes(thinking)) throw new Error("This model does not support that thinking level.");
     await this.conversation.configure({ model: { provider: model.provider, modelId: model.id }, thinkingLevel: thinking }, ctx);
   }); }
@@ -214,7 +214,7 @@ export class DurableChatSession implements ChatSession {
     const resources = await loadWorkspaceResources(this.paths);
     return { runtime: "pi-durable", ...(agent.model && { selection: { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } }),
       models: (await this.config.models.getAvailable()).map(model => ({ provider: model.provider, id: model.id, name: model.name,
-        imageInput: model.input.includes("image"), thinkingLevels: getSupportedThinkingLevels(model) as ModelThinkingLevel[] })),
+        imageInput: model.input.includes("image"), contextWindow: model.contextWindow, thinkingLevels: getSupportedThinkingLevels(model) as ModelThinkingLevel[] })),
       profiles: this.config.profiles, skills: resources.skills, plugins: this.extensions.plugins };
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }

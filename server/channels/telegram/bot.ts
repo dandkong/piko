@@ -22,6 +22,15 @@ export class TelegramBot {
         topic: ctx.msg.message_thread_id !== undefined || ctx.msg.is_topic_message,
         business: ctx.msg.business_connection_id !== undefined || ctx.msg.guest_query_id !== undefined });
     });
+    this.bot.on("callback_query:data", ctx => {
+      const message = ctx.callbackQuery.message;
+      if (!message || message.date === 0) return;
+      this.channel?.handleCallback({ callbackId: ctx.callbackQuery.id, data: ctx.callbackQuery.data,
+        actorId: String(ctx.callbackQuery.from.id), chatId: String(message.chat.id),
+        messageId: String(message.message_id), chatType: message.chat.type,
+        topic: message.message_thread_id !== undefined || message.is_topic_message,
+        business: message.business_connection_id !== undefined || message.guest_query_id !== undefined });
+    });
   }
 
   start(): Promise<void> {
@@ -57,7 +66,7 @@ export class TelegramBot {
     // Bot.start deletes webhooks. Neither is suitable for durable admission failures.
     while (!this.stopping) {
       const updates = await telegramRequest(() => this.bot.api.getUpdates({ offset, timeout: 5,
-        allowed_updates: ["message"] }, signal), this.pollingController.signal);
+        allowed_updates: ["message", "callback_query"] }, signal), this.pollingController.signal);
       for (const update of updates) {
         if (this.stopping) return;
         await this.bot.handleUpdate(update);

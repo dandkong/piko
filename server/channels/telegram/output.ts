@@ -38,7 +38,7 @@ export function splitReply(text: string, limit = TELEGRAM_PLAIN_LIMIT, preserveF
 export class TelegramReply {
   private readonly messages: { id: string; text: string; rich: boolean }[] = [];
   private richSupported = true;
-  constructor(private readonly api: TelegramTransport, private readonly chatId: string, private readonly replyTo?: string,
+  constructor(private readonly api: TelegramTransport, private readonly chatId: string,
     private readonly render: TelegramRenderMode = "markdown") {}
 
   async update(text: string, final = false): Promise<void> {
@@ -63,7 +63,7 @@ export class TelegramReply {
         await this.api.edit(this.chatId, existing.id, rendered, rich);
         existing.text = rendered; existing.rich = rich;
       } else {
-        const id = await this.api.send(this.chatId, rendered, rich, index === 0 ? this.replyTo : undefined);
+        const id = await this.api.send(this.chatId, rendered, rich);
         this.messages.push({ id, text: rendered, rich });
       }
     }
@@ -78,6 +78,7 @@ export class TelegramReply {
 export async function deliverRun(run: ChatRun, reply: TelegramReply, api: TelegramTransport, chatId: string,
   signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
   let changed = true;
+
   let failure: unknown;
   const unsubscribe = run.subscribe(run.snapshot.lastEventId, () => { changed = true; });
   let lastTyping = 0;
@@ -85,9 +86,9 @@ export async function deliverRun(run: ChatRun, reply: TelegramReply, api: Telegr
     while (!signal.aborted) {
       const snapshot = run.snapshot;
       if (!run.active) {
-        const suffix = snapshot.status === "cancelled" ? "\n\n[回复已停止]"
-          : snapshot.status === "failed" ? "\n\n[回复失败，请在 RN 查看详情或重新发送]" : "";
-        await reply.update((snapshot.text || (snapshot.status === "succeeded" ? "[没有文本回复]" : "")) + suffix, true);
+        const suffix = snapshot.status === "cancelled" ? "\n\nReply stopped."
+          : snapshot.status === "failed" ? "\n\nCouldn't finish this reply. Please try again." : "";
+        await reply.update((snapshot.text || (snapshot.status === "succeeded" ? "No text response." : "")) + suffix, true);
         return;
       }
       if (Date.now() - lastTyping >= 4000) {

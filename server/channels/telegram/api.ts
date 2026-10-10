@@ -1,8 +1,14 @@
 import { Bot, GrammyError } from "grammy";
 
+export type TelegramButton = { text: string; callbackData: string };
+export type TelegramKeyboard = TelegramButton[][];
+const markup = (buttons: TelegramKeyboard | undefined) => buttons === undefined ? {} :
+  { reply_markup: { inline_keyboard: buttons.map(row => row.map(button => ({ text: button.text, callback_data: button.callbackData }))) } };
+
 export interface TelegramTransport {
-  send(chatId: string, text: string, rich: boolean, replyTo?: string): Promise<string>;
-  edit(chatId: string, messageId: string, text: string, rich: boolean): Promise<void>;
+  send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string>;
+  edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void>;
+  answerCallback(callbackId: string, text?: string, alert?: boolean): Promise<void>;
   remove(chatId: string, messageId: string): Promise<void>;
   typing(chatId: string): Promise<void>;
 }
@@ -50,22 +56,26 @@ export class TelegramApi implements TelegramTransport {
   get signal() { return this.controller.signal as unknown as NonNullable<Parameters<Bot["api"]["getWebhookInfo"]>[0]>; }
   constructor(private readonly bot: Bot) {}
 
-  async send(chatId: string, text: string, rich: boolean, replyTo?: string): Promise<string> {
-    const options = { ...(replyTo && { reply_parameters: { message_id: Number(replyTo) } }) };
+  async send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string> {
+    const options = markup(buttons);
     const message = await telegramRequest<{ message_id: number }>(() => rich
       ? this.bot.api.sendRichMessage(chatId, { markdown: text }, options, this.signal)
       : this.bot.api.sendMessage(chatId, text, { ...options, link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
     return String(message.message_id);
   }
 
-  async edit(chatId: string, messageId: string, text: string, rich: boolean): Promise<void> {
+  async edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void> {
     try {
       await telegramRequest(() => this.bot.api.editMessageText(chatId, Number(messageId), rich ? { markdown: text } : text,
-        { link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
+        { link_preview_options: { is_disabled: true }, ...markup(buttons) }, this.signal), this.controller.signal);
     } catch (error) {
       if (error instanceof GrammyError && error.error_code === 400 && /message is not modified/i.test(error.description)) return;
       throw error;
     }
+  }
+
+  async answerCallback(callbackId: string, text?: string, alert = false): Promise<void> {
+    await telegramRequest(() => this.bot.api.answerCallbackQuery(callbackId, { text, show_alert: alert }, this.signal), this.controller.signal);
   }
 
   async remove(chatId: string, messageId: string): Promise<void> {

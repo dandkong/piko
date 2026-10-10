@@ -10,10 +10,12 @@ import { defaultServerConfig } from "../server/config";
 import { createApp } from "../server/app";
 import type { ChatRuntime, ChatSession } from "../server/runtime/types";
 import type { Message, StreamEvent } from "../shared/chat";
+import type { RuntimeDescription, RuntimeSelection } from "../shared/runtime";
+import type { TelegramCallback } from "../server/channels/telegram/menus";
 import { TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
 import { TelegramBot } from "../server/channels/telegram/bot";
 import { TelegramReply, deliverRun, splitReply, TELEGRAM_RICH_LIMIT, TELEGRAM_PLAIN_LIMIT } from "../server/channels/telegram/output";
-import { isFormatError, telegramRequest, TelegramApi, type TelegramTransport } from "../server/channels/telegram/api";
+import { isFormatError, telegramRequest, TelegramApi, type TelegramTransport, type TelegramKeyboard } from "../server/channels/telegram/api";
 import { waitUntil, fixture, repository, cleanup } from "./fixtures/durable";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 
@@ -43,28 +45,66 @@ class Session implements ChatSession {
 
 class Transport implements TelegramTransport {
   messages = new Map<string, { text: string; rich: boolean }>();
-  writes: { chatId: string; text: string; rich: boolean; replyTo?: string }[] = [];
+  writes: { chatId: string; text: string; rich: boolean }[] = [];
   deleted: string[] = [];
+  buttons = new Map<string, TelegramKeyboard>();
+  answers: { id: string; text?: string; alert?: boolean }[] = [];
   failure?: unknown;
   block?: Promise<void>;
   count = 0;
-  async send(chatId: string, text: string, rich: boolean, replyTo?: string) {
-    this.writes.push({ chatId, text, rich, replyTo });
+  async send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard) {
+    this.writes.push({ chatId, text, rich });
     await this.block;
     if (this.failure) throw this.failure;
-    const id = String(++this.count); this.messages.set(id, { text, rich }); return id;
+    const id = String(++this.count); this.messages.set(id, { text, rich });
+    if (buttons !== undefined) this.buttons.set(id, buttons);
+    return id;
   }
-  async edit(_chatId: string, id: string, text: string, rich: boolean) {
+  async edit(_chatId: string, id: string, text: string, rich: boolean, buttons?: TelegramKeyboard) {
     await this.block;
     if (this.failure) throw this.failure;
     this.messages.set(id, { text, rich });
+    if (buttons !== undefined) this.buttons.set(id, buttons);
   }
+  async answerCallback(id: string, text?: string, alert?: boolean) { this.answers.push({ id, text, alert }); }
   async remove(_chatId: string, id: string) { this.deleted.push(id); this.messages.delete(id); }
   async typing() {}
 }
 
 const input = { botId: "77", chatId: "42", actorId: "42", messageId: "1" };
 const message: TelegramMessage = { chatId: "42", actorId: "42", messageId: "1", chatType: "private", text: "from TG" };
+
+function controls(s: ReturnType<typeof setup>) {
+  let description: RuntimeDescription = { runtime: "pi-durable", selection: { provider: "alpha", model: "fast", thinking: "off" },
+    models: [
+      { provider: "alpha", id: "fast", name: "Fast", imageInput: false, contextWindow: 250_000, thinkingLevels: ["off"] },
+      { provider: "alpha", id: "reasoning", name: "Reasoning", imageInput: false, thinkingLevels: ["off", "low", "medium", "high"] },
+      { provider: "beta", id: "other", name: "Other", imageInput: false, thinkingLevels: ["off", "low"] },
+    ], profiles: {}, skills: [], plugins: [] };
+  const changes: RuntimeSelection[] = [];
+  s.runtime.describe = async () => structuredClone(description);
+  s.runtime.configure = async (_input, selection) => {
+    changes.push(selection);
+    if ("provider" in selection) {
+      const model = description.models.find(model => model.provider === selection.provider && model.id === selection.model)!;
+      const previous = description.selection?.thinking ?? "off";
+      description.selection = { ...selection, thinking: selection.thinking ?? (model.thinkingLevels.includes(previous) ? previous : "off") };
+    }
+    else if ("thinking" in selection) description.selection = { ...description.selection!, thinking: selection.thinking };
+  };
+  return { changes, get description() { return description; }, set description(value) { description = value; } };
+}
+
+let callbackSequence = 0;
+async function click(s: ReturnType<typeof setup>, messageId: string, label: string, overrides: Partial<TelegramCallback> = {}) {
+  const button = s.api.buttons.get(messageId)!.flat().find(button => button.text.startsWith(label))!;
+  expect(button).toBeDefined();
+  const callbackId = `callback-${++callbackSequence}`;
+  s.channel.handleCallback({ ...message, messageId, callbackId, data: button.callbackData, ...overrides });
+  if (!overrides.actorId && !overrides.chatType && !overrides.topic && !overrides.business)
+    await waitUntil(() => s.api.answers.some(answer => answer.id === callbackId));
+  return callbackId;
+}
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "piko-tg-test-"));
@@ -122,7 +162,7 @@ describe("Telegram shared main conversation", () => {
     await s.channel.handle({ ...message, messageId: "2", text: "/stop" });
     await waitUntil(() => !s.session.isStreaming);
     expect(s.session.aborts).toBe(1);
-    await waitUntil(() => [...s.api.messages.values()].some(item => item.text.includes("回复已停止")));
+    await waitUntil(() => [...s.api.messages.values()].some(item => item.text.includes("Reply stopped.")));
     expect(s.api.writes[0].chatId).toBe("42");
   });
 
@@ -229,7 +269,7 @@ describe("Telegram rendering and network errors", () => {
       expect(chunk).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
       expect((chunk.match(/```/g) ?? []).length % 2).toBe(0);
     }
-    const api = new Transport(); const reply = new TelegramReply(api, "42", "1");
+    const api = new Transport(); const reply = new TelegramReply(api, "42");
     await reply.update(text); expect(api.messages.size).toBe(chunks.length);
     await reply.update("corrected", true);
     expect(api.messages.size).toBe(1); expect(api.deleted.length).toBe(chunks.length - 1);
@@ -239,21 +279,20 @@ describe("Telegram rendering and network errors", () => {
 
   test("rich replies stream as one large message while explicit plain output preserves literal text", async () => {
     const body = "## Heading\n\n| Name | Value |\n| --- | --- |\n| Piko | Rich |\n\n" + "正文😀\n".repeat(1300);
-    const api = new Transport(); const reply = new TelegramReply(api, "42", "1");
+    const api = new Transport(); const reply = new TelegramReply(api, "42");
     await reply.update(body);
     expect(api.writes).toHaveLength(1);
-    expect(api.writes[0]).toMatchObject({ rich: true, replyTo: "1" });
+    expect(api.writes[0]).toMatchObject({ chatId: "42", rich: true });
     expect(api.messages.get("1")?.text).toContain("| Piko | Rich |");
     await reply.update(body, true);
     expect(api.messages.get("1")).toEqual({ text: body, rich: true });
     const literal = "```unfinished\n**do not format**\n" + "output😀\n".repeat(1000);
     const plain = new Transport();
-    await new TelegramReply(plain, "42", "1", "plain").update(literal);
+    await new TelegramReply(plain, "42", "plain").update(literal);
     expect(plain.writes.length).toBeGreaterThan(1);
     expect(plain.writes.every(item => !item.rich && item.text.length <= TELEGRAM_PLAIN_LIMIT)).toBe(true);
     expect(plain.writes.map(item => item.text).join("")).toBe(literal);
-    expect(plain.writes[0].replyTo).toBe("1");
-    expect(plain.writes.slice(1).every(item => item.replyTo === undefined)).toBe(true);
+    expect(plain.writes.every(item => item.chatId === "42")).toBe(true);
   });
 
   test("SDK sends and edits Rich Markdown from the first partial reply and finalizes raw output", async () => {
@@ -265,10 +304,10 @@ describe("Telegram rendering and network errors", () => {
     cleanups.push(() => server.stop(true));
     const api = new TelegramApi(new Bot("77:test", { client: { apiRoot: `http://127.0.0.1:${server.port}` } }));
     cleanups.push(() => api.controller.abort());
-    const reply = new TelegramReply(api, "42", "1");
+    const reply = new TelegramReply(api, "42");
     await reply.update("## Heading\n\n**partial");
     expect(calls[0]).toMatchObject({ method: "sendRichMessage", body: {
-      chat_id: "42", rich_message: { markdown: "## Heading\n\n**partial**" }, reply_parameters: { message_id: 1 },
+      chat_id: "42", rich_message: { markdown: "## Heading\n\n**partial**" },
     } });
     const partial = "**partial** [reference](https://exa";
     await reply.update(partial);
@@ -278,9 +317,10 @@ describe("Telegram rendering and network errors", () => {
     expect(calls[2]).toMatchObject({ method: "editMessageText", body: { rich_message: { markdown: partial } } });
     const count = calls.length;
     await reply.update(partial, true); expect(calls).toHaveLength(count);
-    await new TelegramReply(api, "42", undefined, "plain").update("**literal** $5", true);
+    await new TelegramReply(api, "42", "plain").update("**literal** $5", true);
     expect(calls.at(-1)).toMatchObject({ method: "sendMessage", body: { text: "**literal** $5" } });
     expect(calls.every(call => !call.method.includes("Draft"))).toBe(true);
+    expect(calls.every(call => !Object.hasOwn(call.body, "reply_parameters"))).toBe(true);
   });
 
   test("a rejected rich segment re-splits all output safely and stays plain for later updates", async () => {
@@ -290,7 +330,7 @@ describe("Telegram rendering and network errors", () => {
       return send(...args);
     };
     const text = "line **raw** 😀\n".repeat(2500);
-    const reply = new TelegramReply(api, "42", "1");
+    const reply = new TelegramReply(api, "42");
     await reply.update(text);
     const delivered = [...api.messages.values()];
     expect(richCalls).toBe(2);
@@ -405,4 +445,242 @@ test("Telegram and RN share one native durable conversation and model context", 
   expect(api.writes.length).toBe(writes);
   expect([...api.messages.values()].map(item => item.text).join("\n")).toContain("TG reply");
   expect(api.writes.every(item => !item.text.includes("助手指导") && !item.text.includes("AGENTS.md"))).toBe(true);
+});
+
+describe("Telegram runtime controls", () => {
+  test("provider/model menus and thinking buttons match pilot layout and update shared selection", async () => {
+    const s = setup(); const c = controls(s);
+    await s.channel.handle({ ...message, text: "/models" });
+    await waitUntil(() => s.api.buttons.has("1"));
+    expect(s.api.buttons.get("1")!.map(row => row.map(button => button.text))).toEqual([["alpha (2)", "beta (1)"]]);
+    await click(s, "1", "alpha");
+    await waitUntil(() => s.api.buttons.get("1")![0][0].text === "Fast ✓");
+    expect(s.api.buttons.get("1")!.map(row => row.length)).toEqual([2, 1]);
+    [c.description.models[0], c.description.models[1]] = [c.description.models[1], c.description.models[0]];
+    await click(s, "1", "Reasoning");
+    await waitUntil(() => s.api.buttons.has("2"));
+    expect(c.changes).toEqual([{ provider: "alpha", model: "reasoning" }]);
+    expect(s.api.buttons.get("2")!.map(row => row.length)).toEqual([3, 1]);
+    await click(s, "2", "high");
+    await waitUntil(() => s.api.buttons.get("2")!.flat().some(button => button.text === "high ✓"));
+    const app = createApp({ config: defaultServerConfig(), runtime: s.runtime, conversations: s.store });
+    const state = await (await app(new Request("http://localhost/api/runtime"))).json();
+    expect(state.selection).toEqual({ provider: "alpha", model: "reasoning", thinking: "high" });
+    await click(s, "1", "Back to providers");
+    await waitUntil(() => s.api.buttons.get("1")![0][0].text === "alpha (2)");
+    await click(s, "1", "alpha");
+    await waitUntil(() => s.api.buttons.get("1")!.flat().some(button => button.text === "Fast"));
+    await click(s, "1", "Fast");
+    await waitUntil(() => s.api.messages.get("1")!.text.includes("alpha/fast"));
+    expect(c.description.selection!.thinking).toBe("off");
+    expect(s.session.calls).toBe(0); expect(s.repo.latest(s.store.main.sessionId)).toBeUndefined();
+    expect(await s.store.history(s.store.main.sessionId)).toEqual([]);
+  });
+
+  test("long identifiers use bounded callback data and catalog reordering cannot change menu targets", async () => {
+    const s = setup(); const c = controls(s);
+    c.description.models[0].provider = "供应商".repeat(40); c.description.models[0].id = "long-id-".repeat(40);
+    await s.channel.handle({ ...message, text: "/models" });
+    await waitUntil(() => s.api.buttons.has("1"));
+    await click(s, "1", "供应商");
+    await waitUntil(() => s.api.buttons.get("1")!.flat().some(button => button.text === "Fast"));
+    c.description.models.reverse();
+    const target = c.description.models.at(-1)!;
+    await click(s, "1", "Fast");
+    expect(c.changes[0]).toEqual({ provider: target.provider, model: target.id });
+    expect([...s.api.buttons.values()].flat(2).every(button => new TextEncoder().encode(button.callbackData).length <= 64)).toBe(true);
+  });
+
+  test("authorization, source binding, fabricated actions and stale thinking menus cannot change runtime", async () => {
+    const s = setup(); const c = controls(s);
+    await s.channel.handle({ ...message, text: "/models" });
+    await waitUntil(() => s.api.buttons.has("1"));
+    for (const override of [{ actorId: "99" }, { chatType: "group" }, { topic: true }, { business: true }]) await click(s, "1", "alpha", override);
+    expect(s.api.answers).toEqual([]);
+    await click(s, "1", "alpha", { chatId: "99" });
+    expect(s.api.answers.at(-1)?.alert).toBe(true);
+    const token = s.api.buttons.get("1")![0][0].callbackData.split(":")[1];
+    await click(s, "1", "alpha", { data: `p:${token}:model:999` });
+    expect(c.changes).toEqual([]);
+    await s.channel.handle({ ...message, text: "/thinking" });
+    await waitUntil(() => s.api.buttons.has("2"));
+    expect(s.api.messages.get("2")!.text).toContain("Thinking is unavailable");
+    c.description.selection = { provider: "alpha", model: "reasoning", thinking: "off" };
+    await click(s, "2", "off");
+    expect(c.changes).toEqual([]); expect(s.api.answers.at(-1)?.alert).toBe(true);
+  });
+
+  test("status keeps execution details when optional runtime metadata cannot be read", async () => {
+    const s = setup();
+    s.runtime.describe = async () => { throw new Error("private credentials"); };
+    await s.channel.handle({ ...message, text: "/status" });
+    await waitUntil(() => s.api.writes.length > 0);
+    expect(s.api.writes[0].text).toContain("Status: Ready");
+    expect(s.api.writes[0].text).toContain("Model details unavailable");
+    expect(s.api.writes[0].text).not.toContain("private");
+  });
+
+  test("busy and queued runs reject mutations while read-only menus and status remain available", async () => {
+    const s = setup(); const c = controls(s); let operations = 0;
+    s.runtime.reload = s.runtime.compact = async () => { operations++; };
+    const opening = Promise.withResolvers<ChatSession>();
+    const prompt = s.session.prompt.bind(s.session);
+    s.session.prompt = async (...args) => { await opening.promise; await prompt(...args); };
+    const run = await s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN queued");
+    expect(run.active).toBe(true); expect(s.session.isStreaming).toBe(false);
+    await s.channel.handle({ ...message, text: "/models" });
+    await waitUntil(() => s.api.buttons.has("1"));
+    await click(s, "1", "alpha");
+    await waitUntil(() => s.api.buttons.get("1")![0][0].text === "Fast ✓");
+    await click(s, "1", "Reasoning");
+    expect(s.api.answers.at(-1)?.text).toContain("Piko is busy");
+    for (const text of ["/compact", "/reload", "/status"]) await s.channel.handle({ ...message, text });
+    await waitUntil(() => s.api.writes.some(write => write.text.includes("Thinking: off")));
+    expect(c.changes).toEqual([]); expect(operations).toBe(0);
+    opening.resolve(s.session); await waitUntil(() => s.session.calls === 1); await run.cancel();
+  });
+
+  test("reload/compact reserve before initialization, block RN/TG admission and release after failure", async () => {
+    const s = setup(); controls(s);
+    const held = Promise.withResolvers<void>(); let reloads = 0;
+    s.runtime.compact = async () => held.promise;
+    s.runtime.reload = async () => { reloads++; };
+    await s.channel.handle({ ...message, text: "/compact" });
+    await waitUntil(() => s.store.isStreaming(s.store.main.sessionId));
+    await expect(s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN")).rejects.toThrow("already responding");
+    expect((await s.store.startTelegram({ ...input, messageId: "during" }, "TG")).disposition).toBe("busy");
+    const app = createApp({ config: defaultServerConfig(), runtime: s.runtime, conversations: s.store });
+    expect((await app(new Request("http://localhost/api/runtime/reload", { method: "POST" }))).status).toBe(409);
+    expect(reloads).toBe(0);
+    held.reject(new Error("secret token must not leak"));
+    await waitUntil(() => !s.store.isStreaming(s.store.main.sessionId));
+    await waitUntil(() => s.api.writes.some(write => write.text.includes("Couldn't complete that action")));
+    expect(s.api.writes.some(write => write.text.includes("secret"))).toBe(false);
+    await s.channel.handle({ ...message, text: "/models" });
+    await waitUntil(() => s.api.buttons.size === 1);
+    const menuId = [...s.api.buttons.keys()][0];
+    await s.channel.handle({ ...message, text: "/reload" });
+    await waitUntil(() => s.api.writes.some(write => write.text.includes("Settings reloaded.")));
+    await click(s, menuId, "alpha");
+    expect(s.api.answers.at(-1)?.text).toContain("expired"); expect(reloads).toBe(1);
+    s.runtime.compact = async () => {};
+    await s.channel.handle({ ...message, text: "/compact" });
+    await waitUntil(() => s.api.writes.some(write => write.text.includes("Context compacted.")));
+    expect(s.session.calls).toBe(0); expect(s.repo.db.query("SELECT * FROM runs").all()).toEqual([]);
+  });
+
+  test("SDK preserves plain menus, maps keyboard and acknowledges callbacks", async () => {
+    const calls: { method: string; body: any }[] = [];
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
+      calls.push({ method: new URL(request.url).pathname.split("/").at(-1)!, body: await request.json() });
+      return Response.json({ ok: true, result: { message_id: 3 } });
+    } });
+    cleanups.push(() => server.stop(true));
+    const api = new TelegramApi(new Bot("77:test", { client: { apiRoot: `http://127.0.0.1:${server.port}` } }));
+    cleanups.push(() => api.controller.abort());
+    const buttons = [[{ text: "high ✓", callbackData: "p:12345678-abcd:think:3" }]];
+    await api.send("42", "Choose a thinking level", false, buttons);
+    await api.edit("42", "3", "Thinking level updated", false, []);
+    await api.answerCallback("query", "Thinking level updated", true);
+    expect(calls[0]).toMatchObject({ method: "sendMessage", body: { text: "Choose a thinking level", reply_markup: {
+      inline_keyboard: [[{ text: "high ✓", callback_data: buttons[0][0].callbackData }]],
+    } } });
+    expect(calls[1].body.reply_markup.inline_keyboard).toEqual([]);
+    expect(calls[0].body).not.toHaveProperty("reply_parameters");
+    expect(calls[2]).toMatchObject({ method: "answerCallbackQuery", body: { callback_query_id: "query", text: "Thinking level updated", show_alert: true } });
+  });
+
+  test("Bot polls and dispatches authorized keyboard callbacks", async () => {
+    const s = setup(); controls(s);
+    const menuData = Promise.withResolvers<string>(); const held = Promise.withResolvers<void>();
+    const methods: string[] = []; let edited = "";
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
+      const method = new URL(request.url).pathname.split("/").at(-1)!; methods.push(method);
+      const body = await request.json(); let result: unknown = true;
+      const chat = { id: 42, type: "private", first_name: "User" };
+      const from = { id: 42, is_bot: false, first_name: "User" };
+      if (method === "getMe") result = { id: 77, is_bot: true, first_name: "Piko", username: "piko_bot" };
+      else if (method === "getWebhookInfo") result = { url: "", has_custom_certificate: false, pending_update_count: 0 };
+      else if (method === "getUpdates") {
+        expect(body.allowed_updates).toEqual(["message", "callback_query"]);
+        if (body.offset === 0) result = [{ update_id: 10, message: { message_id: 1, date: 1, chat, from, text: "/models" } }];
+        else if (body.offset === 11) result = [{ update_id: 11, callback_query: {
+          id: "wire-query", from, chat_instance: "instance", data: await menuData.promise,
+          message: { message_id: 3, date: 1, chat, from: { id: 77, is_bot: true, first_name: "Piko" }, text: "menu" },
+        } }];
+        else { await held.promise; result = []; }
+      } else if (method === "sendMessage") {
+        menuData.resolve(body.reply_markup.inline_keyboard[0][0].callback_data); result = { message_id: 3 };
+      } else if (method === "editMessageText") { edited = body.text; result = { message_id: 3 }; }
+      return Response.json({ ok: true, result });
+    } });
+    cleanups.push(() => { held.resolve(); server.stop(true); });
+    const config = { token: "77:test", userId: "42" };
+    const bot = new TelegramBot(config, s.store, s.runtime, new Bot(config.token,
+      { client: { apiRoot: `http://127.0.0.1:${server.port}`, timeoutSeconds: 2 } }));
+    cleanups.push(async () => { await bot.stopInput(); await bot.close(); });
+    await bot.start(); await waitUntil(() => edited.includes("alpha models"));
+    expect(methods).toContain("answerCallbackQuery"); expect(s.session.calls).toBe(0);
+    await bot.stopInput(); await bot.close();
+  });
+
+  test("an RN run admitted while an HTTP selection body is read prevents the later change", async () => {
+    const s = setup(); const c = controls(s);
+    const body = Promise.withResolvers<Uint8Array>();
+    const app = createApp({ config: defaultServerConfig(), runtime: s.runtime, conversations: s.store });
+    const selection = app(new Request("http://localhost/api/runtime/selection", { method: "POST", body: new ReadableStream({
+      async start(controller) { controller.enqueue(await body.promise); controller.close(); },
+    }) }));
+    const run = await s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN wins");
+    body.resolve(new TextEncoder().encode(JSON.stringify({ provider: "alpha", model: "reasoning" })));
+    expect((await selection).status).toBe(409); expect(c.changes).toEqual([]);
+    await waitUntil(() => s.session.calls === 1); await run.cancel();
+  });
+
+  test("Telegram native compact summarizes context and retains complete RN/TG history", async () => {
+    const f = await fixture(); const repo = repository(f.paths);
+    const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
+    cleanup(() => store.close()); const api = new Transport();
+    const channel = new TelegramChannel({ botId: "77", username: "piko_bot", userId: "42" }, store, f.runtime, api, 5);
+    cleanup(async () => { channel.stopAccepting(); await store.close(); await channel.drain(100); });
+    f.faux.setResponses([fauxAssistantMessage("old answer"), fauxAssistantMessage("recent answer")]);
+    const session = (await store.get(store.main.sessionId)).session;
+    // Seed a long native history without crossing the product's 12,000-character input limit.
+    await session.prompt("Old context. ".repeat(10000), { id: crypto.randomUUID(), createdAt: 1 });
+    await session.prompt("Recent context. ".repeat(6000), { id: crypto.randomUUID(), createdAt: 2 });
+    const history = await store.history(store.main.sessionId);
+    f.faux.setResponses([fauxAssistantMessage("Compacted summary.")]);
+    await channel.handle({ ...message, text: "/compact" });
+    await waitUntil(() => api.writes.some(write => write.text.includes("Context compacted.")));
+    expect(f.faux.state.callCount).toBe(3);
+    expect(await store.history(store.main.sessionId)).toEqual(history);
+    expect(await store.run(store.main.sessionId)).toBeUndefined();
+    expect(api.writes.every(write => !write.rich)).toBe(true);
+  });
+
+  test("native selection persists across reload/restart and control messages never enter history", async () => {
+    const f = await fixture(); const repo = repository(f.paths);
+    const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
+    cleanup(() => store.close()); const api = new Transport();
+    const channel = new TelegramChannel({ botId: "77", username: "piko_bot", userId: "42" }, store, f.runtime, api, 5);
+    cleanup(async () => { channel.stopAccepting(); await store.close(); await channel.drain(100); });
+    await channel.handle({ ...message, text: "/models" }); await waitUntil(() => api.buttons.has("1"));
+    const clickNative = async (id: string, label: string) => {
+      const callbackId = `native-${++callbackSequence}`;
+      channel.handleCallback({ ...message, messageId: id, callbackId, data: api.buttons.get(id)!.flat().find(button => button.text.startsWith(label))!.callbackData });
+      await waitUntil(() => api.answers.some(answer => answer.id === callbackId));
+    };
+    await clickNative("1", "faux"); await waitUntil(() => api.buttons.get("1")!.flat().some(button => button.text.startsWith("Reasoning")));
+    await clickNative("1", "Reasoning"); await waitUntil(() => api.buttons.has("2"));
+    await clickNative("2", "high"); await channel.handle({ ...message, text: "/reload" });
+    await waitUntil(() => api.writes.some(write => write.text.includes("Settings reloaded.")));
+    await channel.handle({ ...message, text: "/status" });
+    await waitUntil(() => api.writes.some(write => write.text.includes("Context limit: 250,000 tokens")));
+    const selection = (await f.runtime.describe!(store.context())).selection;
+    expect(selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
+    expect(f.faux.state.callCount).toBe(0); expect(await store.history(store.main.sessionId)).toEqual([]);
+    await channel.drain(100); await store.close(); await f.runtime.dispose!();
+    const restarted = f.createRuntime();
+    expect((await restarted.describe!(repo.context(store.main.sessionId))).selection).toEqual(selection);
+  });
 });

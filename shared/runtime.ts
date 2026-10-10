@@ -4,7 +4,7 @@ export type RuntimeSelection = { profile: string } | ModelSelection | { thinking
 export type RuntimeDescription = {
   runtime: "pi-durable";
   selection?: ModelSelection;
-  models: { provider: string; id: string; name: string; imageInput: boolean; thinkingLevels: ThinkingLevel[] }[];
+  models: { provider: string; id: string; name: string; imageInput: boolean; contextWindow?: number; thinkingLevels: ThinkingLevel[] }[];
   profiles: Record<string, ModelSelection>;
   skills: { name: string; description: string; path: string; disableModelInvocation: boolean }[];
   plugins: { name: string; path: string; tools: string[] }[];

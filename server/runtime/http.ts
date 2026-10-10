@@ -4,7 +4,8 @@ import { json } from "../http";
 
 const thinking = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
-export async function runtimeRequest(request: Request, runtime: ChatRuntime, input: SessionContext, busy: boolean): Promise<Response | undefined> {
+export async function runtimeRequest(request: Request, runtime: ChatRuntime, input: SessionContext, busy: boolean,
+  change: (operation: () => Promise<void>) => Promise<void> = operation => operation()): Promise<Response | undefined> {
   const path = new URL(request.url).pathname;
   if (!path.startsWith("/api/runtime")) return undefined;
   try {
@@ -12,8 +13,8 @@ export async function runtimeRequest(request: Request, runtime: ChatRuntime, inp
     if (request.method !== "POST") return json({ error: "Not found." }, 404);
     if (path === "/api/runtime/cancel" && runtime.stop) { await runtime.stop(input); return json({ ok: true }); }
     if (busy) return json({ error: "Stop the current reply before changing runtime configuration." }, 409);
-    if (path === "/api/runtime/reload" && runtime.reload) await runtime.reload(input);
-    else if (path === "/api/runtime/compact" && runtime.compact) await runtime.compact(input);
+    if (path === "/api/runtime/reload" && runtime.reload) await change(() => runtime.reload!(input));
+    else if (path === "/api/runtime/compact" && runtime.compact) await change(() => runtime.compact!(input));
     else if (path === "/api/runtime/selection" && runtime.configure) {
       const raw = await request.text();
       if (new TextEncoder().encode(raw).byteLength > 8000) return json({ error: "Request is too large." }, 413);
@@ -30,7 +31,7 @@ export async function runtimeRequest(request: Request, runtime: ChatRuntime, inp
         && (choice.thinking === undefined || typeof choice.thinking === "string" && thinking.has(choice.thinking))) {
         selection = { provider: choice.provider, model: choice.model, ...(choice.thinking && { thinking: choice.thinking as ThinkingLevel }) };
       } else return json({ error: "Invalid model, profile or thinking level." }, 422);
-      await runtime.configure(input, selection);
+      await change(() => runtime.configure!(input, selection));
     } else return json({ error: "Not found." }, 404);
     return json({ ok: true });
   } catch (error) { return json({ error: error instanceof Error ? error.message : "Runtime configuration failed." }, 409); }

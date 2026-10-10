@@ -125,6 +125,8 @@ SQL 遗留活跃 Run 标记 failed + interrupted。第一次打开 Harness 时�
 
 Telegram 适配器与 RN 共用 ConversationStore、主 Thread 和 runtime，进程内直接调用会话业务。TG 收据与 Run 在同一 SQL 事务内预留，忙碌拒绝也保持去重；轮询在持久化接纳成功后才确认 update。停止命令保存当时的目标 Run，重投不能停止之后的任务。
 
+TG 模型/思考按钮、重载与压缩复用运行时接口；HTTP/TG 管理操作先通过 ConversationStore 预留空闲边界，queued Run 和异步初始化也受互斥保护。按钮菜单仅在内存保存来源和目录快照，点击时再次鉴权及验证当前能力，不写另一套聊天正文。当前选择由 durable Agent 文档持久化，状态详情使用运行时安全元数据。
+
 TG 只投递自身发起的回复，命令提示不写入 Pi 历史；RN 展示两端聊天的原生投影。RN 前台空闲时每 3 秒发现变化，活跃 Run 使用既有 SSE。TG 网络发送与执行分离，平台消息 ID 不持久化，不承诺重启补发；共享主会话中断不自动执行。配置、命令、生命周期和边界见 [双通道说明](features/telegram-channel.md)。
 
 ## 后续方向（未实现）
