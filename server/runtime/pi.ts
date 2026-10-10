@@ -6,7 +6,7 @@ import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/n
 import type { StreamEvent } from "../../shared/chat";
 import type { RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
-import type { ChatRuntime, ChatSession, SessionContext } from "./types";
+import type { ChatRuntime, ChatSession, SessionContext, SessionEvent } from "./types";
 import { exportPiReference, readPiContext, sessionDirectory } from "./pi-context";
 import { messageText, projectPiHistory, readPiEntries } from "./pi-history";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
@@ -34,7 +34,7 @@ export class DurableChatSession implements ChatSession {
   private entries: EntryRecord[] = [];
   private unsubscribe?: () => void;
   private releaseView?: () => void;
-  private listeners = new Set<(event: StreamEvent) => void>();
+  private listeners = new Set<(event: SessionEvent) => void>();
   private busy = false;
   private changing = false;
   private changeFinished?: Promise<void>;
@@ -110,6 +110,7 @@ export class DurableChatSession implements ChatSession {
             if (this.busy && message && message.role === "assistant") {
               this.partial = messageText(message.content); this.publishText();
               this.completedText += this.partial; this.partial = ""; this.attempt = undefined;
+              this.emit({ type: "message_end", offset: this.completedText.length });
             }
           } else if (change.type === "document" && change.conversationId === conversation.id
             && change.record.kind === "pi.live" && change.value !== null) live = change.value as LiveState;
@@ -129,12 +130,16 @@ export class DurableChatSession implements ChatSession {
     const event: StreamEvent = text.startsWith(this.emitted)
       ? { type: "delta", text: text.slice(this.emitted.length) } : { type: "replace", text };
     this.emitted = text;
+    this.emit(event);
+  }
+
+  private emit(event: SessionEvent) {
     for (const listener of this.listeners) {
       try { listener(event); } catch (error) { console.error("Piko output observer:", error); }
     }
   }
 
-  subscribe(listener: (event: StreamEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   async prompt(text: string, run?: { id: string; createdAt: number }): Promise<void> {
     if (!run) throw new Error("A Piko Run identity is required.");
     if (this.disposed || this.busy || this.changing) throw new Error("This conversation is already responding, reconfiguring or closed.");

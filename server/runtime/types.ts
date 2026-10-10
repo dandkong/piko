@@ -1,12 +1,15 @@
 import type { Message, StreamEvent } from "../../shared/chat";
 import type { RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 
+/** A committed assistant message boundary in the current reply's aggregate text. Not an HTTP/SSE event. */
+export type SessionEvent = StreamEvent | { type: "message_end"; offset: number };
+
 /** Piko's runtime boundary; only the Pi adapter knows SDK-specific objects. */
 export interface ChatSession {
   readonly isStreaming: boolean;
   readonly messages: Message[];
   prompt(text: string, run?: { id: string; createdAt: number }): Promise<void>;
-  subscribe(listener: (event: StreamEvent) => void): () => void;
+  subscribe(listener: (event: SessionEvent) => void): () => void;
   abort(): Promise<void>;
   dispose(): void | Promise<void>;
   /** Opaque native session identity, without a second conversation checkpoint. */

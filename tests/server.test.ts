@@ -5,7 +5,7 @@ import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
 import { chatStream } from "../server/chat/stream";
 import { defaultServerConfig } from "../server/config";
-import type { ChatRuntime, ChatSession, HistoryReader } from "../server/runtime/types";
+import type { ChatRuntime, ChatSession, HistoryReader, SessionEvent } from "../server/runtime/types";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,11 +22,11 @@ class TestSession implements ChatSession {
   disposed = false;
   readonly started = Promise.withResolvers<void>();
   private readonly finished = Promise.withResolvers<void>();
-  private readonly listeners = new Set<(event: StreamEvent) => void>();
+  private readonly listeners = new Set<(event: SessionEvent) => void>();
 
   constructor(private readonly hold = false) { }
 
-  subscribe(listener: (event: StreamEvent) => void) {
+  subscribe(listener: (event: SessionEvent) => void) {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   }
@@ -49,7 +49,7 @@ class TestSession implements ChatSession {
   }
 
   dispose() { this.disposed = true; }
-  emit(event: StreamEvent) { for (const listener of this.listeners) listener(event); }
+  emit(event: SessionEvent) { for (const listener of this.listeners) listener(event); }
 }
 
 

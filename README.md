@@ -144,6 +144,8 @@ bun run dev:api
 
 支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`；`/models` 与 `/thinking` 使用按钮选择，`/compact` 压缩上下文。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能/插件数量。TG 发起的消息和回复会出现在 RN；RN 回复不主动发送到 TG，可用 `/recent` 查询。两端共享忙碌状态与停止能力；忙碌时的新消息拒绝、不排队。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
 
+同一任务内的多条助手文字回复在 TG 按原生消息分别发送，每条内部保持流式编辑；与 RN 历史分条对应，暂不展示工具。
+
 通道错误不关闭 RN。身份、模型和工作区配置在后端，token 不提交到仓库；附件、群聊、语音和后台推送尚未接入。发送失败或后端重启可能漏发 TG 回复，原生历史可在 RN 或 `/recent` 查询。详见 [通道说明](docs/features/telegram-channel.md)。
 
 ## 检查与导出

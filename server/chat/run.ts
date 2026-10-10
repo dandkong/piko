@@ -10,6 +10,7 @@ export class ChatRun {
   private events: StreamEvent[] = [];
   private listeners = new Set<(event: StreamEvent) => void>();
   private pendingText = "";
+  private messageBoundaries: number[] = [];
   private flushTimer?: ReturnType<typeof setTimeout>;
   private storageError?: unknown;
 
@@ -18,6 +19,8 @@ export class ChatRun {
   }
 
   get snapshot(): RunSnapshot { return { ...this.state }; }
+  /** Transient presentation offsets; text remains in the single Run snapshot and native history. */
+  get messageEnds(): readonly number[] { return [...this.messageBoundaries]; }
   get active(): boolean { return isRunActive(this.state); }
   canReplay(after: number): boolean {
     // A restored Run has metadata but no persistent SSE event log.
@@ -90,7 +93,12 @@ export class ChatRun {
           }, 50);
         } else if (event.type === "replace") {
           clearTimeout(this.flushTimer); this.flushTimer = undefined; this.pendingText = "";
+          this.messageBoundaries = this.messageBoundaries.filter(offset => offset <= event.text.length);
           this.emit(event, { text: event.text });
+        } else if (event.type === "message_end") {
+          this.flushText();
+          if (Number.isSafeInteger(event.offset) && event.offset > (this.messageBoundaries.at(-1) ?? 0)
+            && event.offset <= this.state.text.length) this.messageBoundaries.push(event.offset);
         } else if (event.type === "error") agentError = event.message;
       });
       this.promptStarted = true;

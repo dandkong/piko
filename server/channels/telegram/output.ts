@@ -78,17 +78,44 @@ export class TelegramReply {
 export async function deliverRun(run: ChatRun, reply: TelegramReply, api: TelegramTransport, chatId: string,
   signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
   let changed = true;
-
+  const replies = [reply];
+  let observedEnds = -1;
+  const sync = async (text: string, ends: readonly number[], final: boolean, suffix = "") => {
+    const parts: { text: string; final: boolean }[] = [];
+    let start = 0;
+    for (const end of ends) {
+      const content = text.slice(start, end);
+      if (content.trim()) parts.push({ text: content, final: true });
+      start = end;
+    }
+    const partial = text.slice(start);
+    if (partial.trim()) parts.push({ text: partial, final });
+    if (suffix) {
+      if (parts.length) parts.at(-1)!.text += suffix;
+      else parts.push({ text: suffix.trim(), final: true });
+    }
+    for (const [index, part] of parts.entries()) {
+      const output = replies[index] ??= new TelegramReply(api, chatId);
+      await output.update(part.text, part.final);
+    }
+    // A retried partial can disappear or shrink; committed message boundaries remain intact.
+    while (replies.length > Math.max(1, parts.length)) {
+      await replies.at(-1)!.update("", true);
+      replies.pop();
+    }
+    if (!parts.length) await replies[0].update("", final);
+  };
   let failure: unknown;
   const unsubscribe = run.subscribe(run.snapshot.lastEventId, () => { changed = true; });
   let lastTyping = 0;
   try {
     while (!signal.aborted) {
       const snapshot = run.snapshot;
+      const ends = run.messageEnds;
       if (!run.active) {
         const suffix = snapshot.status === "cancelled" ? "\n\nReply stopped."
           : snapshot.status === "failed" ? "\n\nCouldn't finish this reply. Please try again." : "";
-        await reply.update((snapshot.text || (snapshot.status === "succeeded" ? "No text response." : "")) + suffix, true);
+        await sync(snapshot.text || (snapshot.status === "succeeded" ? "No text response." : ""), ends, true, suffix);
         return;
       }
       if (Date.now() - lastTyping >= 4000) {
@@ -96,9 +123,12 @@ export async function deliverRun(run: ChatRun, reply: TelegramReply, api: Telegr
         await api.typing(chatId).catch(() => {});
         lastTyping = Date.now();
       }
-      if (changed) {
+      if (changed || observedEnds !== ends.length) {
         changed = false;
-        try { await reply.update(snapshot.text); failure = undefined; }
+        // Typing/network waits may have allowed another update; read after clearing the dirty flag.
+        const current = run.snapshot, currentEnds = run.messageEnds;
+        observedEnds = currentEnds.length;
+        try { await sync(current.text, currentEnds, false); failure = undefined; }
         catch (error) { failure = error; }
       }
       await new Promise<void>((resolve) => {

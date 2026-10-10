@@ -8,7 +8,7 @@ import { ConversationStore } from "../server/chat/conversations";
 import { ChatRun } from "../server/chat/run";
 import { defaultServerConfig } from "../server/config";
 import { createApp } from "../server/app";
-import type { ChatRuntime, ChatSession } from "../server/runtime/types";
+import type { ChatRuntime, ChatSession, SessionEvent } from "../server/runtime/types";
 import type { Message, StreamEvent } from "../shared/chat";
 import type { RuntimeDescription, RuntimeSelection } from "../shared/runtime";
 import type { TelegramCallback } from "../server/channels/telegram/menus";
@@ -27,9 +27,9 @@ class Session implements ChatSession {
   messages: Message[] = [];
   calls = 0;
   aborts = 0;
-  private listeners = new Set<(event: StreamEvent) => void>();
+  private listeners = new Set<(event: SessionEvent) => void>();
   private finish?: () => void;
-  subscribe(listener: (event: StreamEvent) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   async prompt(text: string, run?: { id: string }) {
     this.calls++; this.isStreaming = true;
     this.messages.push({ id: `u${this.calls}`, role: "user", content: text, createdAt: 1, runId: run?.id });
@@ -38,7 +38,7 @@ class Session implements ChatSession {
     this.messages.push({ id: `a${this.calls}`, role: "assistant", content: "answer", createdAt: 2, runId: run?.id });
     this.isStreaming = false;
   }
-  emit(event: StreamEvent) { for (const listener of this.listeners) listener(event); }
+  emit(event: SessionEvent) { for (const listener of this.listeners) listener(event); }
   async abort() { this.aborts++; this.finish?.(); }
   dispose() {}
 }
@@ -295,6 +295,64 @@ describe("Telegram rendering and network errors", () => {
     expect(plain.writes.every(item => item.chatId === "42")).toBe(true);
   });
 
+  test("message boundaries finalize each reply; retries shrink only the current message and preserve earlier output", async () => {
+    const s = setup();
+    const run = await s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "multiple replies");
+    await waitUntil(() => s.session.calls === 1);
+    const events: StreamEvent[] = []; run.subscribe(0, event => events.push(event));
+    const signal = new AbortController();
+    const delivery = deliverRun(run, new TelegramReply(s.api, "42"), s.api, "42", signal.signal, 5);
+    cleanups.push(async () => { signal.abort(); await delivery.catch(() => {}); });
+    const first = "**Checking";
+    s.session.emit({ type: "replace", text: first });
+    await waitUntil(() => s.api.messages.get("1")?.text === "**Checking**");
+    s.session.emit({ type: "message_end", offset: first.length });
+    await waitUntil(() => s.api.messages.get("1")?.text === first);
+    const sequence = run.snapshot.lastEventId;
+    s.session.emit({ type: "message_end", offset: first.length }); // tool-only/duplicate completion
+    expect(run.snapshot.lastEventId).toBe(sequence);
+    s.session.emit({ type: "replace", text: first + "```ts\n" + "line\n".repeat(7000) });
+    await waitUntil(() => s.api.messages.size > 2);
+    expect(s.api.messages.get("1")?.text).toBe(first);
+    const second = "**Working";
+    let rejected = false;
+    const edit = s.api.edit.bind(s.api);
+    s.api.edit = async (...args) => {
+      if (args[1] === "2" && !rejected) { rejected = true; throw error(500, "temporary failure"); }
+      return edit(...args);
+    };
+    s.session.emit({ type: "replace", text: first + second });
+    await waitUntil(() => rejected);
+    s.session.emit({ type: "replace", text: first + second });
+    await waitUntil(() => s.api.messages.size === 2 && s.api.messages.get("2")?.text === "**Working**");
+    expect(rejected).toBe(true); expect(s.api.deleted.length).toBeGreaterThan(0);
+    s.session.emit({ type: "message_end", offset: first.length + second.length });
+    await waitUntil(() => s.api.messages.get("2")?.text === second);
+    s.session.emit({ type: "delta", text: "Done." });
+    s.session.emit({ type: "message_end", offset: first.length + second.length + 5 });
+    await s.session.abort(); await delivery;
+    expect([...s.api.messages.values()].map(item => item.text)).toEqual([first, second, "Done."]);
+    expect(run.snapshot.text).toBe(first + second + "Done.");
+    expect(events.map(event => event.type)).not.toContain("message_end");
+    expect(s.api.writes).toHaveLength(4); // first, two long chunks, then third native reply
+  });
+
+  test("a late delivery preserves coalesced message boundaries and reports cancellation on the unfinished reply", async () => {
+    const s = setup();
+    const run = await s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "multiple replies");
+    await waitUntil(() => s.session.calls === 1);
+    s.session.emit({ type: "replace", text: "First." });
+    s.session.emit({ type: "message_end", offset: 6 });
+    s.session.emit({ type: "delta", text: "Second." });
+    s.session.emit({ type: "message_end", offset: 13 });
+    s.session.emit({ type: "delta", text: "Unfinished" });
+    await run.cancel();
+    const api = new Transport();
+    await deliverRun(run, new TelegramReply(api, "42"), api, "42", new AbortController().signal, 5);
+    expect([...api.messages.values()].map(item => item.text)).toEqual(["First.", "Second.", "Unfinished\n\nReply stopped."]);
+    expect(api.writes).toHaveLength(3);
+  });
+
   test("SDK sends and edits Rich Markdown from the first partial reply and finalizes raw output", async () => {
     const calls: { method: string; body: Record<string, any> }[] = [];
     const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
@@ -445,6 +503,32 @@ test("Telegram and RN share one native durable conversation and model context", 
   expect(api.writes.length).toBe(writes);
   expect([...api.messages.values()].map(item => item.text).join("\n")).toContain("TG reply");
   expect(api.writes.every(item => !item.text.includes("助手指导") && !item.text.includes("AGENTS.md"))).toBe(true);
+});
+
+test("Telegram delivers native assistant entries separately, skips tool-only replies, and matches RN history", async () => {
+  const f = await fixture(); const repo = repository(f.paths);
+  const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
+  cleanup(() => store.close());
+  const api = new Transport();
+  const channel = new TelegramChannel({ botId: "77", username: "piko_bot", userId: "42" }, store, f.runtime, api, 800);
+  cleanup(async () => { channel.stopAccepting(); await store.close(); await channel.drain(); });
+  const read = () => fauxToolCall("read", { path: "AGENTS.md" });
+  f.faux.setResponses([
+    fauxAssistantMessage([{ type: "text", text: "**First reply.**" }, read()], { stopReason: "toolUse" }),
+    fauxAssistantMessage(read(), { stopReason: "toolUse" }),
+    fauxAssistantMessage([{ type: "text", text: "Second reply." }, read()], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Third reply."),
+  ]);
+  await channel.handle(message);
+  await waitUntil(async () => (await store.run(store.main.sessionId))?.snapshot.status === "succeeded");
+  await channel.drain();
+  const history = await store.history(store.main.sessionId);
+  const expected = ["**First reply.**", "Second reply.", "Third reply."];
+  expect(history.filter(item => item.role === "assistant").map(item => item.content)).toEqual(expected);
+  expect([...api.messages.values()].map(item => item.text)).toEqual(expected);
+  expect(api.messages.size).toBe(3); expect(f.faux.state.callCount).toBe(4);
+  expect(api.writes.every(item => item.rich)).toBe(true);
+  expect([...api.messages.values()].every(item => !item.text.includes("AGENTS.md"))).toBe(true);
 });
 
 describe("Telegram runtime controls", () => {

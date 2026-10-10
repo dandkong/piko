@@ -6,11 +6,11 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { fixture } from "./fixtures/durable";
 import { DurableChatSession } from "../server/runtime/pi";
-import type { StreamEvent } from "../shared/chat";
+import type { SessionEvent } from "../server/runtime/types";
 
 test("durable runs coding tools, refreshes skills, and persists native tool results", async () => {
   const f = await fixture(); const session = await f.createSession();
-  const events: StreamEvent[] = []; session.subscribe(event => events.push(event));
+  const events: SessionEvent[] = []; session.subscribe(event => events.push(event));
   f.faux.setResponses([
     context => {
       expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
@@ -44,7 +44,7 @@ test("durable runs coding tools, refreshes skills, and persists native tool resu
 
 test("literal submissions, multiple turns and passive results survive restart without duplicate streaming", async () => {
   const f = await fixture(); const session = await f.createSession() as DurableChatSession;
-  const events: StreamEvent[] = []; session.subscribe(event => events.push(event));
+  const events: SessionEvent[] = []; session.subscribe(event => events.push(event));
   f.faux.setResponses([
     fauxAssistantMessage([{ type: "text", text: "Checking. " }, fauxToolCall("read", { path: "MEMORY.md" })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Done."),
@@ -53,6 +53,7 @@ test("literal submissions, multiple turns and passive results survive restart wi
   const run = { id: crypto.randomUUID(), createdAt: 1 };
   await session.prompt("/skill:piko-workspace", run);
   expect(events.filter(event => event.type === "delta").map(event => event.text).join("")).toBe("Checking. Done.");
+  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual(["Checking. ".length, "Checking. Done.".length]);
   await session.prompt("/skill:piko-workspace", run);
   expect(f.faux.state.callCount).toBe(2);
   await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "piko.result", data: { display: true, createdAt: 3 },
