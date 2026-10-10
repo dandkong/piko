@@ -135,6 +135,8 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 `/reload` 是 Piko 的应用操作，没有调用 durable 的 reload 方法：先重读模型配置、构建并校验候选 registry，再关闭旧 Harness，在同一原生存储上调用 `Harness.open`。候选配置失败时继续使用旧配置；新 Harness 打开失败时尝试用旧配置重新打开。当前模型/思考选择和历史保留，已有选择不会因 defaultProfile 改变而被覆盖。它支持不退出后端进程的运行时重载，但没有监听文件后自动重载配置或插件代码。
 
+Durable 原生也支持 `registry.install(extension)` 原位替换同名扩展，`registry.uninstall(extension)` 删除扩展。已开始的工具调用保持旧实现，后续任务阶段/请求/调用使用新定义；这与 Piko 重建整个候选 registry 的方式不同，当前没有接入原位插件热替换。Piko 自己拒绝目录里重复或保留的插件名，避免多个入口互相覆盖。[Durable Reload](https://github.com/earendil-works/pi/blob/main/packages/durable/README.md#reload)
+
 | 修改内容 | 当前生效方式 | 是否需要 `/reload` |
 | --- | --- | --- |
 | 工作区 AGENTS.md、MEMORY.md | 每次模型请求前重新读取 section；同一轮调用工具后的下一次模型请求也会读取 | 不需要 |
@@ -152,6 +154,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | PIKO_HOME 或从外部终端改变进程环境 | 启动进程决定；外部终端新设置不会注入已有进程 | 重启后端 |
 | Piko 服务端代码、运行时适配器和依赖升级 | 重新启动执行新代码；开发模式 bun --watch 负责重启 | 重启；`/reload` 不加载新的宿主代码 |
 | 工作区其他 md、JSONL/SQLite 和插件持久化 doc | 普通文件按需读取；存储和 doc 保留既有状态，不靠重载变成新结构 | 不属于 `/reload` 的配置更新范围 |
+| 应用内建 templates/AGENTS.md、templates/MEMORY.md | 只在初始化时补齐缺失的用户文件，已有工作区定制不覆盖 | 重载不会覆盖已有指导/记忆 |
 
 通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，也不需要 `/reload`。编辑 models/settings/auth 文件后先重载，再选择；编辑工作区指导、记忆和技能后继续对话即可。升级 Bun/Pi/Piko 或修改通道与路径配置时重启后端。
 
