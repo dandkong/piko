@@ -1,12 +1,12 @@
 # 工作区与主会话模型
 
-状态：已迁移到 pi-durable 1.0.4。原有主会话、UI 布局、键盘、Markdown、停止、去重和重连语义保留。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，配置与插件用法见 [Durable 配置](durable-runtime.md)。
+状态：已迁移到 pi-durable，并更新至 1.1.0。原有主会话、UI 布局、键盘、Markdown、停止、去重和重连语义保留。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，配置与插件用法见 [Durable 配置](durable-runtime.md)。
 
 ## 范围与初始化
 
 唯一、持续的主会话；长期工作区与产品元数据分离。side chat 只预留类型和父关系，自动记忆、后台任务、工具进度与产物管理仍未实现。
 
-PIKO_HOME 默认 `~/.piko`，PIKO_WORKSPACE 可单独指定，均要求绝对路径。首次启动只补缺失配置和用户指导模板，不覆盖已有文件。工作区包含 `.agents/skills`、memory、projects、artifacts、AGENTS.md、SOUL.md、USER.md、MEMORY.md；state 位于工作区之外，单后端写进程锁保证不会同时写入同一状态目录。
+PIKO_HOME 默认 `~/.piko`，应用配置 `workspace.path` 或 PIKO_WORKSPACE 可单独指定工作区，均要求绝对路径；统一加载规则见 [应用配置](application-config.md)。首次启动只补缺失配置（含 piko.json）和用户指导模板，不覆盖已有文件。工作区包含 `.agents/skills`、memory、projects、artifacts、AGENTS.md、SOUL.md、USER.md、MEMORY.md；state 位于工作区之外，单后端写进程锁保证不会同时写入同一状态目录。
 
 | 存储 | 内容 |
 | --- | --- |
@@ -18,7 +18,7 @@ PIKO_HOME 默认 `~/.piko`，PIKO_WORKSPACE 可单独指定，均要求绝对路
 | 当前进程内存 | 活跃文本快照、最多 2,048 条 SSE 事件与订阅 |
 | workspace/ | 用户指导、记忆、技能与工作成果 |
 
-SQLite schema=3，不迁移旧 coding-agent 状态。Thread UUID 是 API sessionId；SQL 原生引用 version=2，指定该 Thread 的目录与 root conversation，不保存 leaf/context 快照。没有独立消息表、Run 正文日志或持久化 delta。
+SQLite schema=4，新增 TG 输入/停止命令身份与决定元数据，不迁移旧 schema 状态。Thread UUID 是 API sessionId；SQL 原生引用 version=2，指定该 Thread 的目录与 root conversation，不保存 leaf/context 快照。没有独立消息表、Run 正文日志或持久化 delta。两通道规则见 [Telegram 通道](telegram-channel.md)。
 
 ## 展示与上下文
 
@@ -44,7 +44,7 @@ API 契约见 [架构说明](../ARCHITECTURE.md)。新增运行时 API 提供配
 
 技能优先级为工作区 `.agents/skills` > PIKO_HOME/skills > 应用内建技能，同名覆盖有诊断。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI，插件为 durable 原生 Extension。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.0.4 的 read 尚不能读取图片，附件仍是禁用占位。自动记忆提取/检索未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。自动记忆提取/检索未实现。
 
 ## 中断与损坏恢复
 

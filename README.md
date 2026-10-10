@@ -4,7 +4,7 @@
 
 Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Agent 运行时使用 pi-durable 1.0.4，模型适配使用 pi-ai 1.0.4，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具。
+Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具。
 
 ## 文档入口
 
@@ -15,6 +15,7 @@ Agent 运行时使用 pi-durable 1.0.4，模型适配使用 pi-ai 1.0.4，Bun �
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [Durable 配置与插件](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能、插件与运行时控制 API |
+| [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
 
 启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前是具备长期工作区和持久主会话的文本聊天原型。
@@ -22,13 +23,9 @@ Agent 运行时使用 pi-durable 1.0.4，模型适配使用 pi-ai 1.0.4，Bun �
 ## 当前架构
 
 ```text
-Expo / React Native (Web、iOS、Android)
-                  │
-           Piko HTTP API + SSE
-                  │
-         pi-durable / Harness
-                  │
-                 pi-ai
+Expo / React Native ── HTTP + SSE ──┐
+                                  ├── Piko 会话服务 ── pi-durable ── pi-ai
+Telegram 私聊 ── Bot API 适配器 ────┘
 ```
 
 RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码位于 `shared/sse.ts`。服务端按 HTTP 路由、会话服务、领域存储和 Pi 适配器拆分。目前使用 Piko 的轻量事件格式，后续功能见 [ROADMAP.md](ROADMAP.md)。
@@ -69,7 +66,7 @@ bun run dev:web
 bun run dev:android
 ```
 
-`dev`、`dev:web` 和 `dev:android` 都会启动 API（8787）和 Expo（8081），自动为 API 配置本地 Web 的 CORS，并保留 `PIKO_CORS_ORIGINS` 中的其他 Origin。API 就绪后才启动 Expo。按 `Ctrl+C` 关闭两个服务；任何一个服务退出时，另一个也会关闭。启动前检查端口，已占用时提示关闭之前的服务，不会终止其他进程。
+`dev`、`dev:web` 和 `dev:android` 都会启动 API（默认 8787）和 Expo（8081），使用统一应用配置，自动为 API 配置本地 Web 的 CORS，并保留文件或 env 中的其他 Origin。API 就绪后才启动 Expo。按 `Ctrl+C` 关闭两个服务；任何一个服务退出时，另一个也会关闭。启动前检查端口，已占用时提示关闭之前的服务，不会终止其他进程。
 
 同时测试 Web 和 Android 时，运行 `bun run dev:web` 后在该终端按 `a`，共用一个 Expo 进程。
 
@@ -102,7 +99,8 @@ bun run android
 
 ### 配置与排错
 
-- `PIKO_HOST`、`PIKO_PORT` 控制 API 监听地址与端口，默认 `127.0.0.1:8787`；`PIKO_CORS_ORIGINS` 配置允许的 Web Origin。
+- Piko 应用配置集中在 `PIKO_HOME/config/piko.json`，首次启动补齐默认文件。HTTP、工作区和通道配置统一加载；优先级为默认值 < 配置文件 < `config/.env` < 进程环境变量，修改后重启 API。字段、env 映射和示例见 [应用配置](docs/features/application-config.md)。
+- `PIKO_HOST`、`PIKO_PORT` 覆盖 API 监听地址与端口，默认 `127.0.0.1:8787`；`PIKO_CORS_ORIGINS` 覆盖允许的 Web Origin。自定义 API 地址或端口时同时设置客户端地址。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
 - `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。
@@ -121,15 +119,32 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/config` 保存 `settings.json`、`models.json` 和 `auth.json`；`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable-sessions/<thread-id>/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/config` 保存应用 `piko.json`、可选 `.env` 和独立的模型 `settings.json`、`models.json`、`auth.json`；`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable-sessions/<thread-id>/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。`state/piko.sqlite` 只记录身份、执行状态、输入哈希、重试来源和原生会话引用。state 必须在工作区之外；同一状态目录只启动一个后端。
 
 用户可手动编辑工作区 AGENTS.md、SOUL.md、USER.md、MEMORY.md，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
 工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。自动记忆提取与检索尚未实现。
 
-备份时先停止 API，再一起复制整个 `PIKO_HOME` 和单独指定的工作区；恢复保留原工作区绝对路径。当前 schema 为 3，不迁移旧版 coding-agent 会话；旧 schema 会明确报错，可指定新的 `PIKO_HOME` 开始测试，原数据保留。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
+备份时先停止 API，再一起复制整个 `PIKO_HOME` 和单独指定的工作区；恢复保留原工作区绝对路径。当前 schema 为 4，新增 TG 输入和停止命令去重元数据；旧 schema 会明确报错，不迁移或删除旧状态，可指定新的 `PIKO_HOME` 开始测试。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
+
+### Telegram 私聊
+
+可选启动通道，使用同一个后端和主会话。可在 `piko.json` 启用 Telegram 并配置身份/token 引用，也可用 env 显式启用：
+
+```powershell
+$env:PIKO_TELEGRAM_ENABLED = "true"
+$env:PIKO_TELEGRAM_BOT_TOKEN = "<BotFather 提供的 token>"
+$env:PIKO_TELEGRAM_USER_ID = "<自己的数字用户 ID>"
+bun run dev:api
+```
+
+默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。`PIKO_HOME/config/.env` 可保存这些参数。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
+
+支持文本交流、流式文本/最终富文本回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`。TG 发起的消息和回复会出现在 RN；RN 回复不主动发送到 TG，可用 `/recent` 查询。两端共享忙碌状态与停止能力；忙碌时的新消息拒绝、不排队。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
+
+通道错误不关闭 RN。身份、模型和工作区配置在后端，token 不提交到仓库；附件、群聊、语音和后台推送尚未接入。发送失败或后端重启可能漏发 TG 回复，原生历史可在 RN 或 `/recent` 查询。详见 [通道说明](docs/features/telegram-channel.md)。
 
 ## 检查与导出
 
@@ -150,6 +165,6 @@ bun run build:web
 - Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 2,048 条事件只保存在内存，过期或重启后加载快照。同 `runId` 的重复提交在重启后仍不会重复执行；遗留运行标记中断，不自动重跑。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。若在 Pi 保存用户输入前中断，只有去重元数据，用户需要重新发送；不从另一套日志重建正文。
 - JSON 模型配置、思考强度、模型预设、插件重载和手动压缩已接入服务端 API；配置管理界面尚未实现。Durable 插件使用 `defineExtension`，不直接兼容 coding-agent CLI 扩展。
-- durable 1.0.4 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
+- durable 1.1.0 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
 - 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
 - Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。

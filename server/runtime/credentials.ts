@@ -7,7 +7,7 @@ import type {
   Credential,
   CredentialStore,
 } from "@earendil-works/pi-ai";
-import { readJson } from "./config/files.ts";
+import { readJson } from "../config/files.ts";
 import { object } from "./config/settings.ts";
 
 const credentialSchema = Type.Union([

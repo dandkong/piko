@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { readServerConfig } from "../server/config";
+import { loadPikoConfig } from "../server/config";
 
 const root = resolve(import.meta.dir, "..");
 const mobileRoot = resolve(root, "apps/mobile");
@@ -12,11 +12,12 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 
 const port = 8081;
-const config = readServerConfig();
+const piko = loadPikoConfig();
+const config = piko.http;
 const env = {
   ...process.env,
   PIKO_CORS_ORIGINS: [...new Set([
-    ...(process.env.PIKO_CORS_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),
+    ...config.allowedOrigins,
     `http://localhost:${port}`,
     `http://127.0.0.1:${port}`,
   ])].join(","),

@@ -1,6 +1,5 @@
 import {
   isSessionId,
-  MAX_MESSAGE_LENGTH,
   type ConversationResponse,
   type HealthResponse,
 } from "../shared/chat";
@@ -10,6 +9,7 @@ import type { ConversationStore } from "./chat/conversations";
 import { chatStream } from "./chat/stream";
 import { json, withCors } from "./http";
 import { runtimeRequest } from "./runtime/http";
+import { normalizeMessage } from "./chat/input";
 
 function sessionFromPath(pathname: string): string | undefined {
   const match = /^\/api\/sessions\/([^/]+)$/.exec(pathname);
@@ -122,9 +122,12 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
       }
       const input = body as Record<string, unknown>;
       if (!isSessionId(input.sessionId)) return withCors(request, json({ error: "A valid sessionId is required." }, 422));
-      if (typeof input.message !== "string" || !input.message.trim() || input.message.length > MAX_MESSAGE_LENGTH) {
+      if (typeof input.message !== "string") {
         return withCors(request, json({ error: "Message must contain 1–12,000 characters." }, 422));
       }
+      let message: string;
+      try { message = normalizeMessage(input.message); }
+      catch (error) { return withCors(request, json({ error: (error as Error).message }, 422)); }
       if (input.runId !== undefined && !isSessionId(input.runId)) return withCors(request, json({ error: "A valid runId is required." }, 422));
       if (input.retryOfRunId !== undefined && !isSessionId(input.retryOfRunId)) return withCors(request, json({ error: "A valid retryOfRunId is required." }, 422));
       const after = input.after ?? 0;
@@ -135,7 +138,7 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
         if (after > 0 && (!existing || existing.snapshot.id !== input.runId || !existing.canReplay(after))) {
           return withCors(request, json({ error: "Event history expired. Reload the conversation." }, 409));
         }
-        const run = await conversations.startRun(input.sessionId, (input.runId as string | undefined) ?? crypto.randomUUID(), input.message.trim(), input.retryOfRunId as string | undefined);
+        const run = await conversations.startRun(input.sessionId, (input.runId as string | undefined) ?? crypto.randomUUID(), message, input.retryOfRunId as string | undefined);
         if (!run.canReplay(after)) return withCors(request, json({ error: "Event history expired. Reload the conversation." }, 409));
         return withCors(request, chatStream(run, request, after));
       } catch (error) {

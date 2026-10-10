@@ -1,15 +1,13 @@
 # Piko 架构约定
 
-当前 Agent 底层为 pi-durable 1.0.4，模型适配为 pi-ai 1.0.4。体验见 [PRODUCT](PRODUCT.md)，进度见 [路线图](../ROADMAP.md)，用法见 [Durable 配置与插件](features/durable-runtime.md)。
+当前 Agent 底层为 pi-durable 1.1.0，模型适配为 pi-ai 1.1.0。体验见 [PRODUCT](PRODUCT.md)，进度见 [路线图](../ROADMAP.md)，用法见 [Durable 配置与插件](features/durable-runtime.md)。
 
 ## 当前结构
 
 ```text
-Expo / React Native → HTTP + SSE → Bun Chat 服务
-                                     ↓ 运行时接口
-                              pi-durable Harness
-                                     ↓
-                                    pi-ai
+Expo / React Native → HTTP + SSE ──┐
+                                 ├── Bun 会话服务 → 运行时接口 → pi-durable → pi-ai
+Telegram 私聊 → Bot API 适配器 ────┘
 ```
 
 | 位置 | 职责 |
@@ -19,23 +17,28 @@ Expo / React Native → HTTP + SSE → Bun Chat 服务
 | server/app.ts、http.ts | 路由、校验、响应与 CORS；导入不监听端口 |
 | server/index.ts、config.ts | 初始化、监听、单进程锁与退出清理 |
 | server/chat/ | Run 生命周期、去重、取消、内存快照与事件重放 |
+| server/channels/telegram/ | 可选私聊通道、身份检查、命令、轮询游标与回复呈现；直接复用会话业务 |
 | server/domain/ | 工作区初始化、SQLite 身份/执行元数据、重启标记中断 |
 | server/runtime/ | Durable/pi-ai 适配、JSON 配置、插件、资源范围、完整历史投影 |
 | server/resources/ | 原有核心指导、内建技能、用户文件模板 |
 | shared/ | 普通跨端类型与 SSE 契约，不依赖 Pi、Bun 或 React Native |
 | tests/ | UI 逻辑、协议、API、并发、原生持久化、恢复、资源与插件验证 |
 
-依赖方向：页面 → Hook/API → HTTP/SSE；路由 → 会话业务 → 运行时接口 → Pi 适配器。SDK 类型集中在 server/runtime；测试使用临时目录、faux provider 或本机模拟模型服务，不读取个人凭据。
+依赖方向：页面 → Hook/API → HTTP/SSE；路由/通道 → 会话业务 → 运行时接口 → Pi 适配器。Pi SDK 类型集中在 server/runtime，Telegram SDK 留在 server/channels/telegram；测试使用临时目录、faux provider 或本机模拟模型服务，不读取个人凭据。
 
 Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品、工作区/Thread 关系、Run 生命周期和传输；不复制第二套消息正文或永久 SSE 日志，不引入 pi-server / pi-client。
 
 ## 工作区与状态
 
-默认根目录为后端机器上的 `~/.piko`，独立于源码。`PIKO_HOME` 修改根目录，`PIKO_WORKSPACE` 可单独指定工作区，均要求绝对路径。
+默认根目录为后端机器上的 `~/.piko`，独立于源码。进程环境 `PIKO_HOME` 定位根目录；应用配置 `workspace.path` 或 `PIKO_WORKSPACE` 可单独指定工作区，均要求绝对路径。
+
+`server/config.ts` 是应用配置入口，统一加载和校验 HTTP、工作区及 Telegram，再注入使用处；优先级为默认值 < `config/piko.json` < `config/.env` < 进程环境。开发脚本使用同一入口。模型文件独立，复用通用 JSON/env 读取函数；不把 Pi SDK 配置类型移出 runtime。应用配置修改后重启，模型 reload 不重载应用配置。细节见 [应用配置](features/application-config.md)。
 
 ```text
 ~/.piko/
 ├── config/
+│   ├── piko.json                   # HTTP、工作区、通道配置
+│   ├── .env                        # 可选，应用与模型共用的本地环境变量
 │   ├── settings.json               # 模型预设、默认预设、压缩/重试/传输设置
 │   ├── models.json                 # 自定义供应商/模型和内建模型覆盖
 │   └── auth.json                   # 供应商凭据
@@ -59,7 +62,7 @@ Durable 是唯一 Agent 运行时和唯一会话内容存储。Piko 管理产品
     └── artifacts/
 ```
 
-初始化只补缺失文件，保留用户内容，拒绝工作区类型冲突与越界链接。state 必须在工作区外。当前 SQLite schema 为 3；不兼容旧 coding-agent 会话，不迁移或删除旧数据。配置不继承 `~/.pi/agent`。
+初始化只补缺失文件，保留用户内容，拒绝工作区类型冲突与越界链接。state 必须在工作区外。当前 SQLite schema 为 4，新增 TG 输入/停止命令身份和决定元数据；旧 schema 明确拒绝，不迁移或删除旧数据。配置不继承 `~/.pi/agent`。
 
 ## 模型、资源与插件
 
@@ -73,7 +76,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 - 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
 - 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
-- 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.0.4 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。
+- 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.1.0 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。
 
 ## 领域与历史投影
 
@@ -83,6 +86,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 | Thread | main / side 类型；唯一 main，side 只预留 parentThreadId；原生会话引用 |
 | Message | 指定 conversation 的完整原始 entries 临时投影；没有消息表 |
 | Run | SQL 保存顺序、状态、输入 SHA-256、时间、重试来源、错误、状态游标；不保存正文 |
+| TelegramReceipt | SQL 保存 Bot/chat/message 外部身份、用户、输入哈希、接纳/拒绝/停止决定与 Run 引用；无正文 |
 | StreamEvent | delta、replace、终态；最多 2,048 条内存重放 |
 | Task / Artifact（后续） | 产品任务调度与产物管理；成果文件在工作区 |
 
@@ -118,6 +122,12 @@ SQL 遗留活跃 Run 标记 failed + interrupted。第一次打开 Harness 时�
 原生日志与 SQL 不构成跨存储事务：日志领先时仍展示保存内容，Run 状态可保持中断。输入尚未保存则只剩去重元数据，需要用户重新发送。恢复不构造另一份正文、不伪造旧 SSE。退出停止监听、取消活跃 Run、等执行结束、关闭 Harness/storage 与数据库、释放锁。
 
 备份前停止 API，复制整个 PIKO_HOME 和单独指定的工作区，恢复保留工作区绝对路径。main 与 doc 日志必须成套备份。旧版测试改用新 PIKO_HOME，原数据保留。当前 UI 历史全量投影，分页加载/增量索引按规模再做。
+
+## Telegram 通道
+
+Telegram 适配器与 RN 共用 ConversationStore、主 Thread 和 runtime，进程内直接调用会话业务。TG 收据与 Run 在同一 SQL 事务内预留，忙碌拒绝也保持去重；轮询在持久化接纳成功后才确认 update。停止命令保存当时的目标 Run，重投不能停止之后的任务。
+
+TG 只投递自身发起的回复，命令提示不写入 Pi 历史；RN 展示两端聊天的原生投影。RN 前台空闲时每 3 秒发现变化，活跃 Run 使用既有 SSE。TG 网络发送与执行分离，平台消息 ID 不持久化，不承诺重启补发；共享主会话中断不自动执行。配置、命令、生命周期和边界见 [双通道说明](features/telegram-channel.md)。
 
 ## 后续方向（未实现）
 

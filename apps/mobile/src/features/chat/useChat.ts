@@ -4,6 +4,8 @@ import { randomUUID } from "expo-crypto";
 import { isRunActive, type ConversationResponse, type Message, type RunSnapshot } from "../../../../../shared/chat";
 import { cancelRun, checkHealth, isAbortError, loadConversation, streamMessage } from "./api";
 import { getMainSessionId } from "./session";
+import { sameMessages, syncConversation } from "./sync";
+import { HttpStreamError } from "./transport";
 
 type Observation = {
   controller: AbortController;
@@ -31,11 +33,15 @@ export function useChat() {
   const [reconnecting, setReconnecting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
+  const [foreground, setForeground] = useState(AppState.currentState !== "background" && AppState.currentState !== "inactive");
+  const foregroundRef = useRef(foreground);
   const observerRef = useRef<Observation | null>(null);
   const mounted = useRef(true);
   const refreshVersion = useRef(0);
   const pendingSubmission = useRef<RunSnapshot | null>(null);
   const sessionRef = useRef("");
+  const modelReady = useRef(false);
+  const syncedRun = useRef("");
 
   const requestStop = useCallback(async (observation: Observation) => {
     if (!observation.ready || observation.cancelSent || !observation.stopRequested) return;
@@ -108,6 +114,17 @@ export function useChat() {
     } catch (cause) {
       flush();
       if (!current() || isAbortError(cause)) return;
+      // A rejected input has no server Run. Release its optimistic state so idle sync can
+      // discover the other channel's accepted reply instead of getting stuck behind it.
+      if (cause instanceof HttpStreamError && cause.status < 500 && !observation.ready) {
+        pendingSubmission.current = null;
+        if (message !== undefined) setDraft(previous => previous || message);
+        try {
+          const conversation = await loadConversation(id, observation.controller.signal);
+          if (current()) setMessages(visibleMessages(conversation));
+        } catch { /* The idle observer will recover when the network is available. */ }
+      }
+      if (!current()) return;
       setConnected(false);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -132,6 +149,8 @@ export function useChat() {
       if (!mounted.current || version !== refreshVersion.current) return;
       setMessages(visibleMessages(conversation));
       setConnected(health.ok && health.modelReady);
+      modelReady.current = health.ok && health.modelReady;
+      syncedRun.current = conversation.run ? `${conversation.run.id}:${conversation.run.status}` : "";
       setError(health.modelReady ? conversation.run?.error ?? "" : "Piko is running, but no model is configured yet.");
       setReconnecting(false);
       setStopping(false);
@@ -171,6 +190,8 @@ export function useChat() {
     })();
     let previousState = AppState.currentState;
     const subscription = AppState.addEventListener("change", (state) => {
+      foregroundRef.current = state === "active";
+      setForeground(state === "active");
       if (state === "active" && previousState !== "active" && sessionRef.current) void refresh(sessionRef.current);
       previousState = state;
     });
@@ -183,6 +204,28 @@ export function useChat() {
       observerRef.current = null;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!sessionId || loading || !foreground) return;
+    const controller = new AbortController();
+    void syncConversation({
+      signal: controller.signal,
+      canPoll: () => mounted.current && foregroundRef.current && !observerRef.current && !pendingSubmission.current,
+      revision: () => refreshVersion.current,
+      load: signal => loadConversation(sessionId, signal),
+      apply: conversation => {
+        const visible = visibleMessages(conversation);
+        setMessages(previous => sameMessages(previous, visible) ? previous : visible);
+        setConnected(modelReady.current);
+        const run = conversation.run;
+        const key = run ? `${run.id}:${run.status}` : "";
+        if (key !== syncedRun.current) { syncedRun.current = key; setError(run?.error ?? ""); }
+        if (run && isRunActive(run)) void watchRun(sessionId, run);
+      },
+      onError: () => { setConnected(false); },
+    });
+    return () => controller.abort();
+  }, [foreground, loading, sessionId, watchRun]);
 
   const send = useCallback(async (text = draft, retryOfRunId?: string) => {
     const content = text.trim();

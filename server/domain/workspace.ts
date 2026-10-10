@@ -1,13 +1,11 @@
 import { mkdirSync, realpathSync, writeFileSync, lstatSync, openSync, readSync, closeSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { defaultPikoFile } from "../config/defaults";
 
 export type WorkspacePaths = { home: string; workspace: string; state: string; database: string; resources: string };
 
-export function resolveWorkspacePaths(env: Record<string, string | undefined> = process.env): WorkspacePaths {
-  const home = env.PIKO_HOME ?? join(homedir(), ".piko");
-  const workspace = env.PIKO_WORKSPACE ?? join(home, "workspace");
-  if (!isAbsolute(home) || !isAbsolute(workspace)) throw new Error("PIKO_HOME and PIKO_WORKSPACE must be absolute paths.");
+export function workspacePaths(home: string, workspace = join(home, "workspace")): WorkspacePaths {
+  if (!isAbsolute(home) || !isAbsolute(workspace)) throw new Error("Piko home and workspace must be absolute paths.");
   return { home: resolve(home), workspace: resolve(workspace), state: resolve(home, "state"), database: resolve(home, "state/piko.sqlite"),
     resources: resolve(import.meta.dir, "../resources") };
 }
@@ -30,6 +28,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
     if (!isWithin(realpathSync(paths.home), realpathSync(path))) throw new Error(`Piko data directory escapes its root: ${directory}`);
   }
   for (const [name, value] of Object.entries({
+    "piko.json": defaultPikoFile,
     "settings.json": { version: 1, profiles: {}, retry: { enabled: true, maxRetries: 2 } },
     "models.json": { providers: {} }, "auth.json": {},
   })) {

@@ -21,8 +21,8 @@ import type { HarnessSettings } from "@earendil-works/pi-durable";
 import {
   readJson,
   resolveConfigValue,
-  workspaceEnvironment,
-} from "./config/files.ts";
+  readConfigEnvironment,
+} from "../config/files.ts";
 import { runtimePaths } from "./config/paths.ts";
 import {
   object,
@@ -157,7 +157,7 @@ export async function loadWorkspaceModels(
   injected?: Models,
 ): Promise<WorkspaceModelConfig> {
   const paths = runtimePaths(home);
-  const env = workspaceEnvironment(home);
+  const env = readConfigEnvironment(home);
   const settings = readWorkspaceSettings(home);
   const config = readJson(join(paths.config, "models.json"), modelsSchema, {
     providers: {},

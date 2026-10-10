@@ -1,13 +1,16 @@
 import { createApp } from "./app";
-import { readServerConfig } from "./config";
+import { loadPikoConfig } from "./config";
 import { ConversationStore } from "./chat/conversations";
 import { createPiRuntime } from "./runtime/pi";
-import { initializeWorkspace, resolveWorkspacePaths } from "./domain/workspace";
+import { initializeWorkspace } from "./domain/workspace";
 import { ChatRepository } from "./domain/chat-repository";
 import { acquireBackendLock } from "./domain/backend-lock";
+import { TelegramBot } from "./channels/telegram/bot";
 
-const config = readServerConfig();
-const paths = initializeWorkspace(resolveWorkspacePaths());
+const piko = loadPikoConfig();
+for (const warning of piko.warnings) console.warn(warning);
+const config = piko.http;
+const paths = initializeWorkspace(piko.paths);
 const releaseLock = acquireBackendLock(paths.state);
 process.on("exit", releaseLock);
 const repository = new ChatRepository(paths.database, paths.workspace);
@@ -23,6 +26,12 @@ const server = Bun.serve({
   fetch: createApp({ config, runtime, conversations }),
 });
 
+let telegram: TelegramBot | undefined;
+if (piko.channels.telegram.enabled) {
+  try { telegram = new TelegramBot(piko.channels.telegram, conversations, runtime); }
+  catch { console.warn("Telegram initialization failed; RN remains available."); }
+}
+
 console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
 console.log(`pi-durable runtime; model configuration: ${paths.home}/config; read, write, edit and bash are enabled.`);
 console.log(`Piko workspace: ${paths.workspace}`);
@@ -33,8 +42,16 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   server.stop(true);
-  try { await conversations.close(); await runtime.dispose?.(); repository.close(); releaseLock(); process.exit(0); }
-  catch (error) { console.error("Piko shutdown failed:", error); process.exit(1); }
+  let failed = false;
+  // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
+  for (const close of [() => telegram?.stopInput(), () => conversations.close(), () => telegram?.close(),
+    () => runtime.dispose?.(), () => repository.close(), () => releaseLock()]) {
+    try { await close(); }
+    catch { failed = true; console.error("A Piko resource failed to close."); }
+  }
+  process.exit(failed ? 1 : 0);
 }
 process.on("SIGINT", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });
+// Startup is independent of HTTP readiness and is observed even if shutdown races it.
+void telegram?.start();

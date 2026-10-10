@@ -1,7 +1,8 @@
 import type { Message } from "../../shared/chat";
 import type { ChatSession, SessionContext, HistoryReader } from "../runtime/types";
-import { submissionHash, type ChatRepository } from "../domain/chat-repository";
+import { submissionHash, type ChatRepository, type RunRecord, type TelegramInput, type TelegramReceipt } from "../domain/chat-repository";
 import { ChatRun } from "./run";
+import { normalizeMessage } from "./input";
 
 type Conversation = { session: ChatSession; touchedAt: number };
 type StoreOptions = { idleSessionMs: number; maxSessions: number };
@@ -12,6 +13,7 @@ export class ConversationStore {
   private readonly runs = new Map<string, ChatRun>();
   private readonly executions = new Set<Promise<void>>();
   private storageFailure?: Error;
+  private closing = false;
 
   constructor(
     private readonly createSession: (context?: SessionContext) => Promise<ChatSession>,
@@ -42,7 +44,8 @@ export class ConversationStore {
   }
 
   async startRun(sessionId: string, runId: string, message: string, retryOfRunId?: string): Promise<ChatRun> {
-    if (this.storageFailure) throw this.storageFailure;
+    this.requireAvailable();
+    message = normalizeMessage(message);
     if (!this.accepts(sessionId)) throw new Error("This client uses an old conversation. Reload to open the main conversation.");
     const previous = this.repository.run(sessionId, runId);
     if (previous) {
@@ -51,12 +54,46 @@ export class ConversationStore {
     }
     // Validate canonical history before reserving an execution.
     await this.readHistory(this.repository.context(sessionId));
+    this.requireAvailable();
     // Another submission may have reserved this identity while history was read.
     if (this.repository.run(sessionId, runId)) {
       const record = this.repository.reserve(sessionId, runId, message, retryOfRunId);
       return (await this.run(sessionId, record.id))!;
     }
-    const { inputHash: _, ...metadata } = this.repository.reserve(sessionId, runId, message, retryOfRunId);
+    if (this.isStreaming(sessionId)) throw new Error("This conversation is already responding.");
+    return this.launchRun(sessionId, this.repository.reserve(sessionId, runId, message, retryOfRunId), message);
+  }
+
+  async startTelegram(input: TelegramInput, message: string): Promise<TelegramReceipt & { run?: ChatRun }> {
+    this.requireAvailable();
+    let invalid = false;
+    try { message = normalizeMessage(message); } catch { invalid = true; }
+    const sessionId = this.main.sessionId;
+    await this.readHistory(this.context());
+    this.requireAvailable();
+    const receipt = this.repository.admitTelegram(sessionId, input, message, invalid, this.isStreaming(sessionId));
+    if (!receipt.runId) return receipt;
+    const run = receipt.duplicate ? await this.run(sessionId, receipt.runId)
+      : this.launchRun(sessionId, this.repository.run(sessionId, receipt.runId)!, message);
+    return { ...receipt, run };
+  }
+
+  private requireAvailable(): void {
+    if (this.storageFailure) throw this.storageFailure;
+    if (this.closing) throw new Error("Piko is shutting down.");
+  }
+
+  async stopTelegram(input: TelegramInput, message: string): Promise<boolean> {
+    this.requireAvailable();
+    const receipt = this.repository.rememberTelegramStop(this.main.sessionId, input, message);
+    if (!receipt.runId) return false;
+    const run = await this.run(this.main.sessionId, receipt.runId);
+    if (run?.active) await run.cancel();
+    return true;
+  }
+
+  private launchRun(sessionId: string, record: RunRecord, message: string): ChatRun {
+    const { inputHash: _, ...metadata } = record;
     const run = new ChatRun({ ...metadata, message, text: "" },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
     this.runs.set(sessionId, run);
@@ -130,6 +167,7 @@ export class ConversationStore {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     await Promise.all([...this.runs.values()].filter(run => run.active).map(run => run.cancel()));
     await Promise.all([...this.executions]);
     await this.dispose();

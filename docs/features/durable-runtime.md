@@ -1,6 +1,8 @@
 # Durable 配置与插件
 
-状态：服务端已接入 pi-durable / pi-ai 1.0.4，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。模型/插件管理界面尚未实现，可编辑 JSON 并调用控制 API。
+状态：服务端已接入 pi-durable / pi-ai 1.1.0，配套 chord 同为 1.1.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。模型/插件管理界面尚未实现，可编辑 JSON 并调用控制 API。
+
+1.1.0 的原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
 
 ## 首次配置
 
@@ -47,7 +49,7 @@ bun run dev
 }
 ```
 
-上述 ID 来自锁定的 pi-ai 1.0.4 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
+上述 ID 来自锁定的 pi-ai 1.1.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
 
 第一次创建原生会话使用 defaultProfile；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启和重载会保留。修改 defaultProfile 后若需切换当前会话，再调用 selection API。最初没有模型的会话在重载后可以启用新配置。
 
@@ -91,7 +93,7 @@ models.json 支持内建供应商覆盖和自定义模型。API Key 可以放 au
 - 模型 maxTokens 是能力上限，request.maxTokens 是本次请求的默认输出预算；request.temperature 是采样默认值。模型级 request 可覆盖供应商级。
 - 支持 name、api、baseUrl、reasoning、input、cost、contextWindow、maxTokens、thinkingLevelMap、samplingParams、headers、compat 和 request；modelOverrides 按 ID 覆盖内建模型。
 - 供应商可设置 apiKey（字面值或 `env:VARIABLE`）、headers、keyless。keyless 用于无鉴权本机服务；不能同时设置 apiKey。
-- 可选 `config/.env` 仅供模型配置解析，进程环境优先，不修改进程全局环境；API/Expo 的启动变量仍由终端或根目录启动环境设置。
+- 可选 `config/.env` 由应用和模型配置共用，进程环境优先，不修改进程全局环境；HTTP/工作区/Telegram 的映射见 [应用配置](application-config.md)。Expo 的客户端环境仍独立设置；模型重载不会重载运行中的应用配置。
 - auth.json 支持 pi-ai 原生 api_key / oauth credential，现有 OAuth 凭据的刷新由 pi-ai 与原子文件存储完成；Piko 尚无交互登录/授权页面。
 - JSON 使用严格校验，未知字段报错，不静默忽略。解析错误仅报告文件/字段，不把凭据值放进错误响应。
 
@@ -187,6 +189,6 @@ export default defineExtension({
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.0.4 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。附件、配置管理、工具轨迹、任务和插件管理 UI 尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。附件、配置管理、工具轨迹、任务和插件管理 UI 尚未接入。
 
 验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置回退、插件/doc/辅助文件重载、历史压缩与重启去重；真机后台与真实长对话仍需使用验证。

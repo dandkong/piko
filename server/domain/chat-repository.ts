@@ -11,6 +11,8 @@ type ThreadRow = { id: string; workspace_id: string; kind: "main" | "side"; pare
 type RunRow = { id: string; thread_id: string; input_hash: string; status: RunStatus; created_at: number;
   last_event_id: number; error: string | null; error_code: "interrupted" | null; retry_of_run_id: string | null };
 export type RunRecord = Omit<RunSnapshot, "message" | "text"> & { inputHash: string };
+export type TelegramInput = { botId: string; chatId: string; messageId: string; actorId: string };
+export type TelegramReceipt = { disposition: "accepted" | "busy" | "invalid" | "stop"; runId: string | null; duplicate: boolean };
 
 export function submissionHash(message: string): string { return createHash("sha256").update(message).digest("hex"); }
 function record(row: RunRow): RunRecord {
@@ -30,7 +32,7 @@ export class ChatRepository {
     try {
       this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
       const version = this.db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;
-      if (version !== 0 && version !== 3) throw new Error("Incompatible development database. Stop Piko and use a new PIKO_HOME; old data is not migrated or deleted.");
+      if (version !== 0 && version !== 4) throw new Error("Incompatible development database. Stop Piko and use a new PIKO_HOME; old data is not migrated or deleted.");
       if (version === 0) this.db.transaction(() => {
         this.db.exec(`
           CREATE TABLE workspaces (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
@@ -52,7 +54,12 @@ export class ChatRepository {
             retry_of_run_id TEXT REFERENCES runs(id));
           CREATE UNIQUE INDEX one_active_run ON runs(thread_id) WHERE status IN ('queued','running','cancelling');
           CREATE INDEX thread_runs ON runs(thread_id, ordinal);
-          PRAGMA user_version=3;
+          CREATE TABLE telegram_inputs (bot_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL,
+            actor_id TEXT NOT NULL, thread_id TEXT NOT NULL REFERENCES threads(id), input_hash TEXT NOT NULL,
+            disposition TEXT NOT NULL CHECK(disposition IN ('accepted','busy','invalid','stop')), run_id TEXT REFERENCES runs(id),
+            created_at INTEGER NOT NULL, PRIMARY KEY(bot_id,chat_id,message_id),
+            CHECK((disposition='accepted' AND run_id IS NOT NULL) OR disposition='stop' OR (disposition IN ('busy','invalid') AND run_id IS NULL)));
+          PRAGMA user_version=4;
         `);
       }).immediate();
       this.main = this.db.transaction(() => {
@@ -107,6 +114,43 @@ export class ChatRepository {
       if (!result.changes) throw new Error("Run not found.");
       if (runtimeState !== undefined) this.saveRuntime(threadId, runtimeState);
     }).immediate();
+  }
+  /** The receipt and execution reservation commit together; no input body is stored. */
+  admitTelegram(threadId: string, input: TelegramInput, message: string, invalid: boolean, busy: boolean): TelegramReceipt {
+    return this.db.transaction((): TelegramReceipt => {
+      const hash = submissionHash(message);
+      const previous = this.telegramReceipt(threadId, input, message);
+      if (previous) return previous;
+      const active = this.db.query("SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling')").get(threadId);
+      const disposition: TelegramReceipt["disposition"] = invalid ? "invalid" : busy || active ? "busy" : "accepted";
+      const runId = disposition === "accepted" ? crypto.randomUUID() : null;
+      if (runId) this.reserve(threadId, runId, message);
+      this.db.query("INSERT INTO telegram_inputs VALUES (?,?,?,?,?,?,?,?,?)").run(input.botId, input.chatId, input.messageId,
+        input.actorId, threadId, hash, disposition, runId, Date.now());
+      return { disposition, runId, duplicate: false };
+    }).immediate();
+  }
+  rememberTelegramStop(threadId: string, input: TelegramInput, message: string): TelegramReceipt {
+    return this.db.transaction((): TelegramReceipt => {
+      const previous = this.telegramReceipt(threadId, input, message);
+      if (previous) return previous;
+      const active = this.db.query<{ id: string }, [string]>(
+        "SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling')").get(threadId);
+      const runId = active?.id ?? null;
+      this.db.query("INSERT INTO telegram_inputs VALUES (?,?,?,?,?,?,'stop',?,?)").run(input.botId, input.chatId,
+        input.messageId, input.actorId, threadId, submissionHash(message), runId, Date.now());
+      return { disposition: "stop", runId, duplicate: false };
+    }).immediate();
+  }
+  private telegramReceipt(threadId: string, input: TelegramInput, message: string): TelegramReceipt | undefined {
+    const previous = this.db.query<{ disposition: TelegramReceipt["disposition"]; run_id: string | null; input_hash: string;
+      thread_id: string; actor_id: string }, [string, string, string]>(
+      "SELECT * FROM telegram_inputs WHERE bot_id=? AND chat_id=? AND message_id=?").get(input.botId, input.chatId, input.messageId);
+    if (!previous) return undefined;
+    if (previous.input_hash !== submissionHash(message) || previous.thread_id !== threadId || previous.actor_id !== input.actorId) {
+      throw new Error("This Telegram message identity was already used for another submission.");
+    }
+    return { disposition: previous.disposition, runId: previous.run_id, duplicate: true };
   }
   context(threadId: string): SessionContext {
     const thread = this.db.query<ThreadRow, [string]>("SELECT * FROM threads WHERE id=?").get(threadId);

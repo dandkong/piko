@@ -1,0 +1,78 @@
+import { Bot, GrammyError } from "grammy";
+
+export interface TelegramTransport {
+  send(chatId: string, text: string, rich: boolean, replyTo?: string): Promise<string>;
+  edit(chatId: string, messageId: string, text: string, rich: boolean): Promise<void>;
+  remove(chatId: string, messageId: string): Promise<void>;
+  typing(chatId: string): Promise<void>;
+}
+
+/** Only descriptions of known formatting failures permit fallback, never transport ambiguity. */
+export function isFormatError(error: unknown): boolean {
+  return error instanceof GrammyError && error.error_code === 400 &&
+    /parse|entit|rich.{0,40}(unsupported|not supported)|method.{0,40}not found|message.{0,20}too long/i.test(error.description);
+}
+
+export function telegramErrorCode(error: unknown): string {
+  // SDK errors may include the token-bearing request URL or user content. Do not log them.
+  return error instanceof GrammyError ? `API ${error.error_code}` : "network or local error";
+}
+
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new Error("Telegram stopped.")); return; }
+    const abort = () => { clearTimeout(timer); reject(new Error("Telegram stopped.")); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export async function telegramRequest<T>(operation: () => Promise<T>, signal: AbortSignal,
+  sleep: (ms: number, signal: AbortSignal) => Promise<void> = wait): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    if (signal.aborted) throw new Error("Telegram stopped.");
+    try { return await operation(); }
+    catch (error) {
+      if (signal.aborted || attempt >= 2) throw error;
+      if (error instanceof GrammyError && error.error_code !== 429 && error.error_code < 500) throw error;
+      const delay = error instanceof GrammyError && error.error_code === 429
+        ? Math.max(1, error.parameters.retry_after ?? 1) * 1000 : 500 * 2 ** attempt;
+      // Do not block the delivery worker indefinitely on a long platform cooldown.
+      if (delay > 15_000) throw error;
+      await sleep(delay, signal);
+    }
+  }
+}
+
+export class TelegramApi implements TelegramTransport {
+  readonly controller = new AbortController();
+  // grammY's Node typings use the abort-controller polyfill; Bun's signal implements the same runtime protocol.
+  get signal() { return this.controller.signal as unknown as NonNullable<Parameters<Bot["api"]["getWebhookInfo"]>[0]>; }
+  constructor(private readonly bot: Bot) {}
+
+  async send(chatId: string, text: string, rich: boolean, replyTo?: string): Promise<string> {
+    const options = { ...(replyTo && { reply_parameters: { message_id: Number(replyTo) } }) };
+    const message = await telegramRequest<{ message_id: number }>(() => rich
+      ? this.bot.api.sendRichMessage(chatId, { markdown: text }, options, this.signal)
+      : this.bot.api.sendMessage(chatId, text, { ...options, link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
+    return String(message.message_id);
+  }
+
+  async edit(chatId: string, messageId: string, text: string, rich: boolean): Promise<void> {
+    try {
+      await telegramRequest(() => this.bot.api.editMessageText(chatId, Number(messageId), rich ? { markdown: text } : text,
+        { link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
+    } catch (error) {
+      if (error instanceof GrammyError && error.error_code === 400 && /message is not modified/i.test(error.description)) return;
+      throw error;
+    }
+  }
+
+  async remove(chatId: string, messageId: string): Promise<void> {
+    await telegramRequest(() => this.bot.api.deleteMessage(chatId, Number(messageId), this.signal), this.controller.signal);
+  }
+
+  async typing(chatId: string): Promise<void> {
+    await this.bot.api.sendChatAction(chatId, "typing", {}, this.signal);
+  }
+}

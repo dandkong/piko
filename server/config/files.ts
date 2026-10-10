@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Compile } from "typebox/compile";
 import type { Static, TSchema } from "typebox";
-import { runtimePaths } from "./paths.ts";
 
 export function optionalText(path: string): string | undefined {
   try {
@@ -37,12 +36,12 @@ export function readJson<T extends TSchema>(
   return value as Static<T>;
 }
 
-/** Parse Piko's model configuration environment without mutating process.env. */
-export function workspaceEnvironment(
+/** Shared application/model environment; never mutates process.env. */
+export function readConfigEnvironment(
   home: string,
   ambient: Record<string, string | undefined> = process.env,
 ): Record<string, string | undefined> {
-  const path = join(runtimePaths(home).config, ".env");
+  const path = join(home, "config", ".env");
   const local: Record<string, string> = {};
   const text = optionalText(path);
   for (const [index, line] of (text?.split(/\r?\n/) ?? []).entries()) {

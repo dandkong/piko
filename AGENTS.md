@@ -10,7 +10,8 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 产品体验与范围见 [产品约定](docs/PRODUCT.md)。
 - 依赖方向、工作区与领域模型见 [架构约定](docs/ARCHITECTURE.md)。
 - 当前进度与开发顺序见 [路线图](ROADMAP.md)。
-- 具体功能方案放在 `docs/features/`；下一项是 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
+- 具体功能方案放在 `docs/features/`；已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
+- RN 与 Telegram 双通道已接入，共用主会话；支持范围与配置见 [通道说明](docs/features/telegram-channel.md)，复杂能力单独讨论。
 
 文档明确区分已实现、已确定但未实现、待设计。修改行为时同步对应文档；不要将方案写成现有能力。本文件指导仓库开发，不是运行中 Piko 助手的工作区 `AGENTS.md`。
 
@@ -32,6 +33,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具，以后端进程的本机权限运行，默认工作目录为助手工作区。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
 - 显式指定 Piko 资源范围，避免自动继承个人 Pi CLI 的全局技能、扩展或祖先目录指导。
 - 模型和凭据使用 `PIKO_HOME/config/{settings,models,auth}.json`，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，重载先验证候选配置；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
+- Piko 应用配置通过 `server/config.ts` 统一加载和校验 HTTP、工作区与通道；默认值 < `config/piko.json` < `config/.env` < 进程环境，使用处不自行读取 `PIKO_*`。`PIKO_HOME` 仅从进程环境定位目录；模型保持独立文件并复用通用 env 读取，应用配置修改后重启。见 [应用配置](docs/features/application-config.md)。
 - 保留提交去重、停止、流快照、断线恢复语义；断开观察者不等于取消任务，重启后不自动重放不确定执行。
 - 工作区指导、技能索引、Pi 上下文持久化和 read、write、edit、bash 四个内建工具已启用；支持读取技能正文、创建技能文件和运行脚本，个人 CLI 的全局扩展仍不自动加载。
 - 不建立第二套消息正文或永久流事件存储。SQLite 只保存必要身份、状态、输入哈希和原生会话引用；流式文字与 SSE 重放缓存在内存中，重启后不承诺恢复尚未由 Pi 保存的片段。

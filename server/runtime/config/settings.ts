@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { Type, type Static } from "typebox";
-import { readJson } from "./files.ts";
+import { readJson } from "../../config/files.ts";
 import { runtimePaths } from "./paths.ts";
 
 export const object = <T extends Record<string, import("typebox").TSchema>>(

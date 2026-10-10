@@ -4,12 +4,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { fixture, repository, waitUntil } from "./fixtures/durable";
-import { initializeWorkspace, readGuidance, resolveWorkspacePaths } from "../server/domain/workspace";
+import { initializeWorkspace, readGuidance } from "../server/domain/workspace";
 import { acquireBackendLock } from "../server/domain/backend-lock";
 import { ConversationStore } from "../server/chat/conversations";
 import { ChatRun } from "../server/chat/run";
 import { createApp } from "../server/app";
-import { readServerConfig } from "../server/config";
+import { defaultServerConfig, loadPikoConfig } from "../server/config";
 import type { RunSnapshot, StreamEvent } from "../shared/chat";
 import { readPiEntries } from "../server/runtime/pi-history";
 import { DurableChatSession } from "../server/runtime/pi";
@@ -23,7 +23,7 @@ test("initialization preserves guidance and JSON configuration, bounds reads and
   expect(await readFile(join(f.paths.home, "config/auth.json"), "utf8")).toContain("private");
   expect(readGuidance(f.paths.workspace, "USER.md", 4)).toStartWith("mine\n[Guidance truncated");
   expect(existsSync(join(f.paths.workspace, ".agents/skills"))).toBe(true);
-  expect(() => resolveWorkspacePaths({ PIKO_HOME: "relative" })).toThrow("absolute");
+  expect(() => loadPikoConfig({ PIKO_HOME: "relative" })).toThrow("absolute");
   expect(() => initializeWorkspace({ ...f.paths, state: join(f.paths.workspace, "state") })).toThrow("outside");
 });
 
@@ -83,7 +83,7 @@ test("a submission interrupted before native admission has no invented body and 
   const f = await fixture(); const repo = repository(f.paths); const thread = repo.main.sessionId, id = crypto.randomUUID();
   repo.reserve(thread, id, "accepted but not started"); repo.close();
   const resumed = repository(f.paths);
-  const store = new ConversationStore(f.runtime.createSession, readServerConfig({}), resumed, f.runtime.readHistory);
+  const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), resumed, f.runtime.readHistory);
   expect(await store.history(thread)).toEqual([]);
   expect((await store.run(thread))?.snapshot).toMatchObject({ message: "", text: "", errorCode: "interrupted" });
   expect((await store.startRun(thread, id, "accepted but not started")).snapshot.status).toBe("failed");
@@ -92,7 +92,7 @@ test("a submission interrupted before native admission has no invented body and 
 });
 
 test("main API, native history, SSE replay and duplicate requests never reexecute the model", async () => {
-  const f = await fixture(); const repo = repository(f.paths); const config = readServerConfig({});
+  const f = await fixture(); const repo = repository(f.paths); const config = defaultServerConfig();
   const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
   const app = createApp({ config, runtime: f.runtime, conversations: store });
   const discovery = () => app(new Request("http://local/api/main")).then(response => response.json());

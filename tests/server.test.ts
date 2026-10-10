@@ -4,7 +4,7 @@ import { consumeSse } from "../shared/sse";
 import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
 import { chatStream } from "../server/chat/stream";
-import { readServerConfig } from "../server/config";
+import { defaultServerConfig } from "../server/config";
 import type { ChatRuntime, ChatSession, HistoryReader } from "../server/runtime/types";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,7 +79,7 @@ function storage(session?: TestSession) {
 function setup(session = new TestSession()) {
   const { repo, readHistory } = storage(session);
   let creations = 0;
-  const config = readServerConfig({});
+  const config = defaultServerConfig();
   const runtime: ChatRuntime = {
     readHistory,
     isModelReady: async () => true,
@@ -220,7 +220,7 @@ describe("API and runtime boundary", () => {
     const session = new TestSession(true);
     const gate = Promise.withResolvers<ChatSession>();
     const { repo, readHistory } = storage(session);
-    const config = readServerConfig({});
+    const config = defaultServerConfig();
     const runtime: ChatRuntime = { isModelReady: async () => true, readHistory, createSession: () => gate.promise };
     const conversations = new ConversationStore(runtime.createSession, config, repo, readHistory);
     const app = createApp({ config, runtime, conversations });
@@ -239,7 +239,7 @@ describe("API and runtime boundary", () => {
     const session = new TestSession();
     const gate = Promise.withResolvers<ChatSession>();
     const { repo, readHistory } = storage(session);
-    const store = new ConversationStore(() => gate.promise, readServerConfig({}), repo, readHistory);
+    const store = new ConversationStore(() => gate.promise, defaultServerConfig(), repo, readHistory);
     const run = await store.startRun(sessionId, runId, "Hello");
     await run.cancel();
     gate.resolve(session);
@@ -277,7 +277,7 @@ describe("API and runtime boundary", () => {
 
   test("session creation failures keep the error and transient input without inventing native history", async () => {
     const { repo, readHistory } = storage();
-    const config = readServerConfig({});
+    const config = defaultServerConfig();
     const runtime: ChatRuntime = {
       readHistory,
       isModelReady: async () => false,
@@ -337,7 +337,7 @@ describe("conversation lifecycle", () => {
     await (await state.app(chatRequest({ sessionId, runId, message: "First" }))).text();
     const before = await state.conversations.history(sessionId);
     await state.conversations.dispose();
-    const recreated = new ConversationStore(async () => state.session, readServerConfig({}), state.repo, state.readHistory);
+    const recreated = new ConversationStore(async () => state.session, defaultServerConfig(), state.repo, state.readHistory);
     expect(await recreated.history(sessionId)).toEqual(before);
     expect((await recreated.startRun(sessionId, runId, "First")).canReplay(0)).toBe(false);
     expect(state.session.promptCalls).toBe(1); await recreated.dispose();

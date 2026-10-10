@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { initializeWorkspace, resolveWorkspacePaths } from "../../server/domain/workspace";
+import { initializeWorkspace } from "../../server/domain/workspace";
+import { loadPikoConfig } from "../../server/config";
 import { createPiRuntime } from "../../server/runtime/pi";
 import { ChatRepository } from "../../server/domain/chat-repository";
 
@@ -18,7 +19,7 @@ export async function fixture(tokensPerSecond = 100_000) {
     if (!resolve(root).startsWith(resolve(tmpdir()) + sep)) throw new Error("Unexpected test directory");
     await rm(root, { recursive: true, force: true });
   });
-  const paths = initializeWorkspace(resolveWorkspacePaths({ PIKO_HOME: root }));
+  const paths = initializeWorkspace(loadPikoConfig({ PIKO_HOME: root }).paths);
   const faux = fauxProvider({ tokensPerSecond, models: [
     { id: "fast", name: "Fast", reasoning: false, contextWindow: 250_000 },
     { id: "reasoning", name: "Reasoning", reasoning: true, contextWindow: 250_000 },

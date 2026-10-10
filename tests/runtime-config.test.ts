@@ -7,7 +7,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { createPiRuntime } from "../server/runtime/pi";
 import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
-import { readServerConfig } from "../server/config";
+import { defaultServerConfig } from "../server/config";
 import { FileCredentialStore } from "../server/runtime/credentials";
 
 const plugin = (value: string) => `
@@ -51,7 +51,7 @@ test("model profiles and thinking selections persist, invalid reload preserves t
   await writeFile(settings, JSON.stringify({ version: 1, defaultProfile: "quick", profiles: {
     quick: { provider: "faux", model: "fast", thinking: "off" }, review: { provider: "faux", model: "reasoning", thinking: "high" },
   } }));
-  const repo = repository(f.paths); const config = readServerConfig({});
+  const repo = repository(f.paths); const config = defaultServerConfig();
   const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
   const app = createApp({ config, runtime: f.runtime, conversations: store });
   const input = repo.context(repo.main.sessionId);
@@ -84,8 +84,10 @@ test("JSON model and auth configuration reaches a real local OpenAI-compatible r
       { headers: { "content-type": "text/event-stream" } });
   } }); cleanup(() => server.stop(true));
   const config = join(f.paths.home, "config");
+  await writeFile(join(config, ".env"), "PIKO_CONFIG_TEST_HEADER=shared-local-env-value\n");
   await writeFile(join(config, "models.json"), JSON.stringify({ providers: { local: {
     api: "openai-completions", baseUrl: `http://127.0.0.1:${server.port}/v1`, request: { temperature: 0.2, maxTokens: 128 },
+    headers: { "x-piko-config-test": "env:PIKO_CONFIG_TEST_HEADER" },
     compat: { supportsReasoningEffort: true, supportsStore: false, maxTokensField: "max_tokens" },
     models: [{ id: "test-model", contextWindow: 32000, maxTokens: 4096, reasoning: true, samplingParams: { top_p: 0.7 } }],
   } } }));
@@ -97,6 +99,7 @@ test("JSON model and auth configuration reaches a real local OpenAI-compatible r
   const session = await runtime.createSession(f.input);
   await session.prompt("local only", { id: crypto.randomUUID(), createdAt: 1 });
   expect(requests[0]?.headers.get("authorization")).toBe("Bearer only-local-test-key");
+  expect(requests[0]?.headers.get("x-piko-config-test")).toBe("shared-local-env-value");
   expect(requests[0]?.body).toMatchObject({ model: "test-model", temperature: 0.2, max_tokens: 128, top_p: 0.7, reasoning_effort: "high" });
   expect(JSON.stringify(await runtime.describe!(f.input))).not.toContain("only-local-test-key");
   expect(session.messages.at(-1)?.content).toBe("local answer");
@@ -146,7 +149,7 @@ export default defineExtension({ name: "slow" });`);
 });
 
 test("runtime cancel preserves the Run cancellation state while generation is busy", async () => {
-  const f = await fixture(5); const repo = repository(f.paths); const config = readServerConfig({});
+  const f = await fixture(5); const repo = repository(f.paths); const config = defaultServerConfig();
   const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
   cleanup(() => store.close());
   const app = createApp({ config, runtime: f.runtime, conversations: store });
