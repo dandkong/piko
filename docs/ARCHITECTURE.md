@@ -107,6 +107,8 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 同 Thread 只允许一个活跃 Run，SQL 唯一约束保证。先预留身份/输入哈希，再调用 durable submit，requestId 为 run.id；重复身份和相同输入复用，不同输入拒绝。显式重试使用新 UUID、相同输入、失败 Run 引用。
 
+上述是当前实现。已确定改为运行中输入使用 `whenBusy: "steer"` 与 `steeringMode: "all"`，RN/TG 统一接纳，尚未落地。多个输入可加入同一次原生执行，需一起调整输入去重身份、Piko Run 关联、`piko.run` 历史投影与实时观察；原生 inbox 是待应用输入的唯一正文来源。不能只放开忙碌校验。详见 [路线图](../ROADMAP.md#运行中输入steer-all已确定待实现)。
+
 queued → running → succeeded / failed；停止经过 cancelling → cancelled。终态先 fsync 原生 main 事务日志，再写 SQL 元数据，再发布终态；原生 storage 启用 fsync，doc 日志由其提交协议管理。存储失败阻止成功发布，并停止后续提交。流式文本最多 50 毫秒合并，不落盘；retry 导致文本修正时发送 replace，客户端整体替换。
 
 Pi 适配器通过 durable `watchEvents` 消费提交后的原生消息事件，转换为 Piko 的 delta/replace 和助手消息结束偏移；不再直接解析 commit publication / `pi.live`。初始与积压替换 snapshot 用完整原生 entries 校正当前回复及边界，不以有效上下文覆盖 UI 历史。执行等待和事件消费分开：Run 发布终态前等待对应 submission 终态事件消费，并核对完整原生历史。SDK 事件不直接进入 shared 或通道层，工具与压缩展示仍待接入。

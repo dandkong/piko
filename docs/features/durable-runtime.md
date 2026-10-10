@@ -138,6 +138,8 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 当前锁定 durable 1.1.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；`settings.compaction.enabled` 控制自动压缩，不关闭手动 compact。
 
+当前结果反馈有缺口：任务完成不一定生成摘要，任务被取消或摘要 write submission 未能应用也需单独处理；当前适配器只报告部分失败，TG 返回后统一提示成功。区分实际应用、未生成摘要、取消和失败的修正列入 [路线图](../../ROADMAP.md#主动压缩的结果反馈已发现缺口待修正)，尚未实现。后台自动压缩是否需要展示提醒仍待设计。
+
 目前不提供 `/reload` 命令或 HTTP 接口。模型配置和插件代码修改后重启后端生效；是否接入运行时重载或插件热替换后续再讨论。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
 
 | 修改内容 | 当前生效方式 |

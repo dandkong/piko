@@ -20,17 +20,52 @@
 | 1. 工作区与主会话模型 | 重开应用和重启服务仍回到同一主会话 | 工作区初始化、Pi 资源范围、核心实体、JSONL 与 SQLite 索引、Pi 上下文恢复、中断处理 | 首个增量已实现；真实长对话/设备行为继续验证；[功能说明](docs/features/workspace-and-main-chat.md) |
 | 2. 工具与技能使用 | 助手能保存工作成果与可复用流程 | Pi 内建文件/命令工具、技能正文读取与创建、脚本执行；管理界面、来源追踪与访问边界后续设计 | 基础工具已启用；产品化管理待设计 |
 | 3. RN 与 Telegram 双通道 | 可通过 TG 私聊使用同一个助手，RN 可看到共享历史与执行状态 | 文本回复、停止、详细状态/只读查询、模型/思考按钮、压缩、输入去重、回复呈现与 RN 前台同步；复杂能力单独讨论 | 首期代码与自动化已接入；[通道说明](docs/features/telegram-channel.md)；真实 Bot 与设备行为待验证 |
+| 3a. 运行中输入 | 助手工作时仍可补充、纠正要求，RN/TG 遵循相同规则 | 输入使用 durable `whenBusy: "steer"`，运行时使用 `steeringMode: "all"`；调整输入身份、执行关联、实时投影、停止与通道投递 | 方向已确定，尚未实现；当前 RN 禁止运行中发送，TG/服务端仍拒绝忙碌输入 |
 | 4. Activity 与 Artifacts | 看见助理做了什么、生成了什么 | 执行轨迹、事件与文件/结构化产物查看 | 待设计 |
 
 当前落地 Workspace、Thread 和精简的 Run 元数据；Message 是 Pi 原生记录的展示投影，流事件只用于实时传输与内存重放。主会话是默认入口，side chat 仅预留类型与关联，不做会话列表或切换交互。记忆目录与指导文件可以先建立，自动提取和检索不因此算完成。
 
 关键验收是：主会话唯一、模板不覆盖用户内容、原生历史和上下文能恢复、压缩不影响 UI 历史、重复提交不重复执行、重启明确中断、停止和重连仍可用。接口及恢复细项见功能方案；不保留旧数据库兼容。
 
+## 已确定的修正与运行时复用
+
+以下区分当前实现与后续方向，不代表已接入。durable API 以仓库锁定的 1.1.0 类型和源码为准，上游 main 的例子可能已改变接口；例如工具返回值当前使用 `content`，不能直接照搬 main 示例中的 `output`。
+
+### 运行中输入：steer all（已确定，待实现）
+
+- RN 与 Telegram 的普通文本都允许在回复期间提交，统一使用 `Conversation.submit({ type: "input", whenBusy: "steer", ... })`，Harness 设置 `steeringMode: "all"`。空闲输入正常启动执行，忙碌输入进入原生 inbox，在下一个接纳边界按顺序全部加入当前工作。持续到来的后续消息进入下一次边界。
+- steer 在当前工具轮结束或最终回复边界接纳输入，不能强行打断已经开始的模型请求或工具。普通输入不使用忙碌拒绝或等待当前工作回答后另起执行的 follow-up 语义。模型/思考选择等管理操作的空闲限制另外保留。
+- 每条输入保留独立身份与哈希去重，多个输入可参与同一次原生执行、共享最终回答。现有“一条输入对应一个 Piko Run”和按最新 `piko.run` 标记聚合回复的假设需要一起调整；不能仅取消 busy 校验或修改 submit 参数。
+- 继续用 `watchEvents` 观察执行，原生 entries 展示完整历史；原生 inbox/submission 表达接纳与应用状态，Piko 不建立第二套正文队列。实时快照、SSE、RN 乐观消息、TG 收据及回复观察需要覆盖多个输入参与同一执行，避免丢输入、重复消息或重复投递。
+- 普通停止针对当前会话执行及其尚未应用的 steer 输入；旧停止命令重投不能取消后来的执行。跨通道补充输入后的 TG 回复归属与更新规则，在实施时明确，保持 RN 回复默认不主动推送 TG 的产品约定。
+- 验收覆盖 RN/TG 并发提交、连续多条 steer 一起接纳、补充输入去重、停止与取消、失败后的待处理输入、断线观察恢复，以及最终原生历史一致性。重启仍不自动重放不确定执行，需覆盖 inbox 中尚未应用的输入。
+
+### 主动压缩的结果反馈（已发现缺口，待修正）
+
+当前已经调用原生 compact、等待摘要任务及结果 submission，并反馈部分失败；TG `/compact` 返回后统一显示成功。摘要任务完成可能没有生成摘要，任务也可能被取消；摘要生成后仍需确认 write submission 实际应用，`unanswered/stale` 不能算成功。
+
+后续让运行时返回普通产品结果，区分“已压缩”“无需压缩/未生成摘要”“已取消”和失败，只在摘要实际应用后报告成功。完整原生聊天历史保持可见。后台自动压缩继续由 durable 处理，是否增加可见提醒仍待设计，不因修正主动命令结果就新增通知。
+
+### Side chat、委派与后台工作（运行时方向已确定，产品交互待设计）
+
+- 同一工作区采用一个 Harness 管理多个 conversation，共享存储、调度与 registry；模型、思考、工具、指导和 cwd 可按 conversation 配置。当前每个 Thread 独立 Harness/root 的适配器需届时调整，工作目录相关提示 section 使用实际 conversation 的环境。
+- 用户专题会话与助手委派会话区分所有权：独立 side chat 不随主会话停止；前台委派采用原生 owned conversation/child task，通过工具 `details.conversationId` 关联查看。新建和 fork 的上下文范围、结论回传方式仍需设计，不自动同步两边全部消息。
+- 后台工作复用原生 task、checkpoint、document、write/input submission 和 reporter；外部副作用使用幂等身份，结论回传使用稳定 requestId 去重。write 只写记录，input 会唤起模型，投递方式按产品场景选择。
+- 接入后台任务前拆分“停止当前工作”和“停止所有工作”，调整当前统一 `abort({ background: true })` 的范围；前台执行继续采用重启中断策略，哪些后台任务可恢复需明确后再启用。持久化 checkpoint 不保证外部副作用恰好执行一次。
+
+### 结构化状态与配置生效（待按功能接入）
+
+- 计划、待办和工作检查点优先用原生 `defineDoc` 管理，通过工具提交修改、section 注入模型上下文；按状态用途选择 history/fork 策略。执行详情和结论仍落在原生 conversation，不复制消息正文到 SQLite。
+- 规划模式、只读研究等通过 conversation 的实际工具选择实现；权限和文件范围由执行环境约束，cwd 或提示词不能充当沙箱。工具包装或同名覆盖按真实需求接入，优先复用内建工具。
+- 配置及插件文件当前仍重启生效，用户指导和技能索引每次请求刷新。原生 registry 支持同名替换，但正在运行的阶段保留原快照、后续阶段采用新代码；是否提供重载入口继续待定。
+
+参考：[输入与 inbox](https://github.com/earendil-works/pi/blob/main/packages/durable/README.md#busy-conversations)、[前台委派](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/22-subagent-foreground.ts)、[后台委派](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/23-subagent-background.ts)、[压缩](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/25-compaction.ts)、[规划模式](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/27-plan-mode.ts)、[重载与重启](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/31-reload-and-restart.ts)。示例用于核对原生能力，实施时仍对照锁定版本。
+
 ## 后续方向
 
 | 能力 | 核心结果与依赖 |
 | --- | --- |
-| Background Tasks | 产品层任务定义、调度与执行/投递状态；可复用 durable 原生任务、文档和 write submission，执行详情保存在独立 conversation；产品调度和 UI 尚未实现 |
+| Background Tasks | 复用 durable 原生任务、文档、独立 conversation 和去重投递；先明确停止范围与重启恢复策略，再接入产品调度和 UI |
 | Goals | 长期目标关联任务、检查点、时间线和产物 |
 | Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
 | Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |
@@ -40,7 +75,7 @@
 | Secrets + Permissions | 凭据存储、权限范围、撤权和审计；先于私人账号连接器与自动外部操作 |
 | Connectors | 日历、邮件等授权、撤权、刷新和失败恢复 |
 | Agent-native UI | 基于真实结构化产物提供 Dashboard、Tracker 等交互 |
-| Side chat | 专题研究入口、上下文范围和结论回传；模型预留，交互单独研究 |
+| Side chat | 一个工作区 Harness 下多个 conversation；用户专题与 owned 委派区分，专题入口、上下文范围和结论回传待设计 |
 
 这些是方向及依赖，不是每项都立即开工的承诺。协议适配（包括 AG-UI）随真实工具、事件和 UI 需求推进，Pi 始终是唯一 Agent 运行时。页面在能力可用且验收后启用。
 

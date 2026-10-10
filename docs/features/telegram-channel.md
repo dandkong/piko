@@ -22,7 +22,7 @@ RN 继续提供完整产品体验，Telegram 提供适合聊天界面的能力�
 
 Telegram 通道内建文案统一使用简洁英文：命令说明、帮助、菜单、状态、空状态、进行中/完成/失败反馈和 callback 提示。帮助使用 Piko app 指代另一入口，不向用户展示 RN、Run、后端日志和主会话 UUID 等实现细节；必要操作限制通过简短提示说明。用户消息、模型回复、模型名称以及技能/插件内容仍保留原文。命令说明由启动时 setMyCommands 更新。
 
-以下能力留待独立讨论：附件上传/产物发送、图片理解、语音转写、群聊/话题、多用户、side chat、运行中追加输入、后台任务通知、审批按钮、Activity/Goals 等复杂页面、Mini App，以及预设切换和配置文件编辑界面。不复制 pi-pilot 的 `/new`、`/resume`、工作区切换或 `/exit`。
+运行中追加输入已确定采用 RN/TG 共用的 steer all，尚未实现，见 [路线图](../../ROADMAP.md#运行中输入steer-all已确定待实现)。以下能力留待独立讨论：附件上传/产物发送、图片理解、语音转写、群聊/话题、多用户、side chat、后台任务通知、审批按钮、Activity/Goals 等复杂页面、Mini App，以及预设切换和配置文件编辑界面。不复制 pi-pilot 的 `/new`、`/resume`、工作区切换或 `/exit`。
 
 ## 模型、思考强度与管理命令
 
@@ -48,7 +48,7 @@ Telegram 通道内建文案统一使用简洁英文：命令说明、帮助、�
 | --- | --- | --- |
 | 输入入口 | `server/app.ts` 校验请求并调用 `ConversationStore.startRun` | `src/adapters/telegram.ts` + `src/runtime/chat-runtime.ts` 接收 TG 输入；借鉴传输适配，不复制整套运行时 |
 | 执行与观察 | `server/chat/conversations.ts`、`run.ts` 管理 Run；HTTP/SSE 已独立于执行 | `src/render/turn-stream.ts` 分离回复呈现；借鉴节流和串行发送 |
-| 运行中输入 | 同 Thread 只允许一个活跃 Run | pi-pilot 使用 `whenBusy: "steer"`；首期保持 Piko 的忙碌拒绝，不接入 steering |
+| 运行中输入 | 当前同 Thread 只允许一个活跃 Run；已确定改为 steer all，尚未实现 | pi-pilot 使用 `whenBusy: "steer"`；Piko 后续统一 RN/TG 运行中接纳，并设置 `steeringMode: "all"` |
 | 会话与工作区 | 稳定 UUID、唯一主会话、SQLite 元数据、每 Thread 原生日志目录 | pi-pilot 支持选择 conversation 和工作区；保留 Piko 模型 |
 | 回复地址 | RN 自行观察指定 Run | pi-pilot 可使用默认通知地址；Piko 按实际输入私聊回复，不采用首个允许用户作为投递地址的推断 |
 | 命令 | 只读查询、模型/思考按钮与压缩均复用运行时接口 | 按 pi-pilot 的供应商/模型菜单和思考按钮交互接入，保留 Piko 的空闲限制 |
@@ -84,6 +84,8 @@ TG ── Telegram 适配器 ────┘                    │
 ## 会话、并发与输入去重
 
 一个工作区仍只有一个主 Thread 和一个活跃 Run。无论哪一个通道先提交，另一个在运行期间都返回“主会话正在回复，请等待或停止”。拒绝的文本不进入原生历史、不加入待执行队列。忙碌消息重投不能在空闲后意外成为新任务。
+
+这是当前限制，后续确定改为 `whenBusy: "steer"` + `steeringMode: "all"`。普通文本运行中也接纳，并在原生边界全部加入当前执行；输入收据、执行关联及跨通道回复观察需同步调整，不沿用忙碌拒绝作为最终设计。模型/思考选择等管理操作仍保留空闲限制。
 
 SQLite 的 `telegram_inputs` 保存精简的 TG 输入及停止命令收据元数据：
 
