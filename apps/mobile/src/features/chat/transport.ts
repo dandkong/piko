@@ -1,9 +1,9 @@
-import { isRunActive, type ConversationResponse, type RunSnapshot, type StreamEvent } from "../../../../../shared/chat";
+import { isRunActive, isStreamTerminal, type ConversationResponse, type RunSnapshot, type StreamEvent } from "../../../../../shared/chat";
 import { consumeSse } from "../../../../../shared/sse";
 
 type Transport = {
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
-  load: (sessionId: string, signal: AbortSignal) => Promise<ConversationResponse>;
+  load: (sessionId: string, signal: AbortSignal, runId?: string) => Promise<ConversationResponse>;
   wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 };
 type Observer = {
@@ -44,7 +44,7 @@ export async function observeRun(observer: Observer, transport: Transport): Prom
     const abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(abort, 15_000);
-    try { return await transport.load(sessionId, controller.signal); }
+    try { return await transport.load(sessionId, controller.signal, run.id); }
     finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
   };
   const terminalSnapshot = (snapshot: RunSnapshot) => {
@@ -97,7 +97,7 @@ export async function observeRun(observer: Observer, transport: Transport): Prom
           failures = 0;
           onReconnecting(false);
           onEvent(event);
-          if (event.type !== "delta" && event.type !== "replace") return;
+          if (isStreamTerminal(event)) return;
         }
       }
     } catch (error) {

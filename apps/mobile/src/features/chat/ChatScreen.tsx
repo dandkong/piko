@@ -21,7 +21,7 @@ import { styles } from "./styles";
 import { useChat } from "./useChat";
 
 export function ChatScreen() {
-  const { sessionId, messages, draft, setDraft, loading, busy, error, status, send, stop, retry } = useChat();
+  const { sessionId, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry } = useChat();
   const listRef = useRef<FlatList<Message>>(null);
   const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
   const followLatest = useRef(true);
@@ -135,7 +135,7 @@ export function ChatScreen() {
         </View>
         <ChatComposer
           draft={draft} onChange={setDraft} loading={loading} busy={busy}
-          ready={!!sessionId} onSend={(text) => void send(text)} onStop={stop}
+          ready={!!sessionId && !submitting} onSend={(text) => void send(text)} onStop={stop}
         />
       </KeyboardAvoidingView>
     </AppShell>

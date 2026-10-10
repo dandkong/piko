@@ -36,6 +36,8 @@ export function consumeSse(
       typeof value.text === "string"
     ) {
       events.push({ type: value.type, text: value.text, ...metadata });
+    } else if (typeof value === "object" && value !== null && "type" in value && value.type === "refresh") {
+      events.push({ type: "refresh", ...metadata });
     } else if (
       typeof value === "object" &&
       value !== null &&

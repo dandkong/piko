@@ -13,8 +13,11 @@ export class PiReplyEvents {
 
   constructor(private readonly emit: (event: SessionEvent) => void) {}
 
+  get snapshot() { return { text: this.emitted, messageEnds: [...this.boundaries] }; }
+  private boundaries: number[] = [];
+
   begin(runId: string) {
-    this.runId = runId; this.completed = ""; this.blocks.clear(); this.ended.clear(); this.emitted = "";
+    this.runId = runId; this.completed = ""; this.blocks.clear(); this.ended.clear(); this.emitted = ""; this.boundaries = [];
   }
 
   finish() { this.runId = undefined; this.blocks.clear(); }
@@ -39,6 +42,7 @@ export class PiReplyEvents {
       if (message?.role !== "assistant") return;
       this.content(message.content); this.publish();
       this.completed += this.partial(); this.blocks.clear(); this.ended.add(event.entry.id);
+      this.boundaries.push(this.completed.length);
       this.emit({ type: "message_end", offset: this.completed.length });
     }
   }
@@ -58,6 +62,7 @@ export class PiReplyEvents {
     this.nativeRunId = nativeRunId;
     if (!this.runId) return;
     this.completed = completed;
+    this.boundaries = boundaries.map(boundary => boundary.offset);
     this.content(snapshot?.run && nativeRunId === this.runId ? snapshot.generation?.message?.content : undefined);
     this.publish();
     for (const boundary of boundaries) {

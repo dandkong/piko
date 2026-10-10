@@ -1,4 +1,5 @@
 import { encodeSse } from "../../shared/sse";
+import { isStreamTerminal } from "../../shared/chat";
 import type { ChatRun } from "./run";
 
 /** Disconnecting removes only this observer; cancellation is an explicit Run operation. */
@@ -27,7 +28,7 @@ export function chatStream(run: ChatRun, request: Request, after = 0): Response 
           // A slow observer can recover from the Run snapshot rather than buffer without limit.
           if ((controller.desiredSize ?? 0) <= 0) { close(); return; }
           controller.enqueue(encoder.encode(encodeSse(event)));
-          if (event.type !== "delta" && event.type !== "replace") close();
+          if (isStreamTerminal(event)) close();
         } catch { close(); }
       });
       if (closed) { unsubscribe(); return; }

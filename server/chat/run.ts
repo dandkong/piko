@@ -1,5 +1,6 @@
 import { isRunActive, type RunSnapshot, type StreamEvent } from "../../shared/chat";
-import type { ChatSession } from "../runtime/types";
+import type { ChatSession, SessionEvent } from "../runtime/types";
+import { SessionCancelledError } from "../runtime/types";
 
 const MAX_REPLAY_EVENTS = 2048;
 /** A reply owns its runtime subscription independently of any HTTP connection. */
@@ -14,7 +15,8 @@ export class ChatRun {
   private flushTimer?: ReturnType<typeof setTimeout>;
   private storageError?: unknown;
 
-  constructor(snapshot: RunSnapshot, private readonly checkpoint: (snapshot: RunSnapshot, runtimeState?: unknown) => void) {
+  constructor(snapshot: RunSnapshot, private readonly checkpoint: (snapshot: RunSnapshot, runtimeState?: unknown) => void,
+    private readonly cancelExecution?: () => Promise<void>) {
     this.state = { ...snapshot };
   }
 
@@ -36,7 +38,7 @@ export class ChatRun {
 
   private persist(next: RunSnapshot, event?: StreamEvent): void {
     if (this.storageError) throw this.storageError;
-    if (event?.type === "delta" || event?.type === "replace") return; // Output/replay are transient.
+    if (event?.type === "delta" || event?.type === "replace" || event?.type === "refresh") return; // Output/replay are transient.
     try {
       this.checkpoint(next,
         event && !isRunActive(next) && this.promptStarted ? this.session?.exportState?.() : undefined);
@@ -75,12 +77,11 @@ export class ChatRun {
       conversation = await getSession();
       if (!this.active) return;
       this.session = conversation.session;
-      if (this.session.isStreaming) throw new Error("This conversation is already responding.");
       const running = { ...this.state, status: "running" as const };
       this.persist(running);
       this.state = running;
       let agentError: string | undefined;
-      unsubscribe = this.session.subscribe((event) => {
+      const receive = (event: SessionEvent) => {
         if (event.type === "delta") {
           this.pendingText += event.text;
           if (this.state.lastEventId === 0) this.flushText();
@@ -100,16 +101,23 @@ export class ChatRun {
           if (Number.isSafeInteger(event.offset) && event.offset > (this.messageBoundaries.at(-1) ?? 0)
             && event.offset <= this.state.text.length) this.messageBoundaries.push(event.offset);
         } else if (event.type === "error") agentError = event.message;
-      });
+        else if (event.type === "refresh") { this.flushText(); this.emit(event); }
+      };
+      unsubscribe = this.session.subscribe(receive);
+      const snapshot = this.session.replySnapshot;
+      if (snapshot && this.session.isStreaming) {
+        receive({ type: "replace", text: snapshot.text });
+        for (const offset of snapshot.messageEnds) receive({ type: "message_end", offset });
+      }
       this.promptStarted = true;
-      await this.session.prompt(this.state.message, { id: this.state.id, createdAt: this.state.createdAt });
+      await this.session.prompt(this.state.message, { id: this.state.id, createdAt: this.state.createdAt, executionId: this.state.executionId });
       if (this.snapshot.status === "cancelling") this.finish("cancelled");
       else if (agentError) this.finish("failed", agentError);
       else this.finish("succeeded");
     } catch (error) {
       if (this.storageError) throw this.storageError;
       if (this.active) {
-        if (this.state.status === "cancelling") this.finish("cancelled");
+        if (this.state.status === "cancelling" || error instanceof SessionCancelledError) this.finish("cancelled");
         else this.finish("failed", error instanceof Error ? error.message : "Pi could not complete this reply.");
       }
     } finally {
@@ -127,6 +135,12 @@ export class ChatRun {
   }
 
   async cancel(): Promise<void> {
+    if (!this.active) return;
+    if (this.cancelExecution) return this.cancelExecution();
+    return this.cancelCurrent();
+  }
+
+  async cancelCurrent(): Promise<void> {
     if (!this.active || this.state.status === "cancelling") return;
     if (!this.session) { this.finish("cancelled"); return; }
     const cancelling = { ...this.state, status: "cancelling" as const };

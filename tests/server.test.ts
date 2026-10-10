@@ -144,12 +144,13 @@ describe("API and runtime boundary", () => {
     expect(state.conversations.size).toBe(1);
   });
 
-  test("rejects a second turn while that conversation is streaming", async () => {
+  test("accepts another input while that conversation is streaming", async () => {
     const state = setup(new TestSession(true));
     const response = await state.app(chatRequest({ sessionId, message: "First" }));
     await state.session.started.promise;
     const second = await state.app(chatRequest({ sessionId, message: "Second" }));
-    expect(second.status).toBe(409);
+    expect(second.status).toBe(200);
+    await second.body!.cancel();
     await response.body!.cancel();
     expect(state.session.abortCalls).toBe(0);
     await (await state.conversations.run(sessionId))!.cancel();
@@ -227,10 +228,11 @@ describe("API and runtime boundary", () => {
     const first = await app(chatRequest({ sessionId, runId, message: "Hello" }));
     const duplicate = await app(chatRequest({ sessionId, runId, message: "Hello" }));
     const different = await app(chatRequest({ sessionId, runId: crypto.randomUUID(), message: "Other" }));
-    expect(different.status).toBe(409);
+    expect(different.status).toBe(200);
+    await different.body!.cancel();
     gate.resolve(session);
     await session.started.promise;
-    expect(session.promptCalls).toBe(1);
+    expect(session.promptCalls).toBe(2);
     await (await conversations.run(sessionId))!.cancel();
     expect(await first.text()).toBe(await duplicate.text());
   });
@@ -241,7 +243,9 @@ describe("API and runtime boundary", () => {
     const { repo, readHistory } = storage(session);
     const store = new ConversationStore(() => gate.promise, defaultServerConfig(), repo, readHistory);
     const run = await store.startRun(sessionId, runId, "Hello");
+    const added = await store.startRun(sessionId, crypto.randomUUID(), "Correction");
     await run.cancel();
+    expect(added.snapshot.status).toBe("cancelled");
     gate.resolve(session);
     await store.get(sessionId);
     expect(run.snapshot.status).toBe("cancelled");

@@ -10,14 +10,21 @@ export type Message = {
 export type StreamEvent = (
   | { type: "delta"; text: string }
   | { type: "replace"; text: string }
+  | { type: "refresh" }
   | { type: "done" }
   | { type: "cancelled" }
   | { type: "error"; message: string }
 ) & { runId?: string; sequence?: number };
 
+export function isStreamTerminal(event: StreamEvent): boolean {
+  return event.type === "done" || event.type === "cancelled" || event.type === "error";
+}
+
 export type RunStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
 export type RunSnapshot = {
   id: string;
+  /** Multiple input identities can participate in the same execution. */
+  executionId?: string;
   status: RunStatus;
   message: string;
   text: string;

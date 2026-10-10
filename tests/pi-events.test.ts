@@ -161,6 +161,7 @@ test("a lagging Piko event consumer reconciles overflow before the prompt settle
   expect(done).toBe(false);
   gate.resolve(); await pending;
   expect(rendered(events)).toBe("First.Second.");
+  expect(events.some(event => event.type === "refresh")).toBe(true);
   expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 13]);
   expect(session.isStreaming).toBe(false);
   const count = events.length;

@@ -61,7 +61,7 @@ test("literal submissions, multiple turns and passive results survive restart wi
   expect(f.faux.state.callCount).toBe(2);
   await session.prompt("explain", { id: crypto.randomUUID(), createdAt: 4 });
   const saved = await f.runtime.readHistory(f.input);
-  expect(saved.runs.get(run.id)).toEqual({ message: "/skill:piko-workspace", text: "Checking. Done." });
+  expect(saved.runs.get(run.id)).toEqual({ message: "/skill:piko-workspace", text: "Checking. Done.", executionId: run.id });
   expect(saved.messages.map(message => message.content)).toEqual(["/skill:piko-workspace", "Checking. ", "Done.", "scheduled summary", "explain", "Explanation."]);
   const state = session.exportState(); await session.dispose();
   expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(saved.messages);
@@ -73,9 +73,12 @@ test("provider failure surfaces, abort stops work, and next input still works", 
   await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, retry: { enabled: false } }));
   const session = await f.createSession();
   await expect(session.prompt("fail", { id: crypto.randomUUID(), createdAt: 1 })).rejects.toThrow();
-  f.faux.setResponses([fauxAssistantMessage("A very long reply that should be interrupted before it completes."), fauxAssistantMessage("Next.")]);
+  const entered = Promise.withResolvers<void>(); const gate = Promise.withResolvers<void>();
+  f.faux.setResponses([async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage("Interrupted reply."); }, fauxAssistantMessage("Next.")]);
   const pending = session.prompt("stop", { id: crypto.randomUUID(), createdAt: 2 });
-  await Bun.sleep(100); await session.abort(); await pending;
+  void pending.catch(() => {});
+  await entered.promise; const stopped = session.abort(); gate.resolve(); await stopped;
+  await expect(pending).rejects.toThrow("Reply stopped.");
   expect(session.isStreaming).toBe(false);
   await session.prompt("next", { id: crypto.randomUUID(), createdAt: 3 });
   expect(session.messages.at(-1)?.content).toBe("Next.");

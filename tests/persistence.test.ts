@@ -132,8 +132,8 @@ test("stream deltas remain transient and a failed terminal flush cannot publish 
     snapshot => { writes.push(snapshot); if (snapshot.status === "succeeded") throw new Error("disk full"); });
   run.subscribe(0, event => events.push(event));
   await expect(run.execute(async () => ({ session, touchedAt: 1 }))).rejects.toThrow("disk full");
-  expect(events.map(event => event.type)).toEqual(["delta"]);
-  expect(run.snapshot).toMatchObject({ status: "running", text: "saved", lastEventId: 1 });
+  expect(events.map(event => event.type)).toEqual(["refresh", "delta"]);
+  expect(run.snapshot).toMatchObject({ status: "running", text: "saved", lastEventId: 2 });
   expect(writes.map(snapshot => snapshot.status)).toEqual(["running", "succeeded"]);
 });
 

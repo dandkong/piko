@@ -9,8 +9,8 @@ export function checkHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>("/api/health");
 }
 
-export async function loadConversation(sessionId: string, signal?: AbortSignal): Promise<ConversationResponse> {
-  return readJson<ConversationResponse>(await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { signal }));
+export async function loadConversation(sessionId: string, signal?: AbortSignal, runId?: string): Promise<ConversationResponse> {
+  return readJson<ConversationResponse>(await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}${runId ? `?runId=${encodeURIComponent(runId)}` : ""}`, { signal }));
 }
 
 export function streamMessage(observer: Parameters<typeof observeRun>[0]): Promise<void> {

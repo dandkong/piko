@@ -1,6 +1,7 @@
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type ModelSelection = { provider: string; model: string; thinking?: ThinkingLevel };
 export type RuntimeSelection = { profile: string } | ModelSelection | { thinking: ThinkingLevel };
+export type CompactionResult = { status: "compacted" } | { status: "cancelled" } | { status: "skipped"; reason: "no_summary" | "stale" };
 export type RuntimeDescription = {
   runtime: "pi-durable";
   selection?: ModelSelection;

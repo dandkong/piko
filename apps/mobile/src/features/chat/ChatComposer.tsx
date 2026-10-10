@@ -25,7 +25,8 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<TextInput>(null);
-  const canSend = !busy && !loading && ready && !!draft.trim();
+  const canSend = !loading && ready && !!draft.trim();
+  const showStop = busy && !draft.trim();
   useEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
     const input = inputRef.current as unknown as HTMLTextAreaElement;
@@ -46,7 +47,7 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
   useEffect(() => {
     if (Platform.OS !== "web" && !draft) setInputHeight(44);
   }, [draft]);
-  const sendDisabled = !busy && (!draft.trim() || loading || !ready);
+  const sendDisabled = !showStop && !canSend;
   return (
     <View style={[styles.composer, focused && styles.composerFocused]}>
       <View style={styles.composerRow}>
@@ -79,25 +80,25 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, onSend, on
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           returnKeyType="send"
           onSubmitEditing={Platform.OS === "web" ? undefined : (event) => {
-            if (!busy && !loading && ready && event.nativeEvent.text.trim()) {
+            if (!loading && ready && event.nativeEvent.text.trim()) {
               onSend(event.nativeEvent.text);
             }
           }}
           accessibilityLabel="Message Piko"
         />
         <Pressable
-          accessibilityLabel={busy ? "Stop reply" : "Send message"}
+          accessibilityLabel={showStop ? "Stop reply" : "Send message"}
           accessibilityRole="button"
           accessibilityState={{ disabled: sendDisabled }}
           disabled={sendDisabled}
-          onPress={busy ? onStop : () => onSend()}
+          onPress={showStop ? onStop : () => onSend()}
           style={({ pressed }) => [
             styles.composerButton,
             busy || draft.trim() ? styles.sendReady : styles.sendIdle,
             pressed && styles.pressed,
           ]}
         >
-          {busy ? <Square size={18} color={colors.text} fill={colors.text} strokeWidth={0} /> : (
+          {showStop ? <Square size={18} color={colors.text} fill={colors.text} strokeWidth={0} /> : (
             <ArrowUp size={25} strokeWidth={1.8} color={draft.trim() ? colors.text : "#9CB5C5"} />
           )}
         </Pressable>

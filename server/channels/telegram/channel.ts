@@ -70,8 +70,8 @@ export class TelegramChannel {
       messageId: message.messageId, actorId: message.actorId }, message.text);
     if (result.disposition === "busy") this.feedback(message, "Piko is busy. Please wait, then send your message again.");
     else if (result.disposition === "invalid") this.feedback(message, "Send a message with 1–12,000 characters.");
-    else if (result.run && !result.duplicate && !this.deliveries.has(result.run.snapshot.id)) {
-      const id = result.run.snapshot.id;
+    else if (result.run && !result.duplicate && !this.deliveries.has(result.run.snapshot.executionId ?? result.run.snapshot.id)) {
+      const id = result.run.snapshot.executionId ?? result.run.snapshot.id;
       this.deliveries.add(id);
       this.track(deliverRun(result.run, new TelegramReply(this.api, message.chatId), this.api,
         message.chatId, this.controller.signal, this.intervalMs).finally(() => this.deliveries.delete(id)));
@@ -107,12 +107,18 @@ export class TelegramChannel {
     } else if ((command === "models" || command === "thinking") && this.runtime.describe && this.runtime.configure) {
       await this.menus.open(message, command); return;
     } else if (command === "compact" && this.runtime.compact) {
-      await this.conversations.changeRuntime(async () => {
+      const result = await this.conversations.changeRuntime(async () => {
         this.feedback(message, "Compacting context…");
-        await this.runtime.compact!(this.conversations.context());
+        return this.runtime.compact!(this.conversations.context());
       });
-      text = "Context compacted. Your chat history is preserved.";
-      if (this.runtime.describe) text += `\n${selectionText(await this.runtime.describe(this.conversations.context()))}`;
+      text = result.status === "compacted" ? "Context compacted. Your chat history is preserved."
+        : result.status === "cancelled" ? "Compaction stopped."
+        : result.reason === "stale" ? "Context changed. The summary wasn't applied."
+        : "Context unchanged. No summary created.";
+      if (this.runtime.describe) {
+        const description = await this.runtime.describe(this.conversations.context()).catch(() => undefined);
+        if (description) text += `\n${selectionText(description)}`;
+      }
     } else if (command === "recent") {
       const history = await this.conversations.history(sessionId);
       text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";

@@ -27,6 +27,21 @@ function observation(message?: string) {
 }
 
 describe("Run transport recovery", () => {
+  test("input refresh events remain on the stream and reconnect requests the observed input identity", async () => {
+    const state = observation(); let requests = 0; const loaded: string[] = [];
+    await observeRun(state.options, {
+      fetch: async () => ++requests === 1 ? stream(event(1, { type: "refresh" }), event(2, { type: "delta", text: "Before." }))
+        : stream(event(3, { type: "refresh" }), event(4, { type: "delta", text: "After." }), event(5, { type: "done" })),
+      load: async (id, signal, requestedRun) => {
+        loaded.push(requestedRun!);
+        return { sessionId, messages: [], run: { ...run, text: "Before.", lastEventId: 2 } };
+      }, wait: async () => {},
+    });
+    expect(loaded).toEqual([runId]);
+    expect(state.events.map(event => event.type)).toEqual(["refresh", "delta", "refresh", "delta", "done"]);
+    expect(requests).toBe(2);
+  });
+
   test("a durable retry can replace streamed text and continue on the same SSE connection", async () => {
     const state = observation(); let text = "";
     await observeRun({ ...state.options, onEvent(value) {

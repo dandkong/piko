@@ -15,6 +15,7 @@ export class ConversationStore {
   private readonly conversations = new Map<string, Conversation>();
   private readonly pending = new Map<string, Promise<Conversation>>();
   private readonly runs = new Map<string, ChatRun>();
+  private readonly inflight = new Map<string, ChatRun>();
   private readonly executions = new Set<Promise<void>>();
   private readonly runtimeChanges = new Map<string, Promise<unknown>>();
   private storageFailure?: Error;
@@ -34,7 +35,11 @@ export class ConversationStore {
   accepts(sessionId: string): boolean { return this.main.thread.id === sessionId; }
 
   isStreaming(sessionId: string): boolean {
-    return this.runtimeChanges.has(sessionId) || this.runs.get(sessionId)?.active || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
+    return this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).length > 0 || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
+  }
+
+  private activeRuns(sessionId: string) {
+    return this.accepts(sessionId) ? [...this.inflight.values()].filter(run => run.active) : [];
   }
 
   /** Reserve before any asynchronous runtime initialization, shared by HTTP and Telegram. */
@@ -48,13 +53,14 @@ export class ConversationStore {
   }
 
   async run(sessionId: string, runId?: string): Promise<ChatRun | undefined> {
-    const cached = this.runs.get(sessionId);
+    const cached = runId ? this.inflight.get(runId) ?? this.runs.get(sessionId)
+      : this.activeRuns(sessionId).at(-1) ?? this.runs.get(sessionId);
     if (cached && (!runId || cached.snapshot.id === runId)) return cached;
     const record = runId ? this.repository.run(sessionId, runId) : this.repository.latest(sessionId);
     if (!record) return undefined;
     const content = (await this.readHistory(this.repository.context(sessionId))).runs.get(record.id);
     const { inputHash: _, ...metadata } = record;
-    return new ChatRun({ ...metadata, message: content?.message ?? "", text: content?.text ?? "" },
+    return new ChatRun({ ...metadata, ...(content?.executionId && { executionId: content.executionId }), message: content?.message ?? "", text: content?.text ?? "" },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
   }
 
@@ -75,7 +81,7 @@ export class ConversationStore {
       const record = this.repository.reserve(sessionId, runId, message, retryOfRunId);
       return (await this.run(sessionId, record.id))!;
     }
-    if (this.isStreaming(sessionId)) throw new Error("This conversation is already responding.");
+    if (this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).some(run => run.snapshot.status === "cancelling")) throw new RuntimeBusyError();
     return this.launchRun(sessionId, this.repository.reserve(sessionId, runId, message, retryOfRunId), message);
   }
 
@@ -86,7 +92,8 @@ export class ConversationStore {
     const sessionId = this.main.sessionId;
     await this.readHistory(this.context());
     this.requireAvailable();
-    const receipt = this.repository.admitTelegram(sessionId, input, message, invalid, this.isStreaming(sessionId));
+    const receipt = this.repository.admitTelegram(sessionId, input, message, invalid,
+      this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).some(run => run.snapshot.status === "cancelling"));
     if (!receipt.runId) return receipt;
     const run = receipt.duplicate ? await this.run(sessionId, receipt.runId)
       : this.launchRun(sessionId, this.repository.run(sessionId, receipt.runId)!, message);
@@ -109,27 +116,35 @@ export class ConversationStore {
 
   private launchRun(sessionId: string, record: RunRecord, message: string): ChatRun {
     const { inputHash: _, ...metadata } = record;
-    const run = new ChatRun({ ...metadata, message, text: "" },
-      (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
+    const previous = this.activeRuns(sessionId).at(-1)?.snapshot;
+    const executionId = previous?.executionId ?? previous?.id ?? record.id;
+    const run = new ChatRun({ ...metadata, executionId, message, text: "" },
+      (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState),
+      () => Promise.all(this.activeRuns(sessionId).filter(member => member.snapshot.executionId === executionId)
+        .map(member => member.cancelCurrent())).then(() => {}));
     this.runs.set(sessionId, run);
+    this.inflight.set(record.id, run);
     const execution = run.execute(() => this.get(sessionId)).catch((error) => {
       this.storageFailure = new Error("Reply storage is unavailable. Fix the storage issue and restart Piko to recover saved history.");
       console.error("Reply persistence failed:", error);
     });
     this.executions.add(execution);
-    void execution.finally(() => this.executions.delete(execution));
+    void execution.finally(() => { this.executions.delete(execution); this.inflight.delete(record.id); });
     return run;
   }
 
   async history(sessionId: string): Promise<Message[]> {
     const messages = (await this.readHistory(this.repository.context(sessionId))).messages;
-    const run = this.runs.get(sessionId);
-    if (!run?.active) return messages;
+    const runs = this.activeRuns(sessionId);
+    if (!runs.length) return messages;
     // Completed native fragments of this execution are already included in its live snapshot.
-    const visible = messages.filter((message) => message.runId !== run.snapshot.id || message.role !== "assistant");
-    if (!visible.some((message) => message.runId === run.snapshot.id && message.role === "user")) {
-      visible.push({ id: `user-${run.snapshot.id}`, role: "user", content: run.snapshot.message,
-        createdAt: run.snapshot.createdAt, runId: run.snapshot.id });
+    const groups = new Set(runs.map(run => run.snapshot.executionId ?? run.snapshot.id));
+    const visible = messages.filter(message => message.role !== "assistant" || !message.runId || !groups.has(message.runId));
+    for (const run of runs) {
+      if (!visible.some(message => message.runId === run.snapshot.id && message.role === "user")) {
+        visible.push({ id: `user-${run.snapshot.id}`, role: "user", content: run.snapshot.message,
+          createdAt: run.snapshot.createdAt, runId: run.snapshot.id });
+      }
     }
     return visible;
   }
@@ -175,15 +190,16 @@ export class ConversationStore {
   }
 
   async dispose(): Promise<void> {
-    if ([...this.runs.values()].some((run) => run.active) || this.pending.size || this.runtimeChanges.size) throw new Error("Stop active replies before disposing the conversation store.");
+    if ([...this.inflight.values()].some((run) => run.active) || this.pending.size || this.runtimeChanges.size) throw new Error("Stop active replies before disposing the conversation store.");
     for (const value of this.conversations.values()) await value.session.dispose();
     this.conversations.clear();
     this.runs.clear();
+    this.inflight.clear();
   }
 
   async close(): Promise<void> {
     this.closing = true;
-    await Promise.all([...this.runs.values()].filter(run => run.active).map(run => run.cancel()));
+    await Promise.all([...this.inflight.values()].filter(run => run.active).map(run => run.cancel()));
     await Promise.all([...this.executions]);
     await Promise.allSettled([...this.runtimeChanges.values()]);
     await this.dispose();

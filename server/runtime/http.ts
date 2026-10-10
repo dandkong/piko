@@ -1,4 +1,4 @@
-import type { RuntimeSelection, ThinkingLevel } from "../../shared/runtime";
+import type { CompactionResult, RuntimeSelection, ThinkingLevel } from "../../shared/runtime";
 import type { ChatRuntime, SessionContext } from "./types";
 import { json } from "../http";
 
@@ -14,7 +14,11 @@ export async function runtimeRequest(request: Request, runtime: ChatRuntime, inp
     if (path === "/api/runtime/cancel" && runtime.stop) { await runtime.stop(input); return json({ ok: true }); }
     if (!(path === "/api/runtime/compact" && runtime.compact || path === "/api/runtime/selection" && runtime.configure)) return json({ error: "Not found." }, 404);
     if (busy) return json({ error: "Stop the current reply before changing runtime configuration." }, 409);
-    if (path === "/api/runtime/compact" && runtime.compact) await change(() => runtime.compact!(input));
+    if (path === "/api/runtime/compact" && runtime.compact) {
+      let result!: CompactionResult;
+      await change(async () => { result = await runtime.compact!(input); });
+      return json({ ok: true, ...result });
+    }
     else if (path === "/api/runtime/selection" && runtime.configure) {
       const raw = await request.text();
       if (new TextEncoder().encode(raw).byteLength > 8000) return json({ error: "Request is too large." }, 413);

@@ -3,11 +3,12 @@ import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type Model
 import { createRegistry, defineDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
-import type { RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
+import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
 import type { ChatRuntime, ChatSession, SessionContext, SessionEvent } from "./types";
+import { SessionCancelledError } from "./types";
 import { exportPiReference, readPiContext, sessionDirectory } from "./pi-context";
-import { projectPiHistory, readPiEntries } from "./pi-history";
+import { projectPiHistory, readPiEntries, readPiHistory, readPiInputs } from "./pi-history";
 import { PiReplyEvents } from "./pi-events";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
@@ -32,8 +33,13 @@ export class DurableChatSession implements ChatSession {
   private config!: WorkspaceModelConfig;
   private extensions!: WorkspaceRegistry;
   private entries: EntryRecord[] = [];
+  private inputEntries = new Map<number, string>();
   private eventStream!: AgentEventStream;
-  private observed?: { runId: string; resolve: () => void; reject: (error: Error) => void };
+  private observed = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
+  private prompts = new Set<string>();
+  private executionId?: string;
+  private executionError?: Error;
+  private admission: Promise<unknown> = Promise.resolve();
   private observationError?: Error;
   private delivery?: Promise<void>;
   private reply = new PiReplyEvents(event => this.emit(event));
@@ -49,8 +55,9 @@ export class DurableChatSession implements ChatSession {
     private readonly onDispose?: () => void) {}
 
   get isStreaming() { return this.busy || this.changing; }
+  get replySnapshot() { return this.reply.snapshot; }
   get closePromise() { return this.closing; }
-  get messages() { return projectPiHistory(this.entries).messages; }
+  get messages() { return projectPiHistory(this.entries, this.inputEntries).messages; }
   get native() { return this.conversation; }
   get nativeHarness() { return this.harness; }
 
@@ -68,7 +75,7 @@ export class DurableChatSession implements ChatSession {
     try {
       harness = await Harness.open(storage, { models: config.models, registry: extensions.registry,
         env: ({ cwd }) => new WorkspaceExecutionEnv(cwd ?? this.paths.workspace, runtimePaths(this.paths.home).tmp),
-        settings: { ...config.harnessSettings, toolExecution: "sequential" },
+        settings: { ...config.harnessSettings, toolExecution: "sequential", steeringMode: "all" },
         onReport: error => console.error("Piko durable:", error),
       }, ctx);
     } catch (error) { await storage.close(ctx); throw error; }
@@ -99,12 +106,13 @@ export class DurableChatSession implements ChatSession {
       this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
+      this.inputEntries = await readPiInputs(harness, this.entries);
       const through = stream.snapshot.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
       this.reply.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot);
       stream.start(events => this.delivery = this.observe(events));
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
-        this.observed?.reject(this.observationError);
+        for (const observer of this.observed.values()) observer.reject(this.observationError);
         if (!this.disposed) console.error("Piko durable event stream closed:", end);
       });
     } catch (error) { await harness.close(ctx); throw error; }
@@ -118,9 +126,10 @@ export class DurableChatSession implements ChatSession {
         // Compaction/reset can put a newer head marker before retained older entries.
         const through = event.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
         this.reply.restore(this.entries.filter(entry => entry.id <= through), event);
-        const observed = this.observed;
-        if (!event.run && observed) {
-          const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, observed.runId), ctx);
+        // Overflow can replace user-message events too; let clients reconcile their history without changing text cursors.
+        if (this.prompts.size) this.emit({ type: "refresh" });
+        if (!event.run) for (const [runId, observed] of this.observed) {
+          const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, runId), ctx);
           if ((record?.status === "done" && record.type === "input" && record.answer <= through)
             || (record?.status === "unanswered" && (record.entry === undefined || record.entry <= through))) observed.resolve();
         }
@@ -128,8 +137,9 @@ export class DurableChatSession implements ChatSession {
         if ((event.type === "entry_appended" || event.type === "message_end")
           && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
         this.reply.apply(event);
-        if (event.type === "submission" && event.record.requestId === this.observed?.runId
-          && (event.record.status === "done" || event.record.status === "unanswered")) this.observed?.resolve();
+        if (event.type === "message_end" && event.entry.kind === "pi.user") this.emit({ type: "refresh" });
+        if (event.type === "submission" && event.record.requestId
+          && (event.record.status === "done" || event.record.status === "unanswered")) this.observed.get(event.record.requestId)?.resolve();
       }
     }
   }
@@ -141,44 +151,74 @@ export class DurableChatSession implements ChatSession {
   }
 
   subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  async prompt(text: string, run?: { id: string; createdAt: number }): Promise<void> {
+  async prompt(text: string, run?: { id: string; createdAt: number; executionId?: string }): Promise<void> {
     if (!run) throw new Error("A Piko Run identity is required.");
-    if (this.disposed || this.busy || this.changing) throw new Error("This conversation is already responding, reconfiguring or closed.");
+    const executionId = run.executionId ?? run.id;
+    if (this.disposed || this.changing || this.busy && (!this.prompts.size || this.executionId !== executionId)) throw new Error("This conversation is already responding, reconfiguring or closed.");
     if (this.observationError) throw this.observationError;
-    this.busy = true; this.reply.begin(run.id);
+    if (!this.busy) {
+      this.executionId = executionId; this.reply.begin(executionId); this.abortRequested = false; this.executionError = undefined;
+    }
+    this.busy = true; this.prompts.add(run.id);
     const observed = Promise.withResolvers<void>();
     // A stream can close while the provider is still settling; attach a handler immediately.
     void observed.promise.catch(() => {});
-    this.observed = { runId: run.id, resolve: () => observed.resolve(), reject: observed.reject };
-    this.abortRequested = false;
+    this.observed.set(run.id, { resolve: () => observed.resolve(), reject: observed.reject });
     try {
-      const agent = await this.conversation.agent(ctx);
-      if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
-      await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
-      if (this.abortRequested) return;
-      const existing = await this.conversation.commit(async tx => {
-        const record = await tx.submissionByRequest(this.conversation.id, run.id);
-        if (!record) await tx.appendEntry(this.conversation.id,
-          { kind: "piko.run", data: { runId: run.id, createdAt: run.createdAt } });
-        return record;
-      }, ctx);
-      if (this.abortRequested) return;
-      const submission = await this.conversation.submit({ type: "input", content: text, requestId: run.id }, ctx);
+      const admission = this.admission.catch(() => {}).then(async () => {
+        const agent = await this.conversation.agent(ctx);
+        if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
+        await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
+        if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
+        const existing = await this.conversation.commit(async tx => {
+          const record = await tx.submissionByRequest(this.conversation.id, run.id);
+          if (!record) {
+            if (!this.entries.some(entry => entry.kind === "piko.run" && entry.data && typeof entry.data === "object" && !Array.isArray(entry.data) && entry.data.runId === executionId)) {
+              const marker = await tx.appendEntry(this.conversation.id,
+                { kind: "piko.run", data: { runId: executionId, createdAt: run.createdAt } });
+              this.entries.push(marker);
+            }
+            await tx.appendEntry(this.conversation.id, { kind: "piko.input", data: { runId: run.id, executionId, createdAt: run.createdAt } });
+          }
+          return record;
+        }, ctx);
+        if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
+        const submission = await this.conversation.submit({ type: "input", content: text, requestId: run.id, whenBusy: "steer" }, ctx);
+        return { existing, submission };
+      });
+      this.admission = admission;
+      const { existing, submission } = await admission;
       const settled = await submission.wait(ctx);
+      // A failed run leaves queued inputs in the native inbox. Settle the entire execution without replaying them.
+      if (settled.status === "unanswered" && settled.reason !== "aborted") {
+        this.executionError ??= new Error(typeof settled.detail === "string" ? settled.detail : `Pi could not complete this reply: ${settled.reason}`);
+        this.abortRequested = true;
+        await this.conversation.abort(ctx);
+      }
       await this.conversation.waitForIdle(ctx);
       // Submission.wait tracks execution, not delivery. Preserve all message boundaries before Run publishes done.
       if (!existing || (existing.status !== "done" && existing.status !== "unanswered")) await observed.promise;
       this.entries = await readPiEntries(this.harness);
+      this.inputEntries = await readPiInputs(this.harness, this.entries);
       // Final history is authoritative, including multi-tool turns and recovered/aborted output.
-      this.reply.restore(this.entries);
+      if (this.prompts.size === 1) this.reply.restore(this.entries);
+      if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
+      if (settled.status === "unanswered" && settled.reason === "aborted") throw this.executionError ?? new SessionCancelledError();
       if (settled.status === "unanswered" && settled.reason !== "aborted") throw new Error(
         typeof settled.detail === "string" ? settled.detail : `Pi could not complete this reply: ${settled.reason}`);
-    } finally { this.reply.finish(); this.observed = undefined; this.busy = false; }
+    } finally {
+      this.observed.delete(run.id); this.prompts.delete(run.id);
+      if (!this.prompts.size) { this.reply.finish(); this.executionId = undefined; this.busy = false; }
+    }
   }
 
   abort() { this.abortRequested = true; return this.conversation.abort(ctx, { background: true }); }
   exportState() { return exportPiReference(runtimePaths(this.paths.home).sessions, this.input.threadId); }
-  async history() { this.entries = await readPiEntries(this.harness); return projectPiHistory(this.entries); }
+  async history() {
+    this.entries = await readPiEntries(this.harness);
+    this.inputEntries = await readPiInputs(this.harness, this.entries);
+    return projectPiHistory(this.entries, this.inputEntries);
+  }
   private async closeNative() {
     await this.eventStream.stop();
     // Listener errors are already reported by stream.closed; still release the store and plugin resources.
@@ -221,16 +261,25 @@ export class DurableChatSession implements ChatSession {
       profiles: this.config.profiles, skills: resources.skills, plugins: this.extensions.plugins };
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
-  async compact() {
+  async compact(): Promise<CompactionResult> {
     this.requireIdle();
     this.busy = true;
     try {
       const task = await this.conversation.compact(undefined, ctx);
       const settled = await this.harness.waitForTask(task, ctx);
-      if (settled.state.outcome.status === "failed" || settled.state.outcome.status === "faulted") throw new Error(settled.state.outcome.error.message);
-      if (settled.state.outcome.status === "completed" && settled.state.outcome.result.submissionId) {
-        await (await this.harness.submission(settled.state.outcome.result.submissionId, ctx))?.wait(ctx);
-      }
+      const outcome = settled.state.outcome;
+      if (outcome.status === "aborted") return { status: "cancelled" };
+      if (outcome.status === "failed" || outcome.status === "faulted") throw new Error(outcome.error.message);
+      if (outcome.status !== "completed") throw new Error("Compaction did not complete.");
+      if (outcome.result.entryId !== undefined) return { status: "compacted" };
+      if (outcome.result.submissionId === undefined) return { status: "skipped", reason: "no_summary" };
+      const submission = await this.harness.submission(outcome.result.submissionId, ctx);
+      if (!submission) throw new Error("Compaction result is unavailable.");
+      const placed = await submission.wait(ctx);
+      if (placed.status === "done") return { status: "compacted" };
+      if (placed.reason === "aborted") return { status: "cancelled" };
+      if (placed.reason === "stale") return { status: "skipped", reason: "stale" };
+      throw new Error(`Compaction could not be applied: ${placed.reason}`);
     } finally { this.busy = false; }
   }
 }
@@ -268,12 +317,12 @@ export function createPiRuntime(paths: WorkspacePaths, options: { models?: Model
       if (active?.closePromise) await active.closePromise;
       const native = await readPiContext(runtimePaths(paths.home).sessions, input);
       if (!native) return { messages: [], runs: new Map() };
-      try { return projectPiHistory(await readPiEntries(native.session)); }
+      try { return await readPiHistory(native.session); }
       finally { await native.session.close(ctx); }
     }),
     describe: input => serial(async () => (await get(input)).describe()),
     configure: (input, selection) => serial(async () => (await get(input)).configure(selection)),
-    compact: async input => { const session = await serial(() => get(input)); await session.compact(); },
+    compact: async input => { const session = await serial(() => get(input)); return session.compact(); },
     stop: async input => { const session = await serial(() => get(input)); await session.abort(); },
     dispose: () => serial(async () => { for (const session of [...sessions.values()]) await session.dispose(); }),
   };

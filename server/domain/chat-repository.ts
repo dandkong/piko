@@ -52,7 +52,6 @@ export class ChatRepository {
             status TEXT NOT NULL CHECK(status IN ('queued','running','cancelling','succeeded','failed','cancelled')),
             last_event_id INTEGER NOT NULL DEFAULT 0, error TEXT, error_code TEXT CHECK(error_code='interrupted'),
             retry_of_run_id TEXT REFERENCES runs(id));
-          CREATE UNIQUE INDEX one_active_run ON runs(thread_id) WHERE status IN ('queued','running','cancelling');
           CREATE INDEX thread_runs ON runs(thread_id, ordinal);
           CREATE TABLE telegram_inputs (bot_id TEXT NOT NULL, chat_id TEXT NOT NULL, message_id TEXT NOT NULL,
             actor_id TEXT NOT NULL, thread_id TEXT NOT NULL REFERENCES threads(id), input_hash TEXT NOT NULL,
@@ -62,6 +61,8 @@ export class ChatRepository {
           PRAGMA user_version=1;
         `);
       }).immediate();
+      // Inputs may now share an execution. This restriction has no persisted content to migrate.
+      this.db.exec("DROP INDEX IF EXISTS one_active_run; CREATE INDEX IF NOT EXISTS active_runs ON runs(thread_id) WHERE status IN ('queued','running','cancelling');");
       this.main = this.db.transaction(() => {
         this.db.query("INSERT OR IGNORE INTO workspaces VALUES (?, ?, ?)").run(crypto.randomUUID(), workspacePath, Date.now());
         const workspace = this.db.query<{ id: string; path: string; created_at: number }, [string]>("SELECT * FROM workspaces WHERE path=?").get(workspacePath)!;
@@ -96,7 +97,6 @@ export class ChatRepository {
         return previous;
       }
       if (this.db.query("SELECT id FROM runs WHERE id=?").get(runId)) throw new Error("This runId belongs to another thread.");
-      if (this.db.query("SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling')").get(threadId)) throw new Error("This conversation is already responding.");
       if (retryOfRunId) {
         const source = this.run(threadId, retryOfRunId);
         if (!source || source.status !== "failed" || source.inputHash !== inputHash) throw new Error("Retry must refer to a failed reply in this conversation with the same message.");
@@ -121,8 +121,7 @@ export class ChatRepository {
       const hash = submissionHash(message);
       const previous = this.telegramReceipt(threadId, input, message);
       if (previous) return previous;
-      const active = this.db.query("SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling')").get(threadId);
-      const disposition: TelegramReceipt["disposition"] = invalid ? "invalid" : busy || active ? "busy" : "accepted";
+      const disposition: TelegramReceipt["disposition"] = invalid ? "invalid" : busy ? "busy" : "accepted";
       const runId = disposition === "accepted" ? crypto.randomUUID() : null;
       if (runId) this.reserve(threadId, runId, message);
       this.db.query("INSERT INTO telegram_inputs VALUES (?,?,?,?,?,?,?,?,?)").run(input.botId, input.chatId, input.messageId,
@@ -135,7 +134,7 @@ export class ChatRepository {
       const previous = this.telegramReceipt(threadId, input, message);
       if (previous) return previous;
       const active = this.db.query<{ id: string }, [string]>(
-        "SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling')").get(threadId);
+        "SELECT id FROM runs WHERE thread_id=? AND status IN ('queued','running','cancelling') ORDER BY ordinal DESC LIMIT 1").get(threadId);
       const runId = active?.id ?? null;
       this.db.query("INSERT INTO telegram_inputs VALUES (?,?,?,?,?,?,'stop',?,?)").run(input.botId, input.chatId,
         input.messageId, input.actorId, threadId, submissionHash(message), runId, Date.now());

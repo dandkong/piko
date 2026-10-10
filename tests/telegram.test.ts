@@ -10,7 +10,7 @@ import { defaultServerConfig } from "../server/config";
 import { createApp } from "../server/app";
 import type { ChatRuntime, ChatSession, SessionEvent } from "../server/runtime/types";
 import type { Message, StreamEvent } from "../shared/chat";
-import type { RuntimeDescription, RuntimeSelection } from "../shared/runtime";
+import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../shared/runtime";
 import type { TelegramCallback } from "../server/channels/telegram/menus";
 import { TELEGRAM_COMMANDS, TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
 import { TelegramBot } from "../server/channels/telegram/bot";
@@ -28,18 +28,18 @@ class Session implements ChatSession {
   calls = 0;
   aborts = 0;
   private listeners = new Set<(event: SessionEvent) => void>();
-  private finish?: () => void;
+  private finishes: (() => void)[] = [];
   subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   async prompt(text: string, run?: { id: string }) {
     this.calls++; this.isStreaming = true;
     this.messages.push({ id: `u${this.calls}`, role: "user", content: text, createdAt: 1, runId: run?.id });
     this.emit({ type: "delta", text: "initial" });
-    await new Promise<void>(resolve => { this.finish = resolve; });
+    await new Promise<void>(resolve => { this.finishes.push(resolve); });
     this.messages.push({ id: `a${this.calls}`, role: "assistant", content: "answer", createdAt: 2, runId: run?.id });
     this.isStreaming = false;
   }
   emit(event: SessionEvent) { for (const listener of this.listeners) listener(event); }
-  async abort() { this.aborts++; this.finish?.(); }
+  async abort() { this.aborts++; for (const finish of this.finishes.splice(0)) finish(); }
   dispose() {}
 }
 
@@ -179,19 +179,23 @@ describe("Telegram shared main conversation", () => {
     expect(run.snapshot.status).toBe("cancelled");
   });
 
-  test("two-channel concurrent admission accepts one and remembers the busy rejection", async () => {
+  test("two-channel concurrent inputs share an execution and retain separate dedup identities", async () => {
     const s = setup();
     const results = await Promise.allSettled([s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN"), s.store.startTelegram(input, "TG")]);
     const tg = results[1]; expect(tg.status).toBe("fulfilled");
     const tgResult = (tg as PromiseFulfilledResult<Awaited<ReturnType<typeof s.store.startTelegram>>>).value;
-    expect((results[0].status === "fulfilled" ? 1 : 0) + (tgResult.disposition === "accepted" ? 1 : 0)).toBe(1);
-    await waitUntil(() => s.session.calls === 1);
+    expect(results[0].status).toBe("fulfilled"); expect(tgResult.disposition).toBe("accepted");
+    const rn = (results[0] as PromiseFulfilledResult<ChatRun>).value;
+    expect(tgResult.run!.snapshot.executionId).toBe(rn.snapshot.executionId);
+    await waitUntil(() => s.session.calls === 2);
     const busyInput = { ...input, messageId: "busy" };
-    expect((await s.store.startTelegram(busyInput, "later")).disposition).toBe("busy");
+    const added = await s.store.startTelegram(busyInput, "later");
+    expect(added.disposition).toBe("accepted");
+    await waitUntil(() => s.session.calls === 3);
     await (await s.store.run(s.store.main.sessionId))!.cancel();
     await waitUntil(() => !s.session.isStreaming);
-    expect(await s.store.startTelegram(busyInput, "later")).toMatchObject({ disposition: "busy", duplicate: true, runId: null });
-    expect(s.session.calls).toBe(1);
+    expect(await s.store.startTelegram(busyInput, "later")).toMatchObject({ disposition: "accepted", duplicate: true, runId: added.runId });
+    expect(s.session.calls).toBe(3);
   });
 
   test("accepted receipts survive restart, uncertain input is not replayed and no bodies are persisted", async () => {
@@ -505,6 +509,38 @@ test("Telegram and RN share one native durable conversation and model context", 
   expect(api.writes.every(item => !item.text.includes("助手指导") && !item.text.includes("AGENTS.md"))).toBe(true);
 });
 
+test("Telegram steers share one delivery while all inputs join the ongoing native reply", async () => {
+  const f = await fixture(); const repo = repository(f.paths);
+  const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
+  cleanup(() => store.close());
+  const api = new Transport();
+  const channel = new TelegramChannel({ botId: "77", username: "piko_bot", userId: "42" }, store, f.runtime, api, 20);
+  cleanup(async () => { channel.stopAccepting(); await store.close(); await channel.drain(); });
+  const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(() => gate.resolve());
+  let received = "";
+  f.faux.setResponses([
+    async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage([
+      { type: "text", text: "First." }, fauxToolCall("read", { path: "MEMORY.md" }),
+    ], { stopReason: "toolUse" }); },
+    context => { received = JSON.stringify(context.messages); return fauxAssistantMessage("Final."); },
+  ]);
+  await channel.handle(message); await entered.promise;
+  await channel.handle({ ...message, messageId: "2", text: "TG correction" });
+  const rn = await store.startRun(store.main.sessionId, crypto.randomUUID(), "RN supplement");
+  const latest = await store.run(store.main.sessionId);
+  expect(latest!.snapshot.executionId).toBe(rn.snapshot.executionId);
+  await waitUntil(() => repo.db.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM runs WHERE status='running'").get()!.count === 3);
+  // Let the serialized native admissions catch up before releasing the model request.
+  const session = await f.runtime.createSession(store.context()) as import("../server/runtime/pi").DurableChatSession;
+  const context = (await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT;
+  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, rn.snapshot.id), context))?.status === "queued");
+  gate.resolve(); await waitUntil(() => !rn.active); await channel.drain();
+  expect(received).toContain("TG correction"); expect(received).toContain("RN supplement");
+  expect(f.faux.state.callCount).toBe(2);
+  expect([...api.messages.values()].map(item => item.text)).toEqual(["First.", "Final."]);
+  expect((await store.history(store.main.sessionId)).filter(item => item.role === "user").map(item => item.content)).toEqual(["from TG", "TG correction", "RN supplement"]);
+});
+
 test("Telegram delivers native assistant entries separately, skips tool-only replies, and matches RN history", async () => {
   const f = await fixture(); const repo = repository(f.paths);
   const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), repo, f.runtime.readHistory);
@@ -532,6 +568,25 @@ test("Telegram delivers native assistant entries separately, skips tool-only rep
 });
 
 describe("Telegram runtime controls", () => {
+  test("compact distinguishes skipped, stale and cancelled results even if optional status cannot be read", async () => {
+    const s = setup();
+    s.runtime.describe = async () => { throw new Error("metadata unavailable"); };
+    const results: [CompactionResult, string][] = [
+      [{ status: "skipped", reason: "no_summary" }, "Context unchanged. No summary created."],
+      [{ status: "skipped", reason: "stale" }, "Context changed. The summary wasn't applied."],
+      [{ status: "cancelled" }, "Compaction stopped."],
+      [{ status: "compacted" }, "Context compacted."],
+    ];
+    for (const [result, expected] of results) {
+      const previous = s.api.writes.length;
+      s.runtime.compact = async () => result;
+      await s.channel.handle({ ...message, text: "/compact" });
+      await waitUntil(() => s.api.writes.slice(previous).some(write => write.text.includes(expected)));
+      expect(s.api.writes.slice(previous).some(write => write.text.includes("Couldn't complete"))).toBe(false);
+      if (result.status !== "compacted") expect(s.api.writes.slice(previous).some(write => write.text.includes("Context compacted."))).toBe(false);
+    }
+  });
+
   test("provider/model menus and thinking buttons match pilot layout and update shared selection", async () => {
     const s = setup(); const c = controls(s);
     await s.channel.handle({ ...message, text: "/models" });
@@ -618,7 +673,7 @@ describe("Telegram runtime controls", () => {
 
   test("busy and queued runs reject mutations while read-only menus and status remain available", async () => {
     const s = setup(); const c = controls(s); let operations = 0;
-    s.runtime.compact = async () => { operations++; };
+    s.runtime.compact = async () => { operations++; return { status: "compacted" }; };
     const opening = Promise.withResolvers<ChatSession>();
     const prompt = s.session.prompt.bind(s.session);
     s.session.prompt = async (...args) => { await opening.promise; await prompt(...args); };
@@ -638,11 +693,11 @@ describe("Telegram runtime controls", () => {
 
   test("compact reserves before initialization, blocks RN/TG admission and releases after failure", async () => {
     const s = setup(); controls(s);
-    const held = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<CompactionResult>();
     s.runtime.compact = async () => held.promise;
     await s.channel.handle({ ...message, text: "/compact" });
     await waitUntil(() => s.store.isStreaming(s.store.main.sessionId));
-    await expect(s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN")).rejects.toThrow("already responding");
+    await expect(s.store.startRun(s.store.main.sessionId, crypto.randomUUID(), "RN")).rejects.toThrow("Stop the current reply");
     expect((await s.store.startTelegram({ ...input, messageId: "during" }, "TG")).disposition).toBe("busy");
     const app = createApp({ config: defaultServerConfig(), runtime: s.runtime, conversations: s.store });
     expect((await app(new Request("http://localhost/api/runtime/compact", { method: "POST" }))).status).toBe(409);
@@ -655,7 +710,7 @@ describe("Telegram runtime controls", () => {
     const menuId = [...s.api.buttons.keys()][0];
     await click(s, menuId, "alpha");
     expect(s.api.answers.at(-1)?.alert).not.toBe(true);
-    s.runtime.compact = async () => {};
+    s.runtime.compact = async () => ({ status: "compacted" });
     await s.channel.handle({ ...message, text: "/compact" });
     await waitUntil(() => s.api.writes.some(write => write.text.includes("Context compacted.")));
     expect(s.session.calls).toBe(0); expect(s.repo.db.query("SELECT * FROM runs").all()).toEqual([]);

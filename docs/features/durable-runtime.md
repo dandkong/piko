@@ -138,7 +138,9 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 当前锁定 durable 1.1.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；`settings.compaction.enabled` 控制自动压缩，不关闭手动 compact。
 
-当前结果反馈有缺口：任务完成不一定生成摘要，任务被取消或摘要 write submission 未能应用也需单独处理；当前适配器只报告部分失败，TG 返回后统一提示成功。区分实际应用、未生成摘要、取消和失败的修正列入 [路线图](../../ROADMAP.md#主动压缩的结果反馈已发现缺口待修正)，尚未实现。后台自动压缩是否需要展示提醒仍待设计。
+运行时及 HTTP 现在明确返回 `status: compacted | skipped | cancelled`；skipped 的 reason 为 no_summary 或 stale。只有摘要实际应用后才报告 compacted；未生成摘要、摘要过时无法应用、取消分别反馈，任务失败、丢失结果或其他应用错误报告失败。TG `/compact` 同步这些结果，可选模型详情读取失败不影响已确认的结果。后台自动压缩是否需要展示提醒仍待设计。
+
+普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，共享执行投影；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
 目前不提供 `/reload` 命令或 HTTP 接口。模型配置和插件代码修改后重启后端生效；是否接入运行时重载或插件热替换后续再讨论。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
 

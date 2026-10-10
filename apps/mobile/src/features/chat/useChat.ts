@@ -32,6 +32,7 @@ export function useChat() {
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [foreground, setForeground] = useState(AppState.currentState !== "background" && AppState.currentState !== "inactive");
   const foregroundRef = useRef(foreground);
@@ -69,6 +70,7 @@ export function useChat() {
     setStopping(run.status === "cancelling");
     setReconnecting(false);
     let text = run.text;
+    let historyRefresh = 0;
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
     const flush = () => {
       clearTimeout(flushTimer);
@@ -82,10 +84,12 @@ export function useChat() {
         onReady: () => {
           observation.ready = true;
           if (pendingSubmission.current?.id === run.id) pendingSubmission.current = null;
+          if (current()) setSubmitting(false);
           if (current()) { setConnected(true); void requestStop(observation); }
         },
         onReconnecting: (value) => { if (current()) setReconnecting(value); },
         onSnapshot: (conversation) => {
+          historyRefresh++;
           clearTimeout(flushTimer);
           flushTimer = undefined;
           text = conversation.run!.text;
@@ -99,7 +103,15 @@ export function useChat() {
           } else if (event.type === "replace") {
             text = event.text;
             if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (event.type === "refresh") {
+            const version = ++historyRefresh;
+            void loadConversation(id, observation.controller.signal, run.id).then(conversation => {
+              if (current() && version === historyRefresh && conversation.run && isRunActive(conversation.run)) setMessages([...conversation.messages, {
+                id: `assistant-${run.id}`, role: "assistant", content: text, createdAt: run.createdAt,
+              }]);
+            }).catch(() => {});
           } else {
+            historyRefresh++;
             flush();
             if (event.type === "error") setError(event.message);
           }
@@ -108,6 +120,7 @@ export function useChat() {
       flush();
       const conversation = await loadConversation(id, observation.controller.signal);
       if (current()) {
+        setSubmitting(false);
         setMessages(visibleMessages(conversation));
         setConnected(true);
       }
@@ -131,6 +144,7 @@ export function useChat() {
       clearTimeout(flushTimer);
       if (current()) {
         observerRef.current = null;
+        setSubmitting(false);
         setBusy(false);
         setStopping(false);
         setReconnecting(false);
@@ -145,7 +159,7 @@ export function useChat() {
     setLoading(true);
     setBusy(false);
     try {
-      const [conversation, health] = await Promise.all([loadConversation(id), checkHealth()]);
+      const [conversation, health] = await Promise.all([loadConversation(id, undefined, pendingSubmission.current?.id), checkHealth()]);
       if (!mounted.current || version !== refreshVersion.current) return;
       setMessages(visibleMessages(conversation));
       setConnected(health.ok && health.modelReady);
@@ -229,21 +243,23 @@ export function useChat() {
 
   const send = useCallback(async (text = draft, retryOfRunId?: string) => {
     const content = text.trim();
-    if (!content || observerRef.current || busy || loading || !sessionId) return;
+    if (!content || pendingSubmission.current || stopping || loading || !sessionId) return;
     refreshVersion.current++;
     const run: RunSnapshot = {
       id: randomUUID(), status: "queued", message: content, text: "", createdAt: Date.now(), lastEventId: 0,
       ...(retryOfRunId && { retryOfRunId }),
     };
     pendingSubmission.current = run;
-    setMessages((items) => [...items,
+    setSubmitting(true);
+    const previous = observerRef.current?.runId;
+    setMessages((items) => [...items.filter(item => item.id !== `assistant-${previous}`),
       { id: `user-${run.id}`, role: "user", content, createdAt: run.createdAt },
       { id: `assistant-${run.id}`, role: "assistant", content: "", createdAt: run.createdAt },
     ]);
     setDraft("");
     setError("");
     await watchRun(sessionId, run, content);
-  }, [busy, draft, loading, sessionId, watchRun]);
+  }, [draft, loading, sessionId, stopping, watchRun]);
 
   const stop = useCallback(() => {
     const observation = observerRef.current;
@@ -274,5 +290,5 @@ export function useChat() {
   const status = loading ? "Connecting…" : stopping ? "Stopping…" : reconnecting ? "Reconnecting…"
     : busy ? "Thinking…" : connected ? "Here when you need me" : "Waiting to connect";
 
-  return { sessionId, messages, draft, setDraft, loading, busy, error, status, send, stop, retry };
+  return { sessionId, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry };
 }

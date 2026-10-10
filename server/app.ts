@@ -77,7 +77,9 @@ export function createApp({ config, runtime, conversations }: AppOptions) {
     const sessionId = sessionFromPath(url.pathname);
     if (sessionId && !conversations.accepts(sessionId)) return withCors(request, json({ error: "This client uses an old conversation. Reload to open the main conversation." }, 409));
     if (sessionId && request.method === "GET") {
-      const run = (await conversations.run(sessionId))?.snapshot;
+      const requestedRun = url.searchParams.get("runId");
+      if (requestedRun && !isSessionId(requestedRun)) return withCors(request, json({ error: "A valid runId is required." }, 422));
+      const run = (await conversations.run(sessionId, requestedRun ?? undefined))?.snapshot;
       return withCors(request, json({ sessionId, messages: await conversations.history(sessionId), ...(run && { run }) } satisfies ConversationResponse));
     }
     if (sessionId && request.method === "DELETE") {
