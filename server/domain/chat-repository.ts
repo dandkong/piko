@@ -10,7 +10,7 @@ type ThreadRow = { id: string; workspace_id: string; kind: "main" | "side"; pare
   created_at: number; runtime_json: string | null };
 type RunRow = { id: string; thread_id: string; input_hash: string; status: RunStatus; created_at: number;
   last_event_id: number; error: string | null; error_code: "interrupted" | null; retry_of_run_id: string | null };
-export type RunRecord = Omit<RunSnapshot, "message" | "text"> & { inputHash: string };
+export type RunRecord = Omit<RunSnapshot, "message"> & { inputHash: string };
 export type TelegramInput = { botId: string; chatId: string; messageId: string; actorId: string };
 export type TelegramReceipt = { disposition: "accepted" | "busy" | "invalid" | "stop"; runId: string | null; duplicate: boolean };
 

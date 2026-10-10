@@ -3,7 +3,7 @@ import { sameMessages, syncConversation } from "../apps/mobile/src/features/chat
 import type { ConversationResponse } from "../shared/chat";
 
 const snapshot: ConversationResponse = { sessionId: "main", messages: [{ id: "u1", role: "user", content: "TG", createdAt: 1 }],
-  run: { id: "run", status: "running", message: "TG", text: "answer", createdAt: 1, lastEventId: 1 } };
+  run: { id: "run", status: "running", message: "TG", createdAt: 1, lastEventId: 1 } };
 
 describe("foreground conversation discovery", () => {
   test("discovers active and already completed external Runs, suppresses duplicate message updates", async () => {

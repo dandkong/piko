@@ -85,14 +85,14 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 | Message | 指定 conversation 的完整原始 entries 临时投影；没有消息表 |
 | Run | SQL 保存顺序、状态、输入 SHA-256、时间、重试来源、错误、状态游标；不保存正文 |
 | TelegramReceipt | SQL 保存 Bot/chat/message 外部身份、用户、输入哈希、接纳/拒绝/停止决定与 Run 引用；无正文 |
-| StreamEvent | delta、replace、终态；最多 2,048 条内存重放 |
+| StreamEvent | 独立 message 快照、refresh、终态；最多 2,048 条内存重放 |
 | Task / Artifact（后续） | 产品任务调度与产物管理；成果文件在工作区 |
 
 实体 ID 为 UUID，时间为 Unix 毫秒数。每个 Thread 使用一个 durable session 目录与 root conversation。SQL 引用 `{version:2,directory:<thread UUID>,conversationId:<root ID>}`，不保存 leaf 或模型上下文快照。
 
 历史在原生 Session 的事务内分页读取指定 conversation 的所有 entries，按 ID 正序投影，不使用压缩后的 `conversation.context()` 作为 UI 历史。用户/助手文本形成气泡，ID 为 `pi-<entry ID>`、时间来自原生 model message；隐藏内部标记、工具、思考、压缩摘要。`piko.result` 的 display=true 可形成被动结果气泡；目前没有产品投递入口。
 
-`piko.run` state-only entry 只记录共享执行的 runId/createdAt，关联多条助手消息；`piko.input` 只记录每条输入的 runId/executionId/createdAt，通过原生 submission 的 entry 引用关联用户条目，不保存正文。执行中统一聚合本轮文本，避免已保存片段与 SSE 重复；最终重新读取原生权威历史。上下文编辑、reset 和压缩不删除 UI 原始消息。
+`piko.input` state-only entry 只记录每条输入的 runId/createdAt，通过原生 submission 的 entry 引用关联用户条目，不保存正文。助手消息独立于输入，不写执行分组标记，不累计整轮回答或隐藏已完成条目。生成中使用临时消息 ID，提交后以原生 pi-<entry ID> 原位替换；完整原生历史加当前未提交消息构成实时快照。上下文编辑、reset 和压缩不删除 UI 原始消息。
 
 ## API 与执行
 
@@ -100,18 +100,18 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 - POST `/api/chat`：sessionId、runId、message、after?、retryOfRunId?；返回 SSE。
 - GET `/api/sessions/:id`：完整原生历史、最近 Run 快照。
 - GET `/api/sessions/:id/runs/:runId/events?after=N`：内存事件重放；过期/越界/重启后返回 409，客户端加载快照。
-- POST `/api/sessions/:id/runs/:runId/cancel`：独立停止；断开观察连接只退订。
+- POST `/api/sessions/:id/runs/:runId/cancel`：目标输入仍活跃时停止当前 conversation；断开观察连接只退订。
 - GET `/api/runtime`：模型能力、选择、预设、技能、插件元数据；不返回凭据。
 - POST `/api/runtime/selection|compact|cancel`：模型选择、手动压缩与停止；配置管理 UI 未实现。
 - 不允许删除主会话或通过任意客户端 UUID 创建会话。
 
-同 Thread 的多个输入 Run 可共享一个 executionId，SQL 保存每条输入身份和状态，不再限制只有一个活跃输入记录。先预留身份/输入哈希，再调用 durable submit，requestId 为 run.id；重复身份和相同输入复用，不同输入拒绝。显式重试使用新 UUID、相同输入、失败 Run 引用。
+同 Thread 可有多个活跃输入 Run；Run 是提交身份与观察状态，不是助手消息或独立 Agent 执行。SQL 保存每条输入身份和状态。先预留身份/输入哈希，再调用 durable submit，requestId 为 run.id；重复身份和相同输入复用，不同输入拒绝。显式重试使用新 UUID、相同输入、失败 Run 引用。
 
-运行中输入使用 `whenBusy: "steer"` 与 `steeringMode: "all"`，RN/TG 统一接纳；模型/思考选择和手动压缩仍在空闲执行。适配器串行接纳但并行等待 submission，多条输入共享文本和消息边界，按原生接纳边界一起加入当前工作。原生 inbox 是待应用输入的唯一正文来源。停止取消整个共享执行及待应用输入；执行失败也撤回尚未应用输入并报告失败，不自动重跑。详见 [路线图](../ROADMAP.md#运行中输入steer-all已实现)。
+运行中输入使用 `whenBusy: "steer"` 与 `steeringMode: "all"`，RN/TG 统一接纳；模型/思考选择和手动压缩仍在空闲执行。适配器串行接纳但并行等待 submission，输入排序与应用交给原生 inbox；输出独立监听 conversation 的助手消息，不与输入一一对应。停止取消当前 conversation 的执行及待应用输入；执行失败也撤回尚未应用输入并报告失败，不自动重跑。详见 [路线图](../ROADMAP.md#运行中输入steer-all已实现)。
 
-queued → running → succeeded / failed；停止经过 cancelling → cancelled。终态先 fsync 原生 main 事务日志，再写 SQL 元数据，再发布终态；原生 storage 启用 fsync，doc 日志由其提交协议管理。存储失败阻止成功发布，并停止后续提交。流式文本最多 50 毫秒合并，不落盘；retry 导致文本修正时发送 replace，客户端整体替换。
+queued → running → succeeded / failed；停止经过 cancelling → cancelled。终态先 fsync 原生 main 事务日志，再写 SQL 元数据，再发布终态；原生 storage 启用 fsync，doc 日志由其提交协议管理。存储失败阻止成功发布，并停止后续提交。同一消息的未完成快照最多 50 毫秒合并，不落盘；retry 只更新当前消息正文，已提交助手消息继续独立展示。
 
-Pi 适配器通过 durable `watchEvents` 消费提交后的原生消息事件，转换为 Piko 的 delta/replace、用户输入落入历史的 refresh 和助手消息结束偏移；不再直接解析 commit publication / `pi.live`。初始与积压替换 snapshot 用完整原生 entries 校正当前回复及边界，不以有效上下文覆盖 UI 历史。执行等待和事件消费分开：Run 发布终态前等待对应 submission 终态事件消费，并核对完整原生历史。SDK 事件不直接进入 shared 或通道层，工具与自动压缩展示仍待接入。GET 会话支持 `?runId=`，重连按原输入身份查询，其他通道的补充输入不会使旧观察者丢失目标。
+Pi 适配器通过 durable `watchEvents` 消费原生消息事件，转换为带消息 ID、正文和 final 标记的 Piko message 事件，以及用户/助手条目进入历史的 refresh。首次连接不重放旧回复，积压替换 snapshot 用完整原生 entries 补齐遗漏的新消息，不以有效上下文覆盖 UI 历史。Run 发布终态前等待对应 submission 终态事件消费，并核对完整原生历史。SDK 事件不直接进入 shared 或通道层，工具与自动压缩展示仍待接入。GET 会话支持 `?runId=`，重连按原输入身份查询，其他通道的补充输入不会使旧观察者丢失目标。
 
 SSE 15 秒心跳，客户端 45 秒无数据恢复并有限退避。观察者断线不取消任务，回前台加载快照。正在运行的快照与重放在内存中，重启不承诺恢复未保存片段。
 
@@ -127,11 +127,11 @@ SQL 遗留活跃 Run 标记 failed + interrupted。第一次打开 Harness 时�
 
 ## Telegram 通道
 
-Telegram 适配器与 RN 共用 ConversationStore、主 Thread 和 runtime，进程内直接调用会话业务。TG 收据与输入 Run 在同一 SQL 事务内预留；仅管理操作占用或执行正在停止时拒绝输入，拒绝决定也保持去重。轮询在持久化接纳成功后才确认 update。停止命令保存当时的目标 Run 并取消它参与的共享执行，重投不能停止之后的任务。TG 回复按 executionId 去重，同一次执行的连续补充不创建多组回复。
+Telegram 与 RN 共用 ConversationStore、主 Thread 和 runtime。TG 收据与输入 Run 在同一 SQL 事务内预留；仅管理操作占用或执行正在停止时拒绝输入，拒绝决定也保持去重。轮询在持久化接纳成功后才确认 update。停止命令保存当时的目标输入，并在其仍活跃时停止 conversation，重投不能停止之后的任务。TG 的输出观察和输入接纳分开，同一助手消息 ID 复用同一投递对象，补充消息不会重新发送旧回复。
 
 TG 模型/思考按钮与压缩复用运行时接口；HTTP/TG 管理操作先通过 ConversationStore 预留空闲边界，queued Run 和异步初始化也受互斥保护。按钮菜单仅在内存保存来源和目录快照，点击时再次鉴权及验证当前能力，不写另一套聊天正文。当前选择由 durable Agent 文档持久化，状态详情使用运行时安全元数据。
 
-运行时额外向 Run 报告原生助手消息的结束偏移，TG 依此分条并对每条执行流式编辑。偏移只存在 Run 内存中，不写 SQLite、不复制消息正文，也不扩展 RN 的 HTTP/SSE 协议；工具调用和自动压缩不产生助手文字消息边界。
+运行时按原生助手消息输出独立快照。RN 和 TG 都按消息 ID 更新当前条目，提交时将临时身份替换成原生 entry 身份，新助手消息另起一条。TG 保留流式 Rich Markdown 编辑；工具调用和自动压缩当前不展示。
 
 TG 只投递自身发起的回复，命令提示不写入 Pi 历史；RN 展示两端聊天的原生投影。RN 前台空闲时每 3 秒发现变化，活跃 Run 使用既有 SSE。TG 网络发送与执行分离，平台消息 ID 不持久化，不承诺重启补发；共享主会话中断不自动执行。配置、命令、生命周期和边界见 [双通道说明](features/telegram-channel.md)。
 

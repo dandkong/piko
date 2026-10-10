@@ -6,6 +6,8 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { fixture } from "./fixtures/durable";
 import { DurableChatSession } from "../server/runtime/pi";
+import { applyMessageEvent } from "../shared/messages";
+import type { Message } from "../shared/chat";
 import type { SessionEvent } from "../server/runtime/types";
 
 test("durable runs coding tools, refreshes skills, and persists native tool results", async () => {
@@ -36,7 +38,7 @@ test("durable runs coding tools, refreshes skills, and persists native tool resu
   const run = { id: crypto.randomUUID(), createdAt: Date.now() };
   await session.prompt("Save a reusable skill", run);
   expect(await readFile(join(f.paths.workspace, "artifacts/probe.txt"), "utf8")).toBe("updated from Piko");
-  expect(events.filter(event => event.type === "delta").map(event => event.text).join("")).toBe("Saved.");
+  expect(events.filter(event => event.type === "message").reduce((items: Message[], event) => applyMessageEvent(items, event), []).map(message => message.content).join("")).toBe("Saved.");
   expect((await f.runtime.readHistory(f.input)).messages.map(message => message.content)).toEqual(["Save a reusable skill", "Saved."]);
   const state = session.exportState!(); await session.dispose();
   expect((await f.runtime.readHistory({ ...f.input, state })).messages).toHaveLength(2);
@@ -52,8 +54,8 @@ test("literal submissions, multiple turns and passive results survive restart wi
   ]);
   const run = { id: crypto.randomUUID(), createdAt: 1 };
   await session.prompt("/skill:piko-workspace", run);
-  expect(events.filter(event => event.type === "delta").map(event => event.text).join("")).toBe("Checking. Done.");
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual(["Checking. ".length, "Checking. Done.".length]);
+  expect(events.filter(event => event.type === "message").reduce((items: Message[], event) => applyMessageEvent(items, event), []).map(message => message.content).join("")).toBe("Checking. Done.");
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content)).toEqual(["Checking. ", "Done."]);
   await session.prompt("/skill:piko-workspace", run);
   expect(f.faux.state.callCount).toBe(2);
   await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "piko.result", data: { display: true, createdAt: 3 },
@@ -61,7 +63,7 @@ test("literal submissions, multiple turns and passive results survive restart wi
   expect(f.faux.state.callCount).toBe(2);
   await session.prompt("explain", { id: crypto.randomUUID(), createdAt: 4 });
   const saved = await f.runtime.readHistory(f.input);
-  expect(saved.runs.get(run.id)).toEqual({ message: "/skill:piko-workspace", text: "Checking. Done.", executionId: run.id });
+  expect(saved.runs.get(run.id)).toEqual({ message: "/skill:piko-workspace" });
   expect(saved.messages.map(message => message.content)).toEqual(["/skill:piko-workspace", "Checking. ", "Done.", "scheduled summary", "explain", "Explanation."]);
   const state = session.exportState(); await session.dispose();
   expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(saved.messages);

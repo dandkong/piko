@@ -1,17 +1,18 @@
 import { isRunActive, type RunSnapshot, type StreamEvent } from "../../shared/chat";
 import type { ChatSession, SessionEvent } from "../runtime/types";
 import { SessionCancelledError } from "../runtime/types";
+import type { MessageEvent } from "../../shared/messages";
 
 const MAX_REPLAY_EVENTS = 2048;
-/** A reply owns its runtime subscription independently of any HTTP connection. */
+/** A submission receipt observes conversation output independently of HTTP connections. */
 export class ChatRun {
   private state: RunSnapshot;
   private session?: ChatSession;
   private promptStarted = false;
   private events: StreamEvent[] = [];
   private listeners = new Set<(event: StreamEvent) => void>();
-  private pendingText = "";
-  private messageBoundaries: number[] = [];
+  private pendingMessage?: MessageEvent;
+  private output = new Map<string, MessageEvent>();
   private flushTimer?: ReturnType<typeof setTimeout>;
   private storageError?: unknown;
 
@@ -21,8 +22,8 @@ export class ChatRun {
   }
 
   get snapshot(): RunSnapshot { return { ...this.state }; }
-  /** Transient presentation offsets; text remains in the single Run snapshot and native history. */
-  get messageEnds(): readonly number[] { return [...this.messageBoundaries]; }
+  /** Transient independent message snapshots for delivery; native history owns persisted content. */
+  get outputs(): readonly MessageEvent[] { return [...this.output.values()]; }
   get active(): boolean { return isRunActive(this.state); }
   canReplay(after: number): boolean {
     // A restored Run has metadata but no persistent SSE event log.
@@ -38,7 +39,7 @@ export class ChatRun {
 
   private persist(next: RunSnapshot, event?: StreamEvent): void {
     if (this.storageError) throw this.storageError;
-    if (event?.type === "delta" || event?.type === "replace" || event?.type === "refresh") return; // Output/replay are transient.
+    if (event?.type === "message" || event?.type === "refresh") return;
     try {
       this.checkpoint(next,
         event && !isRunActive(next) && this.promptStarted ? this.session?.exportState?.() : undefined);
@@ -61,13 +62,15 @@ export class ChatRun {
     if (!this.active) this.listeners.clear();
   }
 
-  private flushText(): void {
+  private flushMessage(): void {
     clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
-    if (!this.pendingText) return;
-    const text = this.pendingText;
-    this.emit({ type: "delta", text }, { text: this.state.text + text });
-    this.pendingText = "";
+    if (!this.pendingMessage) return;
+    const event = this.pendingMessage;
+    if (event.previousId) this.output.delete(event.previousId);
+    this.output.set(event.message.id, event);
+    this.emit(event);
+    this.pendingMessage = undefined;
   }
 
   async execute(getSession: () => Promise<{ session: ChatSession; touchedAt: number }>): Promise<void> {
@@ -82,35 +85,25 @@ export class ChatRun {
       this.state = running;
       let agentError: string | undefined;
       const receive = (event: SessionEvent) => {
-        if (event.type === "delta") {
-          this.pendingText += event.text;
-          if (this.state.lastEventId === 0) this.flushText();
+        if (event.type === "message") {
+          if (this.pendingMessage && this.pendingMessage.message.id !== event.message.id) this.flushMessage();
+          this.pendingMessage = event;
+          if (event.final || this.state.lastEventId === 0) this.flushMessage();
           else if (!this.flushTimer) this.flushTimer = setTimeout(() => {
-            try { this.flushText(); }
+            try { this.flushMessage(); }
             catch (error) {
               agentError = error instanceof Error ? error.message : "Could not save reply.";
               void this.session?.abort().catch((cause) => console.error("Could not stop reply after a storage failure:", cause));
             }
           }, 50);
-        } else if (event.type === "replace") {
-          clearTimeout(this.flushTimer); this.flushTimer = undefined; this.pendingText = "";
-          this.messageBoundaries = this.messageBoundaries.filter(offset => offset <= event.text.length);
-          this.emit(event, { text: event.text });
-        } else if (event.type === "message_end") {
-          this.flushText();
-          if (Number.isSafeInteger(event.offset) && event.offset > (this.messageBoundaries.at(-1) ?? 0)
-            && event.offset <= this.state.text.length) this.messageBoundaries.push(event.offset);
         } else if (event.type === "error") agentError = event.message;
-        else if (event.type === "refresh") { this.flushText(); this.emit(event); }
+        else if (event.type === "refresh") { this.flushMessage(); this.emit(event); }
       };
       unsubscribe = this.session.subscribe(receive);
-      const snapshot = this.session.replySnapshot;
-      if (snapshot && this.session.isStreaming) {
-        receive({ type: "replace", text: snapshot.text });
-        for (const offset of snapshot.messageEnds) receive({ type: "message_end", offset });
-      }
+      const partial = this.session.messages.find(message => message.id.startsWith("live-"));
+      if (partial) receive({ type: "message", message: partial, final: false });
       this.promptStarted = true;
-      await this.session.prompt(this.state.message, { id: this.state.id, createdAt: this.state.createdAt, executionId: this.state.executionId });
+      await this.session.prompt(this.state.message, { id: this.state.id, createdAt: this.state.createdAt });
       if (this.snapshot.status === "cancelling") this.finish("cancelled");
       else if (agentError) this.finish("failed", agentError);
       else this.finish("succeeded");
@@ -128,7 +121,7 @@ export class ChatRun {
   }
 
   private finish(status: "succeeded" | "failed" | "cancelled", error?: string): void {
-    this.flushText();
+    this.flushMessage();
     this.emit(status === "succeeded" ? { type: "done" }
       : status === "cancelled" ? { type: "cancelled" }
         : { type: "error", message: error! }, { status, ...(error && { error }) });

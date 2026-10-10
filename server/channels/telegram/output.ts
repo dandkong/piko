@@ -1,6 +1,7 @@
 import type { ChatRun } from "../../chat/run";
 import { isFormatError, type TelegramTransport } from "./api";
 import remend from "remend";
+import type { MessageEvent } from "../../../shared/messages";
 
 export const TELEGRAM_RICH_LIMIT = 30_000;
 export const TELEGRAM_PLAIN_LIMIT = 4000;
@@ -74,36 +75,37 @@ export class TelegramReply {
   }
 }
 
-/** Snapshot coalescing and all network waits happen outside the synchronous Run listener. */
+/** Delivery identities belong to assistant messages, independently of input receipts. */
+export class TelegramMessageOutput {
+  private replies = new Map<string, { reply: TelegramReply; final: boolean }>();
+  private pending: Promise<void> = Promise.resolve();
+  constructor(private readonly api: TelegramTransport, private readonly chatId: string, private readonly first?: TelegramReply) {}
+
+  update(event: MessageEvent): Promise<void> {
+    const task = this.pending.catch(() => {}).then(async () => {
+      if (!event.message.content.trim() && !this.replies.has(event.message.id)
+        && (!event.previousId || !this.replies.has(event.previousId))) return;
+      const existing = this.replies.get(event.message.id) ?? (event.previousId ? this.replies.get(event.previousId) : undefined);
+      if (existing?.final && !event.final) return;
+      const record = existing ?? { reply: (!this.replies.size ? this.first : undefined) ?? new TelegramReply(this.api, this.chatId), final: false };
+      // Keep the live alias until delivery drains: a slower observer may still hold an older partial.
+      this.replies.set(event.message.id, record);
+      if (event.previousId) this.replies.set(event.previousId, record);
+      await record.reply.update(event.message.content, event.final);
+      record.final = event.final;
+    });
+    this.pending = task;
+    return task;
+  }
+}
+
+/** Snapshot coalescing and all network waits happen outside the synchronous input listener. */
 export async function deliverRun(run: ChatRun, reply: TelegramReply, api: TelegramTransport, chatId: string,
-  signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
+  signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS,
+  output = new TelegramMessageOutput(api, chatId, reply)): Promise<void> {
   let changed = true;
-  const replies = [reply];
-  let observedEnds = -1;
-  const sync = async (text: string, ends: readonly number[], final: boolean, suffix = "") => {
-    const parts: { text: string; final: boolean }[] = [];
-    let start = 0;
-    for (const end of ends) {
-      const content = text.slice(start, end);
-      if (content.trim()) parts.push({ text: content, final: true });
-      start = end;
-    }
-    const partial = text.slice(start);
-    if (partial.trim()) parts.push({ text: partial, final });
-    if (suffix) {
-      if (parts.length) parts.at(-1)!.text += suffix;
-      else parts.push({ text: suffix.trim(), final: true });
-    }
-    for (const [index, part] of parts.entries()) {
-      const output = replies[index] ??= new TelegramReply(api, chatId);
-      await output.update(part.text, part.final);
-    }
-    // A retried partial can disappear or shrink; committed message boundaries remain intact.
-    while (replies.length > Math.max(1, parts.length)) {
-      await replies.at(-1)!.update("", true);
-      replies.pop();
-    }
-    if (!parts.length) await replies[0].update("", final);
+  const sync = async () => {
+    for (const event of run.outputs) await output.update(event);
   };
   let failure: unknown;
   const unsubscribe = run.subscribe(run.snapshot.lastEventId, () => { changed = true; });
@@ -111,11 +113,15 @@ export async function deliverRun(run: ChatRun, reply: TelegramReply, api: Telegr
   try {
     while (!signal.aborted) {
       const snapshot = run.snapshot;
-      const ends = run.messageEnds;
       if (!run.active) {
+        await sync();
         const suffix = snapshot.status === "cancelled" ? "\n\nReply stopped."
           : snapshot.status === "failed" ? "\n\nCouldn't finish this reply. Please try again." : "";
-        await sync(snapshot.text || (snapshot.status === "succeeded" ? "No text response." : ""), ends, true, suffix);
+        const partial = run.outputs.find(event => !event.final);
+        if (partial) await output.update({ ...partial, final: true,
+          message: { ...partial.message, content: partial.message.content + suffix } });
+        else if (suffix || !run.outputs.some(event => event.message.content.trim())) await new TelegramReply(api, chatId, "plain")
+          .update(suffix.trim() || "No text response.", true);
         return;
       }
       if (Date.now() - lastTyping >= 4000) {
@@ -123,12 +129,10 @@ export async function deliverRun(run: ChatRun, reply: TelegramReply, api: Telegr
         await api.typing(chatId).catch(() => {});
         lastTyping = Date.now();
       }
-      if (changed || observedEnds !== ends.length) {
+      if (changed) {
         changed = false;
         // Typing/network waits may have allowed another update; read after clearing the dirty flag.
-        const current = run.snapshot, currentEnds = run.messageEnds;
-        observedEnds = currentEnds.length;
-        try { await sync(current.text, currentEnds, false); failure = undefined; }
+        try { await sync(); failure = undefined; }
         catch (error) { failure = error; }
       }
       await new Promise<void>((resolve) => {

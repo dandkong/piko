@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type EntryRecord, type SnapshotEvent } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { PiReplyEvents } from "../server/runtime/pi-events";
+import { PiMessageEvents } from "../server/runtime/pi-events";
 import { DurableChatSession } from "../server/runtime/pi";
 import { readPiEntries } from "../server/runtime/pi-history";
+import { applyMessageEvent } from "../shared/messages";
+import type { Message } from "../shared/chat";
 import type { SessionEvent } from "../server/runtime/types";
 import { cleanup, fixture, waitUntil } from "./fixtures/durable";
 
@@ -15,19 +17,12 @@ function entry(id: number, kind: string, rest: Partial<EntryRecord> = {}): Entry
 }
 
 function rendered(events: SessionEvent[]) {
-  let text = "";
-  for (const event of events) {
-    if (event.type === "delta") text += event.text;
-    if (event.type === "replace") text = event.text;
-  }
-  return text;
+  return events.filter(event => event.type === "message").reduce((items: Message[], event) => applyMessageEvent(items, event), []).map(message => message.content).join("");
 }
 
 test("native message changes preserve block order, retry corrections and completed reply boundaries", () => {
   const events: SessionEvent[] = [];
-  const reply = new PiReplyEvents(event => events.push(event));
-  reply.begin("current");
-  reply.apply({ type: "entry_appended", entry: entry(1, "piko.run", { data: { runId: "current" } }) });
+  const reply = new PiMessageEvents(event => events.push(event));
   const first = fauxAssistantMessage("First.");
   reply.apply({ type: "message_start", message: first });
   reply.apply({ type: "message_end", entry: entry(2, "pi.assistant", { model: [first] }) });
@@ -44,39 +39,47 @@ test("native message changes preserve block order, retry corrections and complet
   const corrected = fauxAssistantMessage("New");
   reply.apply({ type: "message_update", usage: corrected.usage, changes: [{ type: "message", message: corrected }] });
   expect(rendered(events)).toBe("First.New");
-  expect(events.at(-1)).toEqual({ type: "replace", text: "First.New" });
+  expect(events.at(-1)).toMatchObject({ type: "message", message: { content: "New" }, final: false });
   reply.apply({ type: "message_start", message: fauxAssistantMessage("OK") });
   const final = entry(3, "pi.assistant", { model: [fauxAssistantMessage("OK.")] });
   reply.apply({ type: "message_end", entry: final });
   reply.apply({ type: "message_end", entry: final });
   expect(rendered(events)).toBe("First.OK.");
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 9]);
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content.length)).toEqual([6, 3]);
 });
 
 test("a running snapshot restores completed boundaries and partial text before subsequent deltas", async () => {
   const f = await fixture(); const session = await f.createSession() as DurableChatSession;
   const stream = await watchEvents(session.nativeHarness, session.native.id, ctx);
   cleanup(() => stream.stop());
-  const events: SessionEvent[] = []; const reply = new PiReplyEvents(event => events.push(event));
-  reply.begin("current");
+  const events: SessionEvent[] = []; const reply = new PiMessageEvents(event => events.push(event));
   const first = entry(4, "pi.assistant", { model: [fauxAssistantMessage("First.")] });
   const snapshot: SnapshotEvent = { ...stream.snapshot, run: { inputs: [] }, generation: { attempt: 2,
     message: fauxAssistantMessage([{ type: "thinking", thinking: "private" }, { type: "text", text: "Part" }]) } };
   reply.restore([
-    entry(1, "piko.run", { data: { runId: "old" } }),
     entry(2, "pi.assistant", { model: [fauxAssistantMessage("Old.")] }),
-    entry(3, "piko.run", { data: { runId: "current" } }), first,
-  ], snapshot);
-  expect(rendered(events)).toBe("First.Part");
+    first,
+  ], snapshot, true);
+  expect(rendered(events)).toBe("Part");
   const final = fauxAssistantMessage("Partial.");
   reply.apply({ type: "message_update", usage: final.usage, changes: [{ type: "text_delta", contentIndex: 1, delta: "ial." }] });
   reply.apply({ type: "message_end", entry: entry(5, "pi.assistant", { model: [final] }) });
-  expect(rendered(events)).toBe("First.Partial.");
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 14]);
-  reply.finish();
+  expect(rendered(events)).toBe("Partial.");
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content.length)).toEqual([8]);
   const count = events.length;
-  reply.apply({ type: "message_start", message: fauxAssistantMessage("late") });
+  reply.restore([entry(5, "pi.assistant", { model: [final] })]);
   expect(events).toHaveLength(count);
+});
+
+test("a history read ahead of event delivery does not append the same partial after its committed message", () => {
+  const events: SessionEvent[] = []; const output = new PiMessageEvents(event => events.push(event));
+  output.apply({ type: "message_start", message: fauxAssistantMessage("Partial") });
+  expect(output.partial([])?.content).toBe("Partial");
+  const completed = entry(3, "pi.assistant", { model: [fauxAssistantMessage("Complete.")] });
+  expect(output.partial([completed])).toBeUndefined();
+  output.apply({ type: "message_end", entry: completed });
+  expect(rendered(events)).toBe("Complete.");
+  expect(output.partial([completed])).toBeUndefined();
 });
 
 test("native provider retry retains committed attempt messages and their native boundaries", async () => {
@@ -94,7 +97,7 @@ test("native provider retry retains committed attempt messages and their native 
   await session.prompt("retry", { id: crypto.randomUUID(), createdAt: 1 });
   expect(f.faux.state.callCount).toBe(3);
   expect(rendered(events)).toBe("First." + failed + "OK.");
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 6 + failed.length, 9 + failed.length]);
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content.length)).toEqual([6, failed.length, 3]);
   expect(session.messages.filter(message => message.role === "assistant").map(message => message.content)).toEqual(["First.", failed, "OK."]);
 });
 
@@ -104,8 +107,8 @@ test("an overflowing native event watch restores missed replies from full histor
   await session.prompt("old", { id: crypto.randomUUID(), createdAt: 1 });
   await session.native.reset(undefined, ctx);
   const run = { id: crypto.randomUUID(), createdAt: 2 };
-  const events: SessionEvent[] = []; const reply = new PiReplyEvents(event => events.push(event));
-  reply.begin(run.id);
+  const events: SessionEvent[] = []; const reply = new PiMessageEvents(event => events.push(event));
+  reply.restore(await readPiEntries(session.nativeHarness), undefined, true);
   const stream = await watchEvents(session.nativeHarness, session.native.id, ctx);
   const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
   let snapshots = 0;
@@ -132,7 +135,7 @@ test("an overflowing native event watch restores missed replies from full histor
   for (let i = 0; i < 120; i++) await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "test.overflow" }), ctx);
   gate.resolve();
   await waitUntil(() => snapshots > 0 && rendered(events) === "First.Second.");
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 13]);
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content.length)).toEqual([6, 7]);
   expect(session.messages.map(message => message.content)).toEqual(["old", "Old history.", "current", "First.", "Second."]);
 });
 
@@ -162,7 +165,7 @@ test("a lagging Piko event consumer reconciles overflow before the prompt settle
   gate.resolve(); await pending;
   expect(rendered(events)).toBe("First.Second.");
   expect(events.some(event => event.type === "refresh")).toBe(true);
-  expect(events.filter(event => event.type === "message_end").map(event => event.offset)).toEqual([6, 13]);
+  expect(events.filter(event => event.type === "message").filter(event => event.final).map(event => event.message.content.length)).toEqual([6, 7]);
   expect(session.isStreaming).toBe(false);
   const count = events.length;
   await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "test.after-done" }), ctx);

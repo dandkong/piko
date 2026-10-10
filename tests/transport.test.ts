@@ -1,3 +1,4 @@
+import { messageEvent } from "./fixtures/messages";
 import { describe, expect, test } from "bun:test";
 import type { ConversationResponse, RunSnapshot, StreamEvent } from "../shared/chat";
 import { encodeSse } from "../shared/sse";
@@ -5,7 +6,7 @@ import { observeRun, waitForRetry } from "../apps/mobile/src/features/chat/trans
 
 const sessionId = "b9b7c60a-b2e2-4af0-8a61-fb0903629aca";
 const runId = "7a5c9c78-030a-4c2a-b6f7-13974210b807";
-const run: RunSnapshot = { id: runId, status: "running", message: "Hi", text: "", createdAt: 1, lastEventId: 0 };
+const run: RunSnapshot = { id: runId, status: "running", message: "Hi", createdAt: 1, lastEventId: 0 };
 function event(sequence: number, value: StreamEvent): StreamEvent { return { ...value, runId, sequence }; }
 function stream(...events: StreamEvent[]) { return new Response(events.map(encodeSse).join("")); }
 function observation(message?: string) {
@@ -30,15 +31,15 @@ describe("Run transport recovery", () => {
   test("input refresh events remain on the stream and reconnect requests the observed input identity", async () => {
     const state = observation(); let requests = 0; const loaded: string[] = [];
     await observeRun(state.options, {
-      fetch: async () => ++requests === 1 ? stream(event(1, { type: "refresh" }), event(2, { type: "delta", text: "Before." }))
-        : stream(event(3, { type: "refresh" }), event(4, { type: "delta", text: "After." }), event(5, { type: "done" })),
+      fetch: async () => ++requests === 1 ? stream(event(1, { type: "refresh" }), event(2, messageEvent("Before.")))
+        : stream(event(3, { type: "refresh" }), event(4, messageEvent("After.")), event(5, { type: "done" })),
       load: async (id, signal, requestedRun) => {
         loaded.push(requestedRun!);
-        return { sessionId, messages: [], run: { ...run, text: "Before.", lastEventId: 2 } };
+        return { sessionId, messages: [messageEvent("Before.").message], run: { ...run, lastEventId: 2 } };
       }, wait: async () => {},
     });
     expect(loaded).toEqual([runId]);
-    expect(state.events.map(event => event.type)).toEqual(["refresh", "delta", "refresh", "delta", "done"]);
+    expect(state.events.map(event => event.type)).toEqual(["refresh", "message", "refresh", "message", "done"]);
     expect(requests).toBe(2);
   });
 
@@ -46,11 +47,10 @@ describe("Run transport recovery", () => {
     const state = observation(); let text = "";
     await observeRun({ ...state.options, onEvent(value) {
       state.options.onEvent(value);
-      if (value.type === "delta") text += value.text;
-      else if (value.type === "replace") text = value.text;
+      if (value.type === "message") text = value.message.content;
     } }, {
-      fetch: async () => stream(event(1, { type: "delta", text: "discarded partial" }),
-        event(2, { type: "replace", text: "new" }), event(3, { type: "delta", text: " answer" }), event(4, { type: "done" })),
+      fetch: async () => stream(event(1, messageEvent("discarded partial")),
+        event(2, messageEvent("new")), event(3, messageEvent("new answer")), event(4, { type: "done" })),
       load: async () => { throw new Error("Should not reload."); },
     });
     expect(text).toBe("new answer");
@@ -60,7 +60,7 @@ describe("Run transport recovery", () => {
   test("replayed events are applied once, including split UTF-8 data", async () => {
     const state = observation();
     const bytes = new TextEncoder().encode([
-      event(1, { type: "delta", text: "你好" }), event(1, { type: "delta", text: "你好" }), event(2, { type: "done" }),
+      event(1, messageEvent("你好")), event(1, messageEvent("你好")), event(2, { type: "done" }),
     ].map(encodeSse).join(""));
     await observeRun(state.options, {
       fetch: async () => new Response(new ReadableStream({ start(controller) {
@@ -69,7 +69,7 @@ describe("Run transport recovery", () => {
       } })),
       load: async () => { throw new Error("Should not reload."); },
     });
-    expect(state.events).toEqual([event(1, { type: "delta", text: "你好" }), event(2, { type: "done" })]);
+    expect(state.events).toEqual([event(1, messageEvent("你好")), event(2, { type: "done" })]);
     expect(state.snapshots).toHaveLength(0);
   });
 
@@ -78,19 +78,20 @@ describe("Run transport recovery", () => {
     const paths: string[] = [];
     let visibleText = "";
     await observeRun({ ...state.options,
-      onEvent: (value) => { state.options.onEvent(value); if (value.type === "delta") visibleText += value.text; },
-      onSnapshot: (snapshot) => { state.options.onSnapshot(snapshot); visibleText = snapshot.run!.text; },
+      onEvent: (value) => { state.options.onEvent(value); if (value.type === "message") visibleText = value.message.content; },
+      onSnapshot: (snapshot) => { state.options.onSnapshot(snapshot); visibleText = snapshot.messages.at(-1)?.content ?? ""; },
     }, {
       fetch: async (path) => {
         paths.push(path);
-        return paths.length === 1 ? stream(event(1, { type: "delta", text: "Hello" }))
-          : stream(event(3, { type: "delta", text: " world" }), event(4, { type: "done" }));
+        return paths.length === 1 ? stream(event(1, messageEvent("Hello")))
+          : stream(event(3, messageEvent("Hello! world")), event(4, { type: "done" }));
       },
-      load: async () => ({ sessionId, messages: [], run: { ...run, text: "Hello!", lastEventId: 2 } }),
+      load: async () => ({ sessionId, messages: [messageEvent("Hello!").message], run: { ...run, lastEventId: 2 } }),
       wait: async () => {},
     });
     expect(paths).toEqual(["/api/chat", `/api/sessions/${sessionId}/runs/${runId}/events?after=2`]);
     expect(visibleText).toBe("Hello! world");
+    expect(state.snapshots[0]?.messages.at(-1)?.content).toBe("Hello!");
     expect(state.connectionStates).toContain(true);
   });
 
@@ -99,11 +100,11 @@ describe("Run transport recovery", () => {
     let submissions = 0;
     await observeRun(state.options, {
       fetch: async () => { submissions++; throw new TypeError("Network disconnected after acceptance."); },
-      load: async () => ({ sessionId, messages: [], run: { ...run, status: "succeeded", text: "Done", lastEventId: 2 } }),
+      load: async () => ({ sessionId, messages: [messageEvent("Done").message], run: { ...run, status: "succeeded", lastEventId: 2 } }),
       wait: async () => {},
     });
     expect(submissions).toBe(1);
-    expect(state.snapshots[0]?.run?.text).toBe("Done");
+    expect(state.snapshots[0]?.messages.at(-1)?.content).toBe("Done");
     expect(state.events).toEqual([{ type: "done" }]);
   });
 
@@ -133,7 +134,7 @@ describe("Run transport recovery", () => {
         return paths.length === 1 ? Response.json({ error: "Event history expired." }, { status: 409 })
           : stream(event(2501, { type: "cancelled" }));
       },
-      load: async () => ({ sessionId, messages: [], run: { ...run, text: "Long reply", lastEventId: 2500 } }),
+      load: async () => ({ sessionId, messages: [], run: { ...run, lastEventId: 2500 } }),
       wait: async () => {},
     });
     expect(paths[1]).toEndWith("after=2500");
@@ -146,7 +147,7 @@ describe("Run transport recovery", () => {
     await observeRun(state.options, {
       fetch: async (path) => {
         paths.push(path);
-        return paths.length === 1 ? stream(event(1, { type: "delta", text: "Hello" })) : stream(event(2, { type: "done" }));
+        return paths.length === 1 ? stream(event(1, messageEvent("Hello"))) : stream(event(2, { type: "done" }));
       },
       load: async () => { throw new TypeError("Network error."); }, wait: async () => {},
     });

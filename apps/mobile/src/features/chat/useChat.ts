@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { isRunActive, type ConversationResponse, type Message, type RunSnapshot } from "../../../../../shared/chat";
+import { isRunActive, type Message, type RunSnapshot } from "../../../../../shared/chat";
 import { cancelRun, checkHealth, isAbortError, loadConversation, streamMessage } from "./api";
 import { getMainSessionId } from "./session";
 import { sameMessages, syncConversation } from "./sync";
 import { HttpStreamError } from "./transport";
+import { applyMessageEvent, type MessageEvent } from "../../../../../shared/messages";
 
 type Observation = {
   controller: AbortController;
@@ -15,13 +16,6 @@ type Observation = {
   stopRequested: boolean;
   cancelSent: boolean;
 };
-
-function visibleMessages(conversation: ConversationResponse): Message[] {
-  const run = conversation.run;
-  return run && isRunActive(run) ? [...conversation.messages, {
-    id: `assistant-${run.id}`, role: "assistant", content: run.text, createdAt: run.createdAt,
-  }] : conversation.messages;
-}
 
 export function useChat() {
   const [sessionId, setSessionId] = useState("");
@@ -69,15 +63,8 @@ export function useChat() {
     setBusy(true);
     setStopping(run.status === "cancelling");
     setReconnecting(false);
-    let text = run.text;
     let historyRefresh = 0;
-    let flushTimer: ReturnType<typeof setTimeout> | undefined;
-    const flush = () => {
-      clearTimeout(flushTimer);
-      flushTimer = undefined;
-      if (current()) setMessages((items) => items.map((item) =>
-        item.id === `assistant-${run.id}` ? { ...item, content: text } : item));
-    };
+    let pendingEdits: MessageEvent[] | undefined;
     try {
       await streamMessage({
         sessionId: id, run, message, signal: observation.controller.signal,
@@ -90,42 +77,38 @@ export function useChat() {
         onReconnecting: (value) => { if (current()) setReconnecting(value); },
         onSnapshot: (conversation) => {
           historyRefresh++;
-          clearTimeout(flushTimer);
-          flushTimer = undefined;
-          text = conversation.run!.text;
-          if (current()) setMessages(visibleMessages(conversation));
+          pendingEdits = undefined;
+          if (current()) setMessages(conversation.messages);
         },
         onEvent: (event) => {
           if (!current()) return;
-          if (event.type === "delta") {
-            text += event.text;
-            if (!flushTimer) flushTimer = setTimeout(flush, 50);
-          } else if (event.type === "replace") {
-            text = event.text;
-            if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          if (event.type === "message") {
+            if (pendingEdits) {
+              const index = pendingEdits.findIndex(edit => edit.message.id === event.message.id);
+              if (index >= 0) pendingEdits[index] = event;
+              else pendingEdits.push(event);
+            }
+            setMessages(items => applyMessageEvent(items, event));
           } else if (event.type === "refresh") {
             const version = ++historyRefresh;
+            const edits: MessageEvent[] = pendingEdits = [];
             void loadConversation(id, observation.controller.signal, run.id).then(conversation => {
-              if (current() && version === historyRefresh && conversation.run && isRunActive(conversation.run)) setMessages([...conversation.messages, {
-                id: `assistant-${run.id}`, role: "assistant", content: text, createdAt: run.createdAt,
-              }]);
-            }).catch(() => {});
+              if (current() && version === historyRefresh && conversation.run && isRunActive(conversation.run))
+                setMessages(edits.reduce(applyMessageEvent, conversation.messages));
+            }).catch(() => {}).finally(() => { if (version === historyRefresh) pendingEdits = undefined; });
           } else {
             historyRefresh++;
-            flush();
             if (event.type === "error") setError(event.message);
           }
         },
       });
-      flush();
       const conversation = await loadConversation(id, observation.controller.signal);
       if (current()) {
         setSubmitting(false);
-        setMessages(visibleMessages(conversation));
+        setMessages(conversation.messages);
         setConnected(true);
       }
     } catch (cause) {
-      flush();
       if (!current() || isAbortError(cause)) return;
       // A rejected input has no server Run. Release its optimistic state so idle sync can
       // discover the other channel's accepted reply instead of getting stuck behind it.
@@ -134,14 +117,13 @@ export function useChat() {
         if (message !== undefined) setDraft(previous => previous || message);
         try {
           const conversation = await loadConversation(id, observation.controller.signal);
-          if (current()) setMessages(visibleMessages(conversation));
+          if (current()) setMessages(conversation.messages);
         } catch { /* The idle observer will recover when the network is available. */ }
       }
       if (!current()) return;
       setConnected(false);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      clearTimeout(flushTimer);
       if (current()) {
         observerRef.current = null;
         setSubmitting(false);
@@ -161,7 +143,7 @@ export function useChat() {
     try {
       const [conversation, health] = await Promise.all([loadConversation(id, undefined, pendingSubmission.current?.id), checkHealth()]);
       if (!mounted.current || version !== refreshVersion.current) return;
-      setMessages(visibleMessages(conversation));
+      setMessages(conversation.messages);
       setConnected(health.ok && health.modelReady);
       modelReady.current = health.ok && health.modelReady;
       syncedRun.current = conversation.run ? `${conversation.run.id}:${conversation.run.status}` : "";
@@ -175,7 +157,6 @@ export function useChat() {
         const pending = pendingSubmission.current;
         setMessages([...conversation.messages,
           { id: `user-${pending.id}`, role: "user", content: pending.message, createdAt: pending.createdAt },
-          { id: `assistant-${pending.id}`, role: "assistant", content: "", createdAt: pending.createdAt },
         ]);
         void watchRun(id, pending, pending.message);
       } else pendingSubmission.current = null;
@@ -228,7 +209,7 @@ export function useChat() {
       revision: () => refreshVersion.current,
       load: signal => loadConversation(sessionId, signal),
       apply: conversation => {
-        const visible = visibleMessages(conversation);
+        const visible = conversation.messages;
         setMessages(previous => sameMessages(previous, visible) ? previous : visible);
         setConnected(modelReady.current);
         const run = conversation.run;
@@ -246,15 +227,13 @@ export function useChat() {
     if (!content || pendingSubmission.current || stopping || loading || !sessionId) return;
     refreshVersion.current++;
     const run: RunSnapshot = {
-      id: randomUUID(), status: "queued", message: content, text: "", createdAt: Date.now(), lastEventId: 0,
+      id: randomUUID(), status: "queued", message: content, createdAt: Date.now(), lastEventId: 0,
       ...(retryOfRunId && { retryOfRunId }),
     };
     pendingSubmission.current = run;
     setSubmitting(true);
-    const previous = observerRef.current?.runId;
-    setMessages((items) => [...items.filter(item => item.id !== `assistant-${previous}`),
+    setMessages((items) => [...items,
       { id: `user-${run.id}`, role: "user", content, createdAt: run.createdAt },
-      { id: `assistant-${run.id}`, role: "assistant", content: "", createdAt: run.createdAt },
     ]);
     setDraft("");
     setError("");

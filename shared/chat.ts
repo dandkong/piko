@@ -3,13 +3,12 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
-  /** Native entries may belong to one Piko execution; IDs still come from Pi. */
+  /** User messages carry their submission identity; assistant messages are independent. */
   runId?: string;
 };
 
 export type StreamEvent = (
-  | { type: "delta"; text: string }
-  | { type: "replace"; text: string }
+  | { type: "message"; message: Message; final: boolean; previousId?: string }
   | { type: "refresh" }
   | { type: "done" }
   | { type: "cancelled" }
@@ -23,11 +22,8 @@ export function isStreamTerminal(event: StreamEvent): boolean {
 export type RunStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
 export type RunSnapshot = {
   id: string;
-  /** Multiple input identities can participate in the same execution. */
-  executionId?: string;
   status: RunStatus;
   message: string;
-  text: string;
   createdAt: number;
   lastEventId: number;
   error?: string;

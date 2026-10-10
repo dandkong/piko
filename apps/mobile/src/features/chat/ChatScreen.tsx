@@ -51,7 +51,7 @@ export function ChatScreen() {
         {waitingForText ? (
           <TypingIndicator />
         ) : item.role === "assistant" ? (
-          <AssistantMessage content={item.content} streaming={busy && item.id === messages.at(-1)?.id} />
+          <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
         ) : (
           <Text selectable style={styles.messageText}>{item.content}</Text>
         )}
@@ -96,6 +96,12 @@ export function ChatScreen() {
             ) : null}
             ListFooterComponent={(
               <View>
+                {busy && !messages.some(message => message.id.startsWith("live-") && message.content.trim()) && (
+                  <View accessibilityLabel="Piko is working"
+                    style={[styles.bubble, styles.assistantBubble, styles.typing, { marginTop: 13 }]}>
+                    <TypingIndicator />
+                  </View>
+                )}
                 {!!error && (
                   <View style={styles.errorNotice}>
                     <Text style={styles.errorText}>{error}</Text>

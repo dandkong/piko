@@ -24,15 +24,15 @@ SQLite schema=1，包含 TG 输入/停止命令身份与决定元数据，不迁
 
 历史从指定 conversation 的原始 entries 分页读取后正序投影，完整保留 reset、上下文编辑和压缩前的消息。气泡 ID 为 pi-<entry ID>，时间来自原生 model message。只显示用户/助手文本和 display=true 的 piko.result；工具、思考、隐藏 entry 和压缩摘要不显示。
 
-piko.run 只保存共享执行的 runId/createdAt，用于关联本轮多段回复；piko.input 保存每条输入 runId/executionId/createdAt，通过原生 submission 的 entry 引用关联用户条目，不保存正文。运行中聚合共享执行的助手文本，隐藏已保存片段以避免与 SSE 重复；原生用户条目尚未出现时临时显示各条提交。终态重新读取原生投影，这层展示状态不落盘。
+piko.input 只保存每条输入的 runId/createdAt，通过原生 submission 的 entry 引用关联用户条目，不保存正文。助手条目独立展示，不写执行分组标记，不累计整轮回答，不隐藏已完成回复。生成中使用临时消息身份，提交后原位替换为原生 entry 身份。原生用户条目尚未出现时临时显示各条提交；终态重新读取原生投影，这层展示状态不落盘。
 
 模型上下文由 durable 处理。工具、思考、文档和摘要仍保留在原生日志；UI 历史不使用 `conversation.context()` 的压缩结果。
 
 ## 执行、停止与传输
 
-SQL 先预留每条输入的 Run 身份、输入 SHA-256 和重试来源，再提交原生输入；durable requestId 使用 run UUID。相同 UUID/输入/重试来源复用已有执行，不同内容拒绝。同 Thread 的活跃输入共享 executionId，使用 whenBusy=steer + steeringMode=all，在原生边界全部加入当前工作；不强行打断已开始的模型请求或工具。显式重试要求新 UUID、原输入和失败 Run 引用。UI 原文提交，不展开 CLI 技能命令。
+SQL 先预留每条输入的 Run 身份、输入 SHA-256 和重试来源，再提交原生输入；durable requestId 使用 run UUID。相同 UUID/输入/重试来源复用已有提交，不同内容拒绝。同 Thread 的活跃输入使用 whenBusy=steer + steeringMode=all，在原生边界全部加入当前工作；助手输出由 conversation 消息流独立产生，不与输入逐条配对，不强行打断已开始的模型请求或工具。显式重试要求新 UUID、原输入和失败 Run 引用。UI 原文提交，不展开 CLI 技能命令。
 
-Run 状态及时提交 SQL，终态前 fsync 原生日志；存储失败不能发布成功。SSE 文本只在内存，首段立即发布，其余最多 50 毫秒合并。原生 retry 修正文本时用 replace 事件同步完整快照，丢弃旧的缓冲文字。
+Run 状态及时提交 SQL，终态前 fsync 原生日志；存储失败不能发布成功。SSE 消息快照只在内存，首段立即发布，同一未完成消息其余更新最多 50 毫秒合并。原生 retry 修正文本时更新当前消息的完整正文，已提交的助手消息继续保留。
 
 断线只退订，不取消执行。停止按钮走独立 Run cancel API，取消它参与的整个执行及尚未应用输入；重复停止不会重开执行。失败也撤回该执行的剩余输入，不自动重跑。未落入原生用户 entries 的撤回输入不进入最终聊天历史。45 秒无数据、页面刷新和回前台触发快照恢复，按原输入 runId 查询，事件重放过期或重启后不伪造旧事件。
 

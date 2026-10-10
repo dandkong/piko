@@ -2,7 +2,8 @@ import { RuntimeBusyError, type ConversationStore } from "../../chat/conversatio
 import type { RunStatus } from "../../../shared/chat";
 import type { ChatRuntime } from "../../runtime/types";
 import { telegramErrorCode, type TelegramTransport } from "./api";
-import { deliverRun, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
+import { deliverRun, TelegramReply, TelegramMessageOutput, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
+import type { ChatRun } from "../../chat/run";
 import { TelegramMenus, TelegramMenuError, selectionText, type TelegramCallback } from "./menus";
 
 export type TelegramMessage = {
@@ -29,7 +30,8 @@ export class TelegramChannel {
   private accepting = true;
   private readonly controller = new AbortController();
   private readonly tasks = new Set<Promise<void>>();
-  private readonly deliveries = new Set<string>();
+  private readonly deliveries = new Set<ChatRun>();
+  private readonly outputs = new Map<string, TelegramMessageOutput>();
   private readonly menus: TelegramMenus;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
@@ -70,11 +72,16 @@ export class TelegramChannel {
       messageId: message.messageId, actorId: message.actorId }, message.text);
     if (result.disposition === "busy") this.feedback(message, "Piko is busy. Please wait, then send your message again.");
     else if (result.disposition === "invalid") this.feedback(message, "Send a message with 1–12,000 characters.");
-    else if (result.run && !result.duplicate && !this.deliveries.has(result.run.snapshot.executionId ?? result.run.snapshot.id)) {
-      const id = result.run.snapshot.executionId ?? result.run.snapshot.id;
-      this.deliveries.add(id);
-      this.track(deliverRun(result.run, new TelegramReply(this.api, message.chatId), this.api,
-        message.chatId, this.controller.signal, this.intervalMs).finally(() => this.deliveries.delete(id)));
+    else if (result.run && !result.duplicate && ![...this.deliveries].some(run => run.active)) {
+      const run = result.run;
+      const output = this.outputs.get(message.chatId) ?? new TelegramMessageOutput(this.api, message.chatId);
+      this.outputs.set(message.chatId, output);
+      this.deliveries.add(run);
+      this.track(deliverRun(run, new TelegramReply(this.api, message.chatId), this.api,
+        message.chatId, this.controller.signal, this.intervalMs, output).finally(() => {
+          this.deliveries.delete(run);
+          if (!this.deliveries.size) this.outputs.clear();
+        }));
     } else if (result.duplicate) {
       this.feedback(message, "Already processed. Use /recent to view the reply.");
     }
@@ -122,8 +129,6 @@ export class TelegramChannel {
     } else if (command === "recent") {
       const history = await this.conversations.history(sessionId);
       text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";
-      const run = await this.conversations.run(sessionId);
-      if (run?.active && run.snapshot.text) text += `\n\nPiko (replying):\n${run.snapshot.text}`;
     } else if ((command === "skills" || command === "plugins") && this.runtime.describe) {
       const description = await this.runtime.describe(this.conversations.context());
       text = command === "skills" ? description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available."

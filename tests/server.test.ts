@@ -1,3 +1,4 @@
+import { messageEvent } from "./fixtures/messages";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Message, StreamEvent } from "../shared/chat";
 import { consumeSse } from "../shared/sse";
@@ -36,7 +37,7 @@ class TestSession implements ChatSession {
     this.isStreaming = true;
     this.started.resolve();
     this.messages.push({ id: "user-" + this.promptCalls, role: "user", content: text, createdAt: 1, runId: run?.id });
-    for (const listener of this.listeners) listener({ type: "delta", text: "Hello" });
+    for (const listener of this.listeners) listener(messageEvent("Hello"));
     if (this.hold) await this.finished.promise;
     this.isStreaming = false;
     this.messages.push({ id: "assistant-" + this.promptCalls, role: "assistant", content: "Hello", createdAt: 2, runId: run?.id });
@@ -63,12 +64,11 @@ function storage(session?: TestSession) {
   fixtures.push({ root, repo }); sessionId = repo.main.sessionId;
   const readHistory: HistoryReader = () => {
     const messages = session?.messages ?? [];
-    const runs = new Map<string, { message: string; text: string }>();
+    const runs = new Map<string, { message: string }>();
     for (const message of messages) {
       if (!message.runId) continue;
-      const run = runs.get(message.runId) ?? { message: "", text: "" };
+      const run = runs.get(message.runId) ?? { message: "" };
       if (message.role === "user") run.message = message.content;
-      else run.text += message.content;
       runs.set(message.runId, run);
     }
     return { messages, runs };
@@ -133,7 +133,7 @@ describe("API and runtime boundary", () => {
     const response = await state.app(chatRequest({ sessionId, message: " Hello " }));
     expect(response.headers.get("Content-Type")).toContain("text/event-stream");
     expect(consumeSse(await response.text(), true).events.map(({ runId, sequence, ...event }) => event)).toEqual([
-      { type: "delta", text: "Hello" }, { type: "done" },
+      messageEvent("Hello"), { type: "done" },
     ]);
     const history = await state.app(new Request(`http://localhost/api/sessions/${sessionId}`));
     expect((await history.json()).messages).toEqual(state.session.messages);
@@ -166,7 +166,7 @@ describe("API and runtime boundary", () => {
     controller.abort();
     expect(state.session.abortCalls).toBe(0);
     expect(run.active).toBe(true);
-    expect(consumeSse(await response.text(), true).events).toEqual([{ type: "delta", text: "Hello", runId, sequence: 1 }]);
+    expect(consumeSse(await response.text(), true).events).toEqual([{ ...messageEvent("Hello"), runId, sequence: 1 }]);
     await run.cancel();
   });
 
@@ -174,16 +174,16 @@ describe("API and runtime boundary", () => {
     const state = setup(new TestSession(true));
     const run = await state.conversations.startRun(sessionId, runId, "Hello");
     await state.session.started.promise;
-    state.session.emit({ type: "delta", text: " old buffered partial" });
-    state.session.emit({ type: "replace", text: "corrected" });
-    state.session.emit({ type: "delta", text: " answer" });
+    state.session.emit(messageEvent(" old buffered partial"));
+    state.session.emit(messageEvent("corrected"));
+    state.session.emit(messageEvent("corrected answer"));
     await run.cancel();
     while (run.active) await Bun.sleep(1);
-    expect(run.snapshot.text).toBe("corrected answer");
+    expect(run.outputs.at(-1)?.message.content).toBe("corrected answer");
     const events: StreamEvent[] = [];
     run.subscribe(0, event => events.push(event));
-    expect(events.map(event => event.type)).toEqual(["delta", "replace", "delta", "cancelled"]);
-    expect(events[1]).toMatchObject({ type: "replace", text: "corrected" });
+    expect(events.map(event => event.type)).toEqual(["message", "message", "cancelled"]);
+    expect(events[1]).toMatchObject(messageEvent("corrected answer"));
     expect(JSON.stringify(events)).not.toContain("old buffered partial");
   });
 
@@ -205,7 +205,7 @@ describe("API and runtime boundary", () => {
     await response.body!.cancel();
     const history = await state.app(new Request(`http://localhost/api/sessions/${sessionId}`));
     const snapshot = await history.json();
-    expect(snapshot.run).toMatchObject({ id: runId, status: "running", text: "Hello", lastEventId: 1 });
+    expect(snapshot.run).toMatchObject({ id: runId, status: "running", lastEventId: 1 });
     expect(snapshot.messages).toHaveLength(1);
     const resumed = await state.app(new Request(`http://localhost/api/sessions/${sessionId}/runs/${runId}/events?after=1`));
     const cancel = await state.app(new Request(`http://localhost/api/sessions/${sessionId}/runs/${runId}/cancel`, { method: "POST" }));
@@ -301,17 +301,17 @@ describe("API and runtime boundary", () => {
   });
 
 
-  test("stream batches remain recoverable from the live snapshot without writing delta metadata", async () => {
+  test("stream batches remain recoverable from the live snapshot without writing output metadata", async () => {
     const state = setup(new TestSession(true));
     const response = await state.app(chatRequest({ sessionId, runId, message: "Hello" }));
     await state.session.started.promise;
     await response.body!.cancel();
-    for (let i = 0; i < 2048; i++) state.session.emit({ type: "delta", text: "x" });
+    for (let i = 0; i < 2048; i++) state.session.emit(messageEvent("Hello" + "x".repeat(i + 1)));
     await Bun.sleep(60);
     const events = `http://localhost/api/sessions/${sessionId}/runs/${runId}/events`;
     expect((await state.app(new Request(`${events}?after=999`))).status).toBe(409);
     const snapshot = (await state.conversations.run(sessionId))!.snapshot;
-    expect(snapshot.text).toBe("Hello" + "x".repeat(2048));
+    expect((await state.conversations.run(sessionId))!.outputs.at(-1)?.message.content).toBe("Hello" + "x".repeat(2048));
     expect(state.repo.run(sessionId, runId)?.lastEventId).toBe(0);
     const resumed = await state.app(new Request(`${events}?after=${snapshot.lastEventId}`));
     await (await state.conversations.run(sessionId))!.cancel();

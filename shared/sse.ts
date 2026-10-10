@@ -31,11 +31,16 @@ export function consumeSse(
       typeof value === "object" &&
       value !== null &&
       "type" in value &&
-      (value.type === "delta" || value.type === "replace") &&
-      "text" in value &&
-      typeof value.text === "string"
+      value.type === "message" && "message" in value && typeof value.message === "object" && value.message !== null &&
+      "id" in value.message && typeof value.message.id === "string" &&
+      "role" in value.message && value.message.role === "assistant" &&
+      "content" in value.message && typeof value.message.content === "string" &&
+      "createdAt" in value.message && typeof value.message.createdAt === "number" &&
+      "final" in value && typeof value.final === "boolean"
     ) {
-      events.push({ type: value.type, text: value.text, ...metadata });
+      events.push({ type: "message", message: { id: value.message.id, role: "assistant", content: value.message.content,
+        createdAt: value.message.createdAt }, final: value.final,
+        ...("previousId" in value && typeof value.previousId === "string" && { previousId: value.previousId }), ...metadata });
     } else if (typeof value === "object" && value !== null && "type" in value && value.type === "refresh") {
       events.push({ type: "refresh", ...metadata });
     } else if (

@@ -60,7 +60,7 @@ export class ConversationStore {
     if (!record) return undefined;
     const content = (await this.readHistory(this.repository.context(sessionId))).runs.get(record.id);
     const { inputHash: _, ...metadata } = record;
-    return new ChatRun({ ...metadata, ...(content?.executionId && { executionId: content.executionId }), message: content?.message ?? "", text: content?.text ?? "" },
+    return new ChatRun({ ...metadata, message: content?.message ?? "" },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
   }
 
@@ -116,11 +116,9 @@ export class ConversationStore {
 
   private launchRun(sessionId: string, record: RunRecord, message: string): ChatRun {
     const { inputHash: _, ...metadata } = record;
-    const previous = this.activeRuns(sessionId).at(-1)?.snapshot;
-    const executionId = previous?.executionId ?? previous?.id ?? record.id;
-    const run = new ChatRun({ ...metadata, executionId, message, text: "" },
+    const run = new ChatRun({ ...metadata, message },
       (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState),
-      () => Promise.all(this.activeRuns(sessionId).filter(member => member.snapshot.executionId === executionId)
+      () => Promise.all(this.activeRuns(sessionId)
         .map(member => member.cancelCurrent())).then(() => {}));
     this.runs.set(sessionId, run);
     this.inflight.set(record.id, run);
@@ -137,9 +135,7 @@ export class ConversationStore {
     const messages = (await this.readHistory(this.repository.context(sessionId))).messages;
     const runs = this.activeRuns(sessionId);
     if (!runs.length) return messages;
-    // Completed native fragments of this execution are already included in its live snapshot.
-    const groups = new Set(runs.map(run => run.snapshot.executionId ?? run.snapshot.id));
-    const visible = messages.filter(message => message.role !== "assistant" || !message.runId || !groups.has(message.runId));
+    const visible = [...messages];
     for (const run of runs) {
       if (!visible.some(message => message.runId === run.snapshot.id && message.role === "user")) {
         visible.push({ id: `user-${run.snapshot.id}`, role: "user", content: run.snapshot.message,

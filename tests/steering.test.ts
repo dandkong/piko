@@ -19,7 +19,7 @@ async function setup() {
   return { ...f, repo, config, store, app: createApp({ config, runtime: f.runtime, conversations: store }) };
 }
 
-test("RN and TG steers all join the next tool boundary with distinct identities and one shared reply", async () => {
+test("RN and TG steers all join the next tool boundary with distinct identities and independent assistant messages", async () => {
   const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
   cleanup(() => gate.resolve());
   let seen = "";
@@ -37,8 +37,8 @@ test("RN and TG steers all join the next tool boundary with distinct identities 
   const tgInput = { botId: "1", chatId: "2", messageId: "3", actorId: "2" };
   const tg = await f.store.startTelegram(tgInput, "TG supplement");
   expect(tg.disposition).toBe("accepted");
-  expect(rn.snapshot.executionId).toBe(root.snapshot.id);
-  expect(tg.run!.snapshot.executionId).toBe(root.snapshot.id);
+  expect(rn.snapshot.id).not.toBe(root.snapshot.id);
+  expect(tg.runId).not.toBe(rn.snapshot.id);
   const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
   await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, tg.runId!), ctx))?.status === "queued");
   expect((await f.store.history(id)).map(message => message.content)).toEqual(["original request", "RN correction", "TG supplement"]);
@@ -50,22 +50,22 @@ test("RN and TG steers all join the next tool boundary with distinct identities 
   gate.resolve(); await waitUntil(() => !root.active && !rn.active && !tg.run!.active);
   expect(seen).toContain("RN correction"); expect(seen).toContain("TG supplement");
   expect(f.faux.state.callCount).toBe(2);
-  for (const run of [root, rn, tg.run!]) expect(run.snapshot).toMatchObject({ status: "succeeded", text: "Before.After." });
+  for (const run of [root, rn, tg.run!]) expect(run.snapshot).toMatchObject({ status: "succeeded" });
   const history = await f.store.history(id);
   expect(session.messages).toEqual(history);
   expect(history.map(message => message.content)).toEqual(["original request", "Before.", "RN correction", "TG supplement", "After."]);
   expect(history.filter(message => message.role === "user").map(message => message.runId)).toEqual([root.snapshot.id, rnId, tg.runId!]);
   const events = consumeSse(await output, true).events;
-  expect(events.filter(event => event.type === "refresh")).toHaveLength(3);
+  expect(events.filter(event => event.type === "refresh")).toHaveLength(5);
   expect(events.at(-1)?.type).toBe("done");
   await f.store.close();
   const restored = await f.runtime.readHistory(f.store.context());
   expect(restored.messages).toEqual(history);
-  expect(restored.runs.get(rnId)).toEqual({ message: "RN correction", text: "Before.After.", executionId: root.snapshot.id });
+  expect(restored.runs.get(rnId)).toEqual({ message: "RN correction" });
   expect(f.faux.state.callCount).toBe(2);
 });
 
-test("late input observers inherit existing text and steers continue at a final-answer boundary", async () => {
+test("late input observers do not replay completed messages and steers continue at a final-answer boundary", async () => {
   const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
   cleanup(() => gate.resolve());
   let seen = "";
@@ -75,15 +75,17 @@ test("late input observers inherit existing text and steers continue at a final-
     context => { seen = JSON.stringify(context.messages); return fauxAssistantMessage("Final."); },
   ]);
   const root = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "first"); await entered.promise;
-  await waitUntil(() => root.snapshot.text === "Before.");
+  await waitUntil(() => root.outputs.some(event => event.final && event.message.content === "Before."));
   const added = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "late correction");
   const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
   await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, added.snapshot.id), ctx))?.status === "queued");
-  expect(added.snapshot.text).toBe("Before."); expect(added.messageEnds).toEqual([7]);
+  expect(added.outputs).toEqual([]);
+  expect((await f.store.history(f.store.main.sessionId)).map(message => message.content)).toContain("Before.");
   gate.resolve(); await waitUntil(() => !root.active && !added.active);
   expect(seen).toContain("late correction"); expect(f.faux.state.callCount).toBe(3);
-  expect(root.snapshot.text).toBe("Before.After.Final."); expect(added.snapshot.text).toBe(root.snapshot.text);
-  expect(added.messageEnds).toEqual(root.messageEnds);
+  expect(root.outputs.map(event => event.message.content)).toEqual(["Before.", "After.", "Final."]);
+  expect(added.outputs.map(event => event.message.content)).toEqual(["After.", "Final."]);
+  expect((await f.store.history(f.store.main.sessionId)).map(message => message.content)).toEqual(["first", "Before.", "After.", "late correction", "Final."]);
 });
 
 test("stopping any participating input stops the execution and withdraws unapplied steers", async () => {

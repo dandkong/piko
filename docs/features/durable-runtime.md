@@ -6,7 +6,7 @@
 
 ## 实时事件与历史
 
-实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`，替代直接解析 `subscribeCommits` / `pi.live`。Pi 适配器把 `message_start/update/end` 转成 Piko 的 delta/replace 和助手消息结束偏移；SDK 类型与事件只留在 `server/runtime/`，RN HTTP/SSE 和 Telegram 投递接口保持现有契约。
+实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`，替代直接解析 `subscribeCommits` / `pi.live`。Pi 适配器把 `message_start/update/end` 转成 Piko 的独立 message 更新，包含消息身份、完整文字、提交标记与临时身份替换关系；SDK 类型与事件只留在 `server/runtime/`。RN 和 TG 按助手消息更新展示，不累计整轮回答。
 
 初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整 JSONL entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。Run 完成前等待终态事件消费，并用完整原生历史作最终核对。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
 
@@ -140,7 +140,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 运行时及 HTTP 现在明确返回 `status: compacted | skipped | cancelled`；skipped 的 reason 为 no_summary 或 stale。只有摘要实际应用后才报告 compacted；未生成摘要、摘要过时无法应用、取消分别反馈，任务失败、丢失结果或其他应用错误报告失败。TG `/compact` 同步这些结果，可选模型详情读取失败不影响已确认的结果。后台自动压缩是否需要展示提醒仍待设计。
 
-普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，共享执行投影；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
+普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
 目前不提供 `/reload` 命令或 HTTP 接口。模型配置和插件代码修改后重启后端生效；是否接入运行时重载或插件热替换后续再讨论。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
 

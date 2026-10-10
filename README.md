@@ -142,7 +142,7 @@ bun run dev:api
 
 默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。`PIKO_HOME/config/.env` 可保存这些参数。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
 
-支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`；`/models` 与 `/thinking` 使用按钮选择，`/compact` 压缩上下文并区分实际应用、跳过、取消和失败。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能/插件数量。TG 发起的消息和回复会出现在 RN；纯 RN 执行默认不推送 TG，可用 `/recent` 查询。两端运行中均可补充输入，使用原生 steer all 在下一个接纳边界一起加入当前工作；停止取消共享执行及未应用输入。TG 对同一次执行只维护一组回复。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
+支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`；`/models` 与 `/thinking` 使用按钮选择，`/compact` 压缩上下文并区分实际应用、跳过、取消和失败。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能/插件数量。TG 发起的消息和回复会出现在 RN；纯 RN 执行默认不推送 TG，可用 `/recent` 查询。两端运行中均可补充输入，使用原生 steer all 在下一个接纳边界一起加入当前工作；停止取消当前 conversation 执行及未应用输入。用户输入与助手回复各自展示，TG 按助手消息更新，补充输入不重发旧回复。RN 前台空闲时每 3 秒同步，已有回复继续使用 SSE。
 
 同一任务内的多条助手文字回复在 TG 按原生消息分别发送，每条内部保持流式编辑；与 RN 历史分条对应，暂不展示工具。
 

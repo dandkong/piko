@@ -32,7 +32,7 @@ export function waitForRetry(milliseconds: number, signal: AbortSignal): Promise
   });
 }
 
-/** Reconnect the same Run; replay cursors and snapshots prevent duplicate text or prompts. */
+/** Reconnect the same submission observer; cursors and message identities prevent duplicate output or prompts. */
 export async function observeRun(observer: Observer, transport: Transport): Promise<void> {
   const { sessionId, run, signal, onEvent, onSnapshot, onReady, onReconnecting } = observer;
   let cursor = run.lastEventId;

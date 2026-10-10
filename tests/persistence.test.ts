@@ -44,7 +44,7 @@ test("a live backend lock excludes another writer and stale lock ownership is re
 test("stable main identity, hashed deduplication, retry and side relations persist without storing bodies in SQLite", async () => {
   const f = await fixture(); const repo = repository(f.paths); const main = repo.main;
   const id = crypto.randomUUID(); const meta = repo.reserve(main.sessionId, id, "input");
-  repo.checkpoint(main.sessionId, { ...meta, message: "input", text: "reply", status: "failed", lastEventId: 2 });
+  repo.checkpoint(main.sessionId, { ...meta, message: "input", status: "failed", lastEventId: 2 });
   expect(repo.reserve(main.sessionId, id, "input").status).toBe("failed");
   expect(() => repo.reserve(main.sessionId, id, "changed")).toThrow("already used");
   const retry = crypto.randomUUID(); expect(repo.reserve(main.sessionId, retry, "input", id).retryOfRunId).toBe(id);
@@ -67,7 +67,7 @@ test("restart retains native messages, aborts uncertain work before scheduling, 
   const meta = repo.reserve(thread, id, "work");
   const session = await f.runtime.createSession(repo.context(thread)) as DurableChatSession;
   repo.saveRuntime(thread, session.exportState());
-  repo.checkpoint(thread, { ...meta, message: "work", text: "", status: "running" });
+  repo.checkpoint(thread, { ...meta, message: "work", status: "running" });
   f.faux.setResponses([fauxAssistantMessage("A very long answer that will still be running when the process closes.")]);
   const pending = session.prompt("work", { id, createdAt: 1 }).catch(() => {});
   await waitUntil(() => f.faux.state.callCount > 0); await Bun.sleep(80);
@@ -90,7 +90,7 @@ test("a submission interrupted before native admission has no invented body and 
   const resumed = repository(f.paths);
   const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), resumed, f.runtime.readHistory);
   expect(await store.history(thread)).toEqual([]);
-  expect((await store.run(thread))?.snapshot).toMatchObject({ message: "", text: "", errorCode: "interrupted" });
+  expect((await store.run(thread))?.snapshot).toMatchObject({ message: "", errorCode: "interrupted" });
   expect((await store.startRun(thread, id, "accepted but not started")).snapshot.status).toBe("failed");
   await expect(store.startRun(thread, id, "different")).rejects.toThrow("already used");
   expect(f.faux.state.callCount).toBe(0); await store.dispose();
@@ -109,7 +109,7 @@ test("main API, native history, SSE replay and duplicate requests never reexecut
     body: JSON.stringify({ sessionId: repo.main.sessionId, runId: id, message: "hi" }) });
   const [a, b] = await Promise.all([app(request()), app(request())]);
   const [first, duplicate] = await Promise.all([a.text(), b.text()]);
-  expect(first).toContain('"text":"saved"'); expect(duplicate).toContain('"type":"done"');
+  expect(first).toContain('"content":"saved"'); expect(duplicate).toContain('"type":"done"');
   expect(f.faux.state.callCount).toBe(1);
   const before = await store.history(repo.main.sessionId);
   expect(before.map(message => message.content)).toEqual(["hi", "saved"]);
@@ -120,20 +120,21 @@ test("main API, native history, SSE replay and duplicate requests never reexecut
   expect((await restartApp(request())).status).toBe(409);
   const snapshot = await (await restartApp(new Request("http://local/api/sessions/" + resumed.main.sessionId))).json();
   expect(snapshot.messages).toEqual(before);
-  expect(snapshot.run).toMatchObject({ message: "hi", text: "saved", status: "succeeded" });
+  expect(snapshot.run).toMatchObject({ message: "hi", status: "succeeded" });
   expect(f.faux.state.callCount).toBe(1); await restartStore.dispose();
 });
 
-test("stream deltas remain transient and a failed terminal flush cannot publish success", async () => {
+test("message snapshots remain transient and a failed terminal flush cannot publish success", async () => {
   const f = await fixture(); const session = await f.createSession();
   f.faux.setResponses([fauxAssistantMessage("saved")]);
   const events: StreamEvent[] = [], writes: RunSnapshot[] = [];
-  const run = new ChatRun({ id: crypto.randomUUID(), message: "input", text: "", status: "queued", createdAt: 1, lastEventId: 0 },
+  const run = new ChatRun({ id: crypto.randomUUID(), message: "input", status: "queued", createdAt: 1, lastEventId: 0 },
     snapshot => { writes.push(snapshot); if (snapshot.status === "succeeded") throw new Error("disk full"); });
   run.subscribe(0, event => events.push(event));
   await expect(run.execute(async () => ({ session, touchedAt: 1 }))).rejects.toThrow("disk full");
-  expect(events.map(event => event.type)).toEqual(["refresh", "delta"]);
-  expect(run.snapshot).toMatchObject({ status: "running", text: "saved", lastEventId: 2 });
+  expect(events.map(event => event.type)).toEqual(["refresh", "message", "message", "refresh"]);
+  expect(run.snapshot).toMatchObject({ status: "running", lastEventId: 4 });
+  expect(run.outputs.filter(event => event.final).map(event => event.message.content)).toEqual(["saved"]);
   expect(writes.map(snapshot => snapshot.status)).toEqual(["running", "succeeded"]);
 });
 

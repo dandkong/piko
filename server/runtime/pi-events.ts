@@ -1,33 +1,27 @@
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable";
+import type { Message } from "../../shared/chat";
 import type { SessionEvent } from "./types";
 import { messageText } from "./pi-history";
 
-/** Transient text projection of native events. Full raw entries remain the history authority. */
-export class PiReplyEvents {
-  private runId?: string;
-  private nativeRunId?: string;
-  private completed = "";
+/** Projects each native assistant message independently; never binds output to an input. */
+export class PiMessageEvents {
+  private current?: Message;
   private blocks = new Map<number, string>();
-  private ended = new Set<number>();
-  private emitted = "";
-
+  private seen = new Set<number>();
   constructor(private readonly emit: (event: SessionEvent) => void) {}
 
-  get snapshot() { return { text: this.emitted, messageEnds: [...this.boundaries] }; }
-  private boundaries: number[] = [];
-
-  begin(runId: string) {
-    this.runId = runId; this.completed = ""; this.blocks.clear(); this.ended.clear(); this.emitted = ""; this.boundaries = [];
+  partial(entries: readonly EntryRecord[]): Message | undefined {
+    // A history read may run ahead of event delivery and already contain this generation's final entry.
+    if (entries.some(entry => entry.kind === "pi.assistant" && !this.seen.has(entry.id))) return undefined;
+    return this.current && { ...this.current };
   }
 
-  finish() { this.runId = undefined; this.blocks.clear(); }
-
   apply(event: AgentEvent) {
-    if (event.type === "entry_appended" || event.type === "message_end") this.marker(event.entry);
-    if (!this.runId || this.nativeRunId !== this.runId) return;
     if (event.type === "message_start" && event.message.role === "assistant") {
+      this.start(event.message.timestamp);
       this.content(event.message.content); this.publish();
     } else if (event.type === "message_update") {
+      if (!this.current) return;
       for (const change of event.changes) {
         if (change.type === "message") this.content(change.message.content);
         else if (change.type === "block" || change.type === "text_start" || change.type === "thinking_start" || change.type === "toolcall_start") {
@@ -37,47 +31,40 @@ export class PiReplyEvents {
         }
       }
       this.publish();
-    } else if (event.type === "message_end" && event.entry.kind === "pi.assistant" && !this.ended.has(event.entry.id)) {
-      const message = event.entry.model?.[0];
-      if (message?.role !== "assistant") return;
-      this.content(message.content); this.publish();
-      this.completed += this.partial(); this.blocks.clear(); this.ended.add(event.entry.id);
-      this.boundaries.push(this.completed.length);
-      this.emit({ type: "message_end", offset: this.completed.length });
-    }
+    } else if (event.type === "message_end" && event.entry.kind === "pi.assistant") this.complete(event.entry);
   }
 
-  /** A watch snapshot may omit older entries after compaction/reset: reconcile against full raw history. */
-  restore(entries: readonly EntryRecord[], snapshot?: SnapshotEvent) {
-    let nativeRunId: string | undefined;
-    let completed = "";
-    const boundaries: { id: number; offset: number }[] = [];
+  /** Overflow recovery uses full raw history, including entries omitted by compaction/reset. */
+  restore(entries: readonly EntryRecord[], snapshot?: SnapshotEvent, initial = false) {
     for (const entry of entries) {
-      if (entry.kind === "piko.run") nativeRunId = this.markerId(entry);
-      if (!this.runId || nativeRunId !== this.runId || entry.kind !== "pi.assistant") continue;
-      completed += (entry.model ?? []).filter(message => message.role === "assistant")
-        .map(message => messageText(message.content)).join("");
-      boundaries.push({ id: entry.id, offset: completed.length });
+      if (entry.kind !== "pi.assistant") continue;
+      if (initial) this.seen.add(entry.id);
+      else this.complete(entry);
     }
-    this.nativeRunId = nativeRunId;
-    if (!this.runId) return;
-    this.completed = completed;
-    this.boundaries = boundaries.map(boundary => boundary.offset);
-    this.content(snapshot?.run && nativeRunId === this.runId ? snapshot.generation?.message?.content : undefined);
-    this.publish();
-    for (const boundary of boundaries) {
-      if (this.ended.has(boundary.id)) continue;
-      this.ended.add(boundary.id); this.emit({ type: "message_end", offset: boundary.offset });
+    const message = snapshot?.run && snapshot.generation?.message;
+    if (message) {
+      if (!this.current) this.start(message.timestamp);
+      this.content(message.content); this.publish();
+    } else if (this.current) {
+      this.emit({ type: "message", message: { ...this.current, content: "" }, final: true });
+      this.current = undefined; this.blocks.clear();
     }
   }
 
-  private marker(entry: EntryRecord) {
-    if (entry.kind === "piko.run") this.nativeRunId = this.markerId(entry);
+  private start(createdAt: number) {
+    this.current ??= { id: `live-${crypto.randomUUID()}`, role: "assistant", content: "", createdAt };
+    this.blocks.clear();
   }
 
-  private markerId(entry: EntryRecord) {
-    const data = entry.data;
-    return data && typeof data === "object" && !Array.isArray(data) && typeof data.runId === "string" ? data.runId : undefined;
+  private complete(entry: EntryRecord) {
+    if (this.seen.has(entry.id)) return;
+    const message = entry.model?.[0];
+    if (message?.role !== "assistant") return;
+    this.seen.add(entry.id);
+    this.emit({ type: "message", message: { id: `pi-${entry.id}`, role: "assistant",
+      content: messageText(message.content), createdAt: message.timestamp }, final: true,
+      ...(this.current && { previousId: this.current.id }) });
+    this.current = undefined; this.blocks.clear();
   }
 
   private content(content: unknown) {
@@ -87,12 +74,11 @@ export class PiReplyEvents {
     });
   }
 
-  private partial() { return [...this.blocks].sort(([a], [b]) => a - b).map(([, text]) => text).join(""); }
-
   private publish() {
-    const text = this.completed + this.partial();
-    if (text === this.emitted) return;
-    this.emit(text.startsWith(this.emitted) ? { type: "delta", text: text.slice(this.emitted.length) } : { type: "replace", text });
-    this.emitted = text;
+    if (!this.current) return;
+    const content = [...this.blocks].sort(([a], [b]) => a - b).map(([, text]) => text).join("");
+    if (content === this.current.content) return;
+    this.current = { ...this.current, content };
+    this.emit({ type: "message", message: { ...this.current }, final: false });
   }
 }

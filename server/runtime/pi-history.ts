@@ -48,30 +48,20 @@ export async function readPiInputs(session: Session, entries: readonly EntryReco
 export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>()): SessionHistory {
   const messages: Message[] = [];
   const runs: SessionHistory["runs"] = new Map();
-  let runId: string | undefined;
   for (const entry of entries) {
     if (entry.kind !== "piko.input") continue;
     const value = data(entry);
-    if (isSessionId(value.runId) && isSessionId(value.executionId)) {
-      runs.set(value.runId, { message: "", text: "", executionId: value.executionId });
-    }
+    if (isSessionId(value.runId)) runs.set(value.runId, { message: "" });
   }
   for (const entry of entries) {
-    if (entry.kind === "piko.run") {
-      const id = data(entry).runId;
-      runId = isSessionId(id) ? id : undefined;
-      if (runId && !runs.has(runId)) runs.set(runId, { message: "", text: "" });
-      continue;
-    }
     if (entry.kind === "pi.user" || entry.kind === "pi.assistant") {
       for (const message of entry.model ?? []) {
         if (message.role !== "user" && message.role !== "assistant") continue;
         const content = messageText(message.content);
-        const messageRunId = message.role === "user" ? inputs.get(entry.id) ?? runId : runId;
+        const messageRunId = message.role === "user" ? inputs.get(entry.id) : undefined;
         const run = messageRunId && runs.get(messageRunId);
         if (run) {
           if (message.role === "user" && !run.message) run.message = content;
-          if (message.role === "assistant") run.text += content;
         }
         if (content.trim()) messages.push({ id: "pi-" + entry.id, role: message.role, content,
           createdAt: message.timestamp, ...(messageRunId && { runId: messageRunId }) });
@@ -80,9 +70,6 @@ export function projectPiHistory(entries: readonly EntryRecord[], inputs = new M
       const content = (entry.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
       if (content.trim()) messages.push({ id: "pi-" + entry.id, role: "assistant", content, createdAt: Number(data(entry).createdAt ?? 0) });
     }
-  }
-  for (const [id, run] of runs) {
-    if (run.executionId && run.executionId !== id) run.text = runs.get(run.executionId)?.text ?? "";
   }
   return { messages, runs };
 }
