@@ -39,9 +39,9 @@ test("durable runs coding tools, refreshes skills, and persists native tool resu
   await session.prompt("Save a reusable skill", run);
   expect(await readFile(join(f.paths.workspace, "artifacts/probe.txt"), "utf8")).toBe("updated from Piko");
   expect(events.filter(event => event.type === "message").reduce((items: Message[], event) => applyMessageEvent(items, event), []).map(message => message.content).join("")).toBe("Saved.");
-  expect((await f.runtime.readHistory(f.input)).messages.map(message => message.content)).toEqual(["Save a reusable skill", "Saved."]);
-  const state = session.exportState!(); await session.dispose();
-  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toHaveLength(2);
+  expect((await f.runtime.readHistory()).messages.map(message => message.content)).toEqual(["Save a reusable skill", "Saved."]);
+  await session.dispose();
+  expect((await f.runtime.readHistory()).messages).toHaveLength(2);
 });
 
 test("literal submissions, multiple turns and passive results survive restart without duplicate streaming", async () => {
@@ -62,11 +62,11 @@ test("literal submissions, multiple turns and passive results survive restart wi
     model: [{ role: "user", content: "scheduled summary", timestamp: 3 }] }), ctx);
   expect(f.faux.state.callCount).toBe(2);
   await session.prompt("explain", { id: crypto.randomUUID(), createdAt: 4 });
-  const saved = await f.runtime.readHistory(f.input);
-  expect(saved.runs.get(run.id)).toEqual({ message: "/skill:piko-workspace" });
+  const saved = await f.runtime.readHistory();
+  expect(saved.messages.find(message => message.requestId === run.id)?.content).toBe("/skill:piko-workspace");
   expect(saved.messages.map(message => message.content)).toEqual(["/skill:piko-workspace", "Checking. ", "Done.", "scheduled summary", "explain", "Explanation."]);
-  const state = session.exportState(); await session.dispose();
-  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(saved.messages);
+  await session.dispose();
+  expect((await f.runtime.readHistory()).messages).toEqual(saved.messages);
 });
 
 test("provider failure surfaces, abort stops work, and next input still works", async () => {

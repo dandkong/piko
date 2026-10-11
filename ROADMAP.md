@@ -7,7 +7,7 @@
 - Expo / React Native 覆盖 Web、iOS、Android；已打磨聊天布局、输入、滚动与等待动效，并增加根目录 Android 原生启动命令。
 - 助手消息支持 Markdown 与流式未闭合语法显示，代码块和表格支持横向滚动；用户消息保持原文。
 - Bun 托管 pi-durable 1.1.0 + pi-ai 1.1.0，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
-- 服务端唯一主会话，Durable 原生 JSONL 是唯一会话内容来源；UI 投影完整 conversation entries，SQLite 只保存必要元数据；重启恢复已保存消息并明确标记中断 Run，流式片段不另行持久化。
+- 服务端唯一主会话，Durable 原生 JSONL 是唯一会话内容来源；UI 投影完整 conversation entries，Piko 不使用 SQLite 或 Run；原生 submission/inbox/live 管理去重和执行，重启撤销遗留工作并显示中断提示，流式片段不另行持久化。
 - 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建技能和执行脚本，全局扩展不自动加载。
 - 独立 JSON 模型/凭据/预设配置、思考强度、durable 插件及选择/压缩/取消 API 已接入；TG 增加模型/思考按钮菜单、压缩与详细状态，共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。RN 模型配置界面、图片读取尚未接入。
 - HTTP、工作区与 Telegram 已迁移到统一应用配置，支持 `piko.json`、共享 `.env` 和进程环境覆盖；启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
@@ -18,13 +18,13 @@
 
 | 增量 | 用户可见结果 | 范围 | 状态 |
 | --- | --- | --- | --- |
-| 1. 工作区与主会话模型 | 重开应用和重启服务仍回到同一主会话 | 工作区初始化、Pi 资源范围、核心实体、JSONL 与 SQLite 索引、Pi 上下文恢复、中断处理 | 首个增量已实现；真实长对话/设备行为继续验证；[功能说明](docs/features/workspace-and-main-chat.md) |
+| 1. 工作区与主会话模型 | 重开应用和重启服务仍回到同一主会话 | 工作区初始化、Pi 资源范围、固定 Harness/root、原生 JSONL/submission、Pi 上下文恢复、中断处理 | 首个增量已实现；真实长对话/设备行为继续验证；[功能说明](docs/features/workspace-and-main-chat.md) |
 | 2. 工具与技能使用 | 助手能保存工作成果与可复用流程 | Pi 内建文件/命令工具、技能正文读取与创建、脚本执行；管理界面、来源追踪与访问边界后续设计 | 基础工具已启用；产品化管理待设计 |
 | 3. RN 与 Telegram 双通道 | 可通过 TG 私聊使用同一个助手，RN 可看到共享历史与执行状态 | 文本回复、停止、详细状态/只读查询、模型/思考按钮、压缩、输入去重、回复呈现与 RN 前台同步；复杂能力单独讨论 | 首期代码与自动化已接入；[通道说明](docs/features/telegram-channel.md)；真实 Bot 与设备行为待验证 |
 | 3a. 运行中输入 | 助手工作时仍可补充、纠正要求，RN/TG 遵循相同规则 | 输入使用 durable `whenBusy: "steer"`，运行时使用 `steeringMode: "all"`；独立提交、独立助手消息、停止与通道投递 | 已实现并通过原生 faux 模型与模拟通道测试；真实 Bot 和设备体验待验证 |
 | 4. Activity 与 Artifacts | 看见助理做了什么、生成了什么 | 执行轨迹、事件与文件/结构化产物查看 | 待设计 |
 
-当前落地 Workspace、Thread 和精简的 Run 元数据；Message 是 Pi 原生记录的展示投影，流事件只用于实时传输与内存重放。主会话是默认入口，side chat 仅预留类型与关联，不做会话列表或切换交互。记忆目录与指导文件可以先建立，自动提取和检索不因此算完成。
+当前以应用配置确定工作区，一个 PIKO_HOME 使用一个 Harness/root；身份、提交、执行和状态复用 Durable 原生存储。Message 是原生记录的展示投影，持续会话事件只用于实时传输与内存重放。主会话是默认入口，side chat 的交互与上下文关系待设计，不做会话列表或切换交互。记忆目录与指导文件可以先建立，自动提取和检索不因此算完成。
 
 关键验收是：主会话唯一、模板不覆盖用户内容、原生历史和上下文能恢复、压缩不影响 UI 历史、重复提交不重复执行、重启明确中断、停止和重连仍可用。接口及恢复细项见功能方案；不保留旧数据库兼容。
 
@@ -36,11 +36,17 @@
 
 - RN 与 Telegram 的普通文本都允许在回复期间提交，统一使用 `Conversation.submit({ type: "input", whenBusy: "steer", ... })`，Harness 设置 `steeringMode: "all"`。空闲输入正常启动执行，忙碌输入进入原生 inbox，在下一个接纳边界按顺序全部加入当前工作。持续到来的后续消息进入下一次边界。
 - steer 在当前工具轮结束或最终回复边界接纳输入，不能强行打断已经开始的模型请求或工具。普通输入不使用忙碌拒绝或等待当前工作回答后另起执行的 follow-up 语义。模型/思考选择等管理操作的空闲限制另外保留。
-- 每条输入保留独立 Run 身份与哈希去重；Run 记录提交状态，不绑定助手回答。`piko.input` 仅记录输入身份，通过原生 submission 的 entry 引用绑定用户消息；不再写 piko.run 或执行分组。
-- 继续用 `watchEvents` 观察执行，原生 entries 展示完整历史；原生 inbox/submission 表达接纳与应用状态，Piko 不建立第二套正文队列。实时快照、SSE、RN 乐观消息、TG 收据及回复观察需要覆盖多个输入参与同一执行，避免丢输入、重复消息或重复投递。
+- 每条输入保留独立原生 requestId，Durable submission 负责去重和状态，entry 引用绑定用户消息；不再维护 Run、哈希、piko.input 或执行分组。网络重投同身份，用户主动重试用新身份。
+- 继续用 `watchEvents` 观察执行，原生 entries 展示完整历史；原生 inbox/submission 表达接纳与应用状态，Piko 不建立第二套正文队列。实时快照、SSE、RN 乐观消息、TG 输入身份及回复观察需要覆盖多个输入参与同一执行，避免丢输入、重复消息或重复投递。
 - 普通停止针对当前 conversation 执行及尚未应用的 steer 输入；旧停止命令重投不能取消后来的执行。执行失败撤回尚未应用输入并向参与输入报告失败。撤回输入未落入原生用户 entries，不进入最终历史。
-- 输入与输出各自展示；RN 保留已完成回复，按消息 ID 更新当前部分；TG 对每条助手消息维护投递对象，补充输入不会重复发送旧内容。TG 加入 RN 正在执行的工作时观察当前未完成消息和后续消息，纯 RN 工作默认不推送 TG。RN 有草稿时发送补充，回复中且草稿为空时停止；原生条目通过 refresh 同步，重连支持按原输入 runId 查询。
+- 输入与输出各自展示；RN 保留已完成回复，按消息 ID 更新当前部分；TG 对每条助手消息维护投递对象，补充输入不会重复发送旧内容。TG 加入 RN 正在执行的工作时观察当前未完成消息和后续消息，纯 RN 工作默认不推送 TG。RN 有草稿时发送补充，回复中且草稿为空时停止；原生状态通过会话 snapshot 同步，重连使用 epoch/sequence，提交可按 requestId 查询；输入 POST 与持续 SSE 分开，RN 不再空闲轮询。
 - 自动化覆盖 RN/TG 并发接纳、连续多条 steer 在下一工具边界一起应用、独立输入去重、消息独立更新与完整历史、停止撤回、失败收尾和原输入身份重连。重启仍不自动重放不确定执行，真实 Bot 与设备体验待验证。
+
+### 原生存储与会话传输（已实现）
+
+移除 Workspace/Thread/Run/TelegramReceipt 数据库模型，固定 state/durable，由原生 submission 管理 requestId 去重、inbox/live/task 管理接纳和执行。停止命令与重启提示使用原生 doc；不维护输入哈希、失败来源链或 piko.input 标记。输入提交和持续会话观察分开，128 条内存事件携带 epoch/sequence，失效后直接发送完整 snapshot。
+
+旧 SQLite 与原生目录不迁移；配置、凭据和工作区保留，新布局初始化新主会话。持久化、停止重投、重启撤回、SSE 重连、steer 和 TG 流式编辑均有原生自动化覆盖。真实 Bot/设备验证仍需继续。
 
 ### 主动压缩的结果反馈（已完善）
 
@@ -50,14 +56,14 @@
 
 ### Side chat、委派与后台工作（运行时方向已确定，产品交互待设计）
 
-- 同一工作区采用一个 Harness 管理多个 conversation，共享存储、调度与 registry；模型、思考、工具、指导和 cwd 可按 conversation 配置。当前每个 Thread 独立 Harness/root 的适配器需届时调整，工作目录相关提示 section 使用实际 conversation 的环境。
+- 同一工作区采用一个 Harness 管理多个 conversation，共享存储、调度与 registry；模型、思考、工具、指导和 cwd 可按 conversation 配置。当前已采用一个 Harness/root 的固定存储；增加 conversation、会话入口和资源环境适配尚未实现。
 - 用户专题会话与助手委派会话区分所有权：独立 side chat 不随主会话停止；前台委派采用原生 owned conversation/child task，通过工具 `details.conversationId` 关联查看。新建和 fork 的上下文范围、结论回传方式仍需设计，不自动同步两边全部消息。
 - 后台工作复用原生 task、checkpoint、document、write/input submission 和 reporter；外部副作用使用幂等身份，结论回传使用稳定 requestId 去重。write 只写记录，input 会唤起模型，投递方式按产品场景选择。
 - 接入后台任务前拆分“停止当前工作”和“停止所有工作”，调整当前统一 `abort({ background: true })` 的范围；前台执行继续采用重启中断策略，哪些后台任务可恢复需明确后再启用。持久化 checkpoint 不保证外部副作用恰好执行一次。
 
 ### 结构化状态与配置生效（待按功能接入）
 
-- 计划、待办和工作检查点优先用原生 `defineDoc` 管理，通过工具提交修改、section 注入模型上下文；按状态用途选择 history/fork 策略。执行详情和结论仍落在原生 conversation，不复制消息正文到 SQLite。
+- 计划、待办和工作检查点优先用原生 `defineDoc` 管理，通过工具提交修改、section 注入模型上下文；按状态用途选择 history/fork 策略。执行详情和结论仍落在原生 conversation，不引入额外正文存储。
 - 规划模式、只读研究等通过 conversation 的实际工具选择实现；权限和文件范围由执行环境约束，cwd 或提示词不能充当沙箱。工具包装或同名覆盖按真实需求接入，优先复用内建工具。
 - 配置及插件文件当前仍重启生效，用户指导和技能索引每次请求刷新。原生 registry 支持同名替换，但正在运行的阶段保留原快照、后续阶段采用新代码；是否提供重载入口继续待定。
 

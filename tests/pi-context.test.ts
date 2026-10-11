@@ -15,34 +15,33 @@ test("full UI history retains stable IDs after native context edits, reset and c
   const f = await fixture(); const session = await f.createSession() as DurableChatSession;
   f.faux.setResponses([fauxAssistantMessage("old reply")]);
   await session.prompt("old input", { id: crypto.randomUUID(), createdAt: 1 });
-  const old = await f.runtime.readHistory(f.input);
+  const old = await f.runtime.readHistory();
   const entries = await readPiEntries(session.nativeHarness);
   const user = entries.find(entry => entry.kind === "pi.user")!;
   await session.native.commit(tx => tx.appendEntry(session.native.id, { kind: "test.context-edit", edits: [{ target: user.id, action: "omit" }] }), ctx);
   expect(JSON.stringify((await session.native.context(ctx)).messages)).not.toContain("old input");
   await session.native.reset(undefined, ctx);
   expect(JSON.stringify((await session.native.context(ctx)).messages)).not.toContain("old reply");
-  expect((await f.runtime.readHistory(f.input)).messages).toEqual(old.messages);
-  const state = session.exportState(); await session.dispose();
-  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(old.messages);
+  expect((await f.runtime.readHistory()).messages).toEqual(old.messages);
+  await session.dispose();
+  expect((await f.runtime.readHistory()).messages).toEqual(old.messages);
 });
 
-test("history reads without credentials and fails closed for missing references, wrong identities and corrupt records", async () => {
+test("history reads without credentials and fails closed for corrupt or missing native logs", async () => {
   const f = await fixture();
-  expect((await f.runtime.readHistory(f.input)).messages).toEqual([]);
+  expect((await f.runtime.readHistory()).messages).toEqual([]);
   const session = await f.createSession() as DurableChatSession;
   await session.native.commit(tx => tx.appendEntry(UserEntry, session.native.id, {
-    model: [{ role: "user", content: "saved before SQL", timestamp: 1 }] }), ctx);
-  const state = session.exportState(); await session.dispose();
+    model: [{ role: "user", content: "saved native entry", timestamp: 1 }] }), ctx);
+  await session.dispose();
   await writeFile(join(f.paths.home, "config/auth.json"), "invalid credentials must not be read");
-  expect((await f.runtime.readHistory(f.input)).messages[0]?.content).toBe("saved before SQL");
-  await expect(f.runtime.readHistory({ ...f.input, state: { ...state, directory: crypto.randomUUID() } })).rejects.toThrow("reference");
-  const path = join(runtimePaths(f.paths.home).sessions, f.input.threadId, "main.jsonl");
+  expect((await f.runtime.readHistory()).messages[0]?.content).toBe("saved native entry");
+  const path = join(runtimePaths(f.paths.home).sessions, "main.jsonl");
   const content = await readFile(path, "utf8");
   await appendFile(path, "{bad}\n");
-  await expect(f.runtime.readHistory({ ...f.input, state })).rejects.toThrow();
+  await expect(f.runtime.readHistory()).rejects.toThrow();
   await writeFile(path, content); await unlink(path);
-  await expect(f.runtime.readHistory({ ...f.input, state })).rejects.toThrow("missing");
+  await expect(f.runtime.readHistory()).rejects.toThrow("main.jsonl is missing");
 });
 
 test("workspace guidance and user-first YAML skills refresh without ancestor/global resources", async () => {
@@ -104,13 +103,13 @@ test("manual compaction preserves full native UI history and restart does not ca
   f.faux.setResponses([fauxAssistantMessage("old answer"), fauxAssistantMessage("recent answer")]);
   await session.prompt("Old context. ".repeat(10000), { id: crypto.randomUUID(), createdAt: 1 });
   await session.prompt("Recent context. ".repeat(6000), { id: crypto.randomUUID(), createdAt: 2 });
-  const old = (await f.runtime.readHistory(f.input)).messages;
+  const old = (await f.runtime.readHistory()).messages;
   f.faux.setResponses([fauxAssistantMessage("Compacted summary.")]);
-  await f.runtime.compact!(f.input);
+  await f.runtime.compact!();
   expect(f.faux.state.callCount).toBe(3);
-  expect((await f.runtime.readHistory(f.input)).messages).toEqual(old);
-  const state = session.exportState!(); await session.dispose();
-  const resumed = await f.runtime.createSession({ ...f.input, state });
+  expect((await f.runtime.readHistory()).messages).toEqual(old);
+  await session.dispose();
+  const resumed = await f.runtime.createSession() as DurableChatSession;
   expect(resumed.messages).toEqual(old);
   expect(f.faux.state.callCount).toBe(3);
 });
@@ -121,12 +120,32 @@ test("native JSONL recovery discards a torn tail and full history spans storage 
     for (let index = 0; index < 510; index++) await tx.appendEntry(UserEntry, session.native.id, {
       model: [{ role: "user", content: `saved-${index}`, timestamp: index + 1 }] });
   }, ctx);
-  const before = (await f.runtime.readHistory(f.input)).messages;
+  const before = (await f.runtime.readHistory()).messages;
   expect(before).toHaveLength(510);
-  const state = session.exportState(); await session.dispose();
-  const path = join(runtimePaths(f.paths.home).sessions, f.input.threadId, "main.jsonl");
+  await session.dispose();
+  const path = join(runtimePaths(f.paths.home).sessions, "main.jsonl");
   await appendFile(path, '{"incomplete":');
-  expect((await f.runtime.readHistory({ ...f.input, state })).messages).toEqual(before);
+  expect((await f.runtime.readHistory()).messages).toEqual(before);
   expect((await readFile(path, "utf8")).endsWith("\n")).toBe(true);
   expect(f.faux.state.callCount).toBe(0);
+});
+
+
+test("changing the configured workspace cannot silently reuse a conversation with a different cwd", async () => {
+  const f = await fixture(); const session = await f.createSession(); await session.dispose();
+  const { createPiRuntime } = await import("../server/runtime/pi");
+  const other = join(f.root, "other-workspace"); await mkdir(other);
+  const runtime = createPiRuntime({ ...f.paths, workspace: other }, { models: f.models });
+  await expect(runtime.createSession()).rejects.toThrow("configured workspace differs");
+  await runtime.dispose!();
+});
+
+
+test("an existing native log without the canonical root fails closed instead of starting another chat", async () => {
+  const f = await fixture();
+  const { openNodeJsonlStorage } = await import("@earendil-works/pi-durable/storage/jsonl/node");
+  const { createSession } = await import("@earendil-works/pi-durable");
+  const raw = createSession(await openNodeJsonlStorage(runtimePaths(f.paths.home).sessions, ctx));
+  await raw.commit(tx => tx.createConversation({ ownership: { kind: "ownerless" } }), ctx); await raw.close(ctx);
+  await expect(f.runtime.createSession()).rejects.toThrow("root conversation is missing");
 });

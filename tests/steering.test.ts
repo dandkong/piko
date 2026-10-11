@@ -3,120 +3,34 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { fixture, repository, cleanup, waitUntil } from "./fixtures/durable";
+import { fixture, cleanup, waitUntil } from "./fixtures/durable";
 import { ConversationStore } from "../server/chat/conversations";
-import { defaultServerConfig } from "../server/config";
-import { DurableChatSession } from "../server/runtime/pi";
-import { createApp } from "../server/app";
-import { consumeSse } from "../shared/sse";
-import { chatStream } from "../server/chat/stream";
 
-async function setup() {
-  const f = await fixture(); const repo = repository(f.paths);
-  const config = defaultServerConfig();
-  const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
-  cleanup(() => store.close());
-  return { ...f, repo, config, store, app: createApp({ config, runtime: f.runtime, conversations: store }) };
-}
-
-test("RN and TG steers all join the next tool boundary with distinct identities and independent assistant messages", async () => {
-  const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
-  cleanup(() => gate.resolve());
-  let seen = "";
-  f.faux.setResponses([
-    async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage([
-      { type: "text", text: "Before." }, fauxToolCall("read", { path: "MEMORY.md" }),
-    ], { stopReason: "toolUse" }); },
-    context => { seen = JSON.stringify(context.messages); return fauxAssistantMessage("After."); },
-  ]);
-  const id = f.store.main.sessionId;
-  const root = await f.store.startRun(id, crypto.randomUUID(), "original request");
-  const output = chatStream(root, new Request("http://local/events")).text();
-  await entered.promise;
-  const rnId = crypto.randomUUID(); const rn = await f.store.startRun(id, rnId, "RN correction");
-  const tgInput = { botId: "1", chatId: "2", messageId: "3", actorId: "2" };
-  const tg = await f.store.startTelegram(tgInput, "TG supplement");
-  expect(tg.disposition).toBe("accepted");
-  expect(rn.snapshot.id).not.toBe(root.snapshot.id);
-  expect(tg.runId).not.toBe(rn.snapshot.id);
-  const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
-  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, tg.runId!), ctx))?.status === "queued");
-  expect((await f.store.history(id)).map(message => message.content)).toEqual(["original request", "RN correction", "TG supplement"]);
-  expect((await f.store.startRun(id, rnId, "RN correction"))).toBe(rn);
-  expect((await f.store.startTelegram(tgInput, "TG supplement")).duplicate).toBe(true);
-  await expect(f.store.startRun(id, rnId, "changed")).rejects.toThrow("already used");
-  const selected = await (await f.app(new Request(`http://local/api/sessions/${id}?runId=${root.snapshot.id}`))).json();
-  expect(selected.run.id).toBe(root.snapshot.id);
-  gate.resolve(); await waitUntil(() => !root.active && !rn.active && !tg.run!.active);
-  expect(seen).toContain("RN correction"); expect(seen).toContain("TG supplement");
-  expect(f.faux.state.callCount).toBe(2);
-  for (const run of [root, rn, tg.run!]) expect(run.snapshot).toMatchObject({ status: "succeeded" });
-  const history = await f.store.history(id);
-  expect(session.messages).toEqual(history);
-  expect(history.map(message => message.content)).toEqual(["original request", "Before.", "RN correction", "TG supplement", "After."]);
-  expect(history.filter(message => message.role === "user").map(message => message.runId)).toEqual([root.snapshot.id, rnId, tg.runId!]);
-  const events = consumeSse(await output, true).events;
-  expect(events.filter(event => event.type === "refresh")).toHaveLength(5);
-  expect(events.at(-1)?.type).toBe("done");
-  await f.store.close();
-  const restored = await f.runtime.readHistory(f.store.context());
-  expect(restored.messages).toEqual(history);
-  expect(restored.runs.get(rnId)).toEqual({ message: "RN correction" });
-  expect(f.faux.state.callCount).toBe(2);
+test("all steers are placed together while assistant messages remain independent", async()=>{
+ const f=await fixture();const s=await f.createSession();const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
+ f.faux.setResponses([async()=>{entered.resolve();await gate.promise;return fauxAssistantMessage([{type:"text",text:"Before"},fauxToolCall("read",{path:"MEMORY.md"})],{stopReason:"toolUse"});},context=>{
+  const user=context.messages.filter(m=>m.role==="user").map(m=>JSON.stringify(m.content)).join(" ");expect(user).toContain("English");expect(user).toContain("Short");return fauxAssistantMessage("After");
+ }]);
+ const a=await s.submit("Task","a");await entered.promise;await s.submit("English","b");await s.submit("Short","c");
+ expect((await s.submit("Task","a")).submission.id).toBe(a.submission.id);expect((await s.snapshot()).messages.filter(m=>m.role==="user")).toHaveLength(3);
+ gate.resolve();await s.native.waitForIdle(ctx);const snapshot=await s.snapshot();
+ expect(snapshot.messages.filter(m=>m.role==="assistant").map(m=>m.content)).toEqual(["Before","After"]);
+ expect(snapshot.messages.filter(m=>m.role==="user").map(m=>m.requestId)).toEqual(["a","b","c"]);expect(f.faux.state.callCount).toBe(2);
 });
-
-test("late input observers do not replay completed messages and steers continue at a final-answer boundary", async () => {
-  const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
-  cleanup(() => gate.resolve());
-  let seen = "";
-  f.faux.setResponses([
-    fauxAssistantMessage([{ type: "text", text: "Before." }, fauxToolCall("read", { path: "MEMORY.md" })], { stopReason: "toolUse" }),
-    async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage("After."); },
-    context => { seen = JSON.stringify(context.messages); return fauxAssistantMessage("Final."); },
-  ]);
-  const root = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "first"); await entered.promise;
-  await waitUntil(() => root.outputs.some(event => event.final && event.message.content === "Before."));
-  const added = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "late correction");
-  const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
-  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, added.snapshot.id), ctx))?.status === "queued");
-  expect(added.outputs).toEqual([]);
-  expect((await f.store.history(f.store.main.sessionId)).map(message => message.content)).toContain("Before.");
-  gate.resolve(); await waitUntil(() => !root.active && !added.active);
-  expect(seen).toContain("late correction"); expect(f.faux.state.callCount).toBe(3);
-  expect(root.outputs.map(event => event.message.content)).toEqual(["Before.", "After.", "Final."]);
-  expect(added.outputs.map(event => event.message.content)).toEqual(["After.", "Final."]);
-  expect((await f.store.history(f.store.main.sessionId)).map(message => message.content)).toEqual(["first", "Before.", "After.", "late correction", "Final."]);
+test("stop settles active input and withdraws unapplied steers without replay", async()=>{
+ const f=await fixture();const s=await f.createSession();const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
+ f.faux.setResponses([async()=>{entered.resolve();await gate.promise;return fauxAssistantMessage("Partial");},fauxAssistantMessage("Next")]);
+ await s.submit("First","a");await entered.promise;await s.submit("Unapplied","b");const stopped=s.abort("stop-1");gate.resolve();expect(await stopped).toBe(true);
+ await waitUntil(async()=> (await s.submission("b"))?.status==="unanswered");expect((await s.snapshot()).messages.some(m=>m.content==="Unapplied")).toBe(false);
+ await s.prompt("New task",{id:"c",createdAt:1});expect(f.faux.state.callCount).toBe(2);
+ expect(await s.abort("stop-1")).toBe(true);expect((await s.submission("c"))?.status).toBe("done");
 });
-
-test("stopping any participating input stops the execution and withdraws unapplied steers", async () => {
-  const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>();
-  cleanup(() => gate.resolve());
-  f.faux.setResponses([async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage("late"); }]);
-  const root = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "first");
-  await entered.promise;
-  const added = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "second");
-  const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
-  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, added.snapshot.id), ctx))?.status === "queued");
-  const stopped = added.cancel();
-  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, added.snapshot.id), ctx))?.status === "unanswered");
-  gate.resolve(); await stopped;
-  await waitUntil(() => !root.active && !added.active);
-  expect(root.snapshot.status).toBe("cancelled"); expect(added.snapshot.status).toBe("cancelled");
-  expect(f.faux.state.callCount).toBe(1);
-  expect((await f.store.history(f.store.main.sessionId)).filter(message => message.role === "user").map(message => message.content)).toEqual(["first"]);
-});
-
-test("a failed execution settles queued steers without automatically replaying their inputs", async () => {
-  const f = await setup();
-  await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, retry: { enabled: false } }));
-  const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(() => gate.resolve());
-  f.faux.setResponses([async () => { entered.resolve(); await gate.promise; return fauxAssistantMessage("", { stopReason: "error", errorMessage: "provider failure" }); }]);
-  const root = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "first"); await entered.promise;
-  const added = await f.store.startRun(f.store.main.sessionId, crypto.randomUUID(), "queued correction");
-  const session = await f.runtime.createSession(f.store.context()) as DurableChatSession;
-  await waitUntil(async () => (await session.nativeHarness.commit(tx => tx.submissionByRequest(session.native.id, added.snapshot.id), ctx))?.status === "queued");
-  gate.resolve(); await waitUntil(() => !root.active && !added.active);
-  expect(root.snapshot.status).toBe("failed"); expect(added.snapshot.status).toBe("failed");
-  expect(added.snapshot.error).toContain("provider failure");
-  expect(f.faux.state.callCount).toBe(1);
+test("a failed provider clears queued steers before the next explicit input",async()=>{
+ const f=await fixture();await writeFile(join(f.paths.home,"config/settings.json"),JSON.stringify({version:1,retry:{enabled:false}}));const s=await f.createSession();
+ const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
+ f.faux.setResponses([async()=>{entered.resolve();await gate.promise;return fauxAssistantMessage("",{stopReason:"error",errorMessage:"failed"});},fauxAssistantMessage("Next")]);
+ await s.submit("Fail","a");await entered.promise;await s.submit("Never replay","b");gate.resolve();
+ await waitUntil(async()=> (await s.submission("b"))?.status==="unanswered");
+ expect((await s.snapshot()).latest?.error).toBe("failed");
+ await s.prompt("Explicit new task",{id:"c",createdAt:1});expect(f.faux.state.callCount).toBe(2);expect((await s.snapshot()).messages.some(m=>m.content==="Never replay")).toBe(false);
 });

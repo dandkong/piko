@@ -182,7 +182,7 @@ test("event listener failure fails the prompt, blocks new generation and release
   await expect(session.prompt("blocked", { id: crypto.randomUUID(), createdAt: 2 })).rejects.toThrow("test event listener failure");
   expect(f.faux.state.callCount).toBe(1);
   await session.dispose();
-  const reopened = await f.runtime.createSession(f.input);
+  const reopened = await f.runtime.createSession() as DurableChatSession;
   expect(reopened.messages.map(message => message.content)).toEqual(["first", "Saved answer."]);
   await reopened.prompt("next", { id: crypto.randomUUID(), createdAt: 3 });
   expect(reopened.messages.at(-1)?.content).toBe("Next answer.");

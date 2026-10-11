@@ -3,7 +3,6 @@ import { loadPikoConfig } from "./config";
 import { ConversationStore } from "./chat/conversations";
 import { createPiRuntime } from "./runtime/pi";
 import { initializeWorkspace } from "./domain/workspace";
-import { ChatRepository } from "./domain/chat-repository";
 import { acquireBackendLock } from "./domain/backend-lock";
 import { TelegramBot } from "./channels/telegram/bot";
 
@@ -13,11 +12,10 @@ const config = piko.http;
 const paths = initializeWorkspace(piko.paths);
 const releaseLock = acquireBackendLock(paths.state);
 process.on("exit", releaseLock);
-const repository = new ChatRepository(paths.database, paths.workspace);
 const runtime = createPiRuntime(paths);
-// Validate the canonical conversation before accepting requests, without creating an agent.
-await runtime.readHistory(repository.context(repository.main.sessionId));
-const conversations = new ConversationStore((context) => runtime.createSession(context), config, repository, runtime.readHistory);
+// Open and validate native state, withdrawing inherited work before accepting requests.
+await runtime.createSession();
+const conversations = new ConversationStore(runtime);
 const server = Bun.serve({
   hostname: config.hostname,
   port: config.port,
@@ -35,7 +33,7 @@ if (piko.channels.telegram.enabled) {
 console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
 console.log(`pi-durable runtime; model configuration: ${paths.home}/config; read, write, edit and bash are enabled.`);
 console.log(`Piko workspace: ${paths.workspace}`);
-console.log(`Piko main conversation: ${repository.main.sessionId}; state: ${paths.state}`);
+console.log(`Piko main conversation: root; state: ${paths.state}`);
 
 let stopping = false;
 async function shutdown() {
@@ -45,7 +43,7 @@ async function shutdown() {
   let failed = false;
   // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
   for (const close of [() => telegram?.stopInput(), () => conversations.close(), () => telegram?.close(),
-    () => runtime.dispose?.(), () => repository.close(), () => releaseLock()]) {
+    () => runtime.dispose?.(), () => releaseLock()]) {
     try { await close(); }
     catch { failed = true; console.error("A Piko resource failed to close."); }
   }

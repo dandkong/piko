@@ -1,203 +1,112 @@
-import type { Message } from "../../shared/chat";
-import type { ChatSession, SessionContext, HistoryReader } from "../runtime/types";
-import { submissionHash, type ChatRepository, type RunRecord, type TelegramInput, type TelegramReceipt } from "../domain/chat-repository";
-import { ChatRun } from "./run";
+import type { ConversationResponse, StreamEvent } from "../../shared/chat";
+import type { ChatRuntime, ChatSession } from "../runtime/types";
 import { normalizeMessage } from "./input";
-
-type Conversation = { session: ChatSession; touchedAt: number };
-type StoreOptions = { idleSessionMs: number; maxSessions: number };
-
-export class RuntimeBusyError extends Error {
-  constructor() { super("Stop the current reply before changing runtime configuration."); }
-}
-
+export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
+/** Conversation-wide observation and transient replay. Native submissions own execution state. */
 export class ConversationStore {
-  private readonly conversations = new Map<string, Conversation>();
-  private readonly pending = new Map<string, Promise<Conversation>>();
-  private readonly runs = new Map<string, ChatRun>();
-  private readonly inflight = new Map<string, ChatRun>();
-  private readonly executions = new Set<Promise<void>>();
-  private readonly runtimeChanges = new Map<string, Promise<unknown>>();
-  private storageFailure?: Error;
+  readonly epoch = crypto.randomUUID();
+  private sequence = 0;
+  private events: StreamEvent[] = [];
+  private listeners = new Set<(event: StreamEvent) => void>();
+  private opening?: Promise<ChatSession>;
+  private session?: ChatSession;
+  private unsubscribe?: () => void;
   private closing = false;
-
-  constructor(
-    private readonly createSession: (context?: SessionContext) => Promise<ChatSession>,
-    private readonly options: StoreOptions,
-    private readonly repository: ChatRepository,
-    private readonly readHistory: HistoryReader,
-  ) {}
-
-  get size() { return this.conversations.size; }
-  get main() { return this.repository.main; }
-  context() { return this.repository.context(this.main.sessionId); }
-  get unavailableReason() { return this.storageFailure?.message; }
-  accepts(sessionId: string): boolean { return this.main.thread.id === sessionId; }
-
-  isStreaming(sessionId: string): boolean {
-    return this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).length > 0 || (this.conversations.get(sessionId)?.session.isStreaming ?? false);
-  }
-
-  private activeRuns(sessionId: string) {
-    return this.accepts(sessionId) ? [...this.inflight.values()].filter(run => run.active) : [];
-  }
-
-  /** Reserve before any asynchronous runtime initialization, shared by HTTP and Telegram. */
-  async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {
-    this.requireAvailable();
-    const id = this.main.sessionId;
-    if (this.isStreaming(id)) throw new RuntimeBusyError();
-    const task = Promise.resolve().then(operation);
-    this.runtimeChanges.set(id, task);
-    try { return await task; } finally { this.runtimeChanges.delete(id); }
-  }
-
-  async run(sessionId: string, runId?: string): Promise<ChatRun | undefined> {
-    const cached = runId ? this.inflight.get(runId) ?? this.runs.get(sessionId)
-      : this.activeRuns(sessionId).at(-1) ?? this.runs.get(sessionId);
-    if (cached && (!runId || cached.snapshot.id === runId)) return cached;
-    const record = runId ? this.repository.run(sessionId, runId) : this.repository.latest(sessionId);
-    if (!record) return undefined;
-    const content = (await this.readHistory(this.repository.context(sessionId))).runs.get(record.id);
-    const { inputHash: _, ...metadata } = record;
-    return new ChatRun({ ...metadata, message: content?.message ?? "" },
-      (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState));
-  }
-
-  async startRun(sessionId: string, runId: string, message: string, retryOfRunId?: string): Promise<ChatRun> {
-    this.requireAvailable();
-    message = normalizeMessage(message);
-    if (!this.accepts(sessionId)) throw new Error("This client uses an old conversation. Reload to open the main conversation.");
-    const previous = this.repository.run(sessionId, runId);
-    if (previous) {
-      if (previous.inputHash !== submissionHash(message) || previous.retryOfRunId !== retryOfRunId) throw new Error("This runId was already used for another submission.");
-      return (await this.run(sessionId, runId))!;
-    }
-    // Validate canonical history before reserving an execution.
-    await this.readHistory(this.repository.context(sessionId));
-    this.requireAvailable();
-    // Another submission may have reserved this identity while history was read.
-    if (this.repository.run(sessionId, runId)) {
-      const record = this.repository.reserve(sessionId, runId, message, retryOfRunId);
-      return (await this.run(sessionId, record.id))!;
-    }
-    if (this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).some(run => run.snapshot.status === "cancelling")) throw new RuntimeBusyError();
-    return this.launchRun(sessionId, this.repository.reserve(sessionId, runId, message, retryOfRunId), message);
-  }
-
-  async startTelegram(input: TelegramInput, message: string): Promise<TelegramReceipt & { run?: ChatRun }> {
-    this.requireAvailable();
-    let invalid = false;
-    try { message = normalizeMessage(message); } catch { invalid = true; }
-    const sessionId = this.main.sessionId;
-    await this.readHistory(this.context());
-    this.requireAvailable();
-    const receipt = this.repository.admitTelegram(sessionId, input, message, invalid,
-      this.runtimeChanges.has(sessionId) || this.activeRuns(sessionId).some(run => run.snapshot.status === "cancelling"));
-    if (!receipt.runId) return receipt;
-    const run = receipt.duplicate ? await this.run(sessionId, receipt.runId)
-      : this.launchRun(sessionId, this.repository.run(sessionId, receipt.runId)!, message);
-    return { ...receipt, run };
-  }
-
-  private requireAvailable(): void {
-    if (this.storageFailure) throw this.storageFailure;
+  private maintenance = false;
+  private tail: Promise<unknown> = Promise.resolve();
+  private pump?: Promise<void>;
+  private dirty = false;
+  private messages = new Map<string, Extract<StreamEvent, { type: "message" }>>();
+  private change?: Promise<unknown>;
+  private timer?: ReturnType<typeof setTimeout>;
+  constructor(readonly runtime: ChatRuntime) {}
+  get size() { return this.session ? 1 : 0; }
+  isStreaming() { return this.maintenance || (this.session?.isStreaming ?? false); }
+  private serial<T>(operation: () => Promise<T>): Promise<T> { const task = this.tail.catch(() => {}).then(operation); this.tail = task; return task; }
+  async get(): Promise<ChatSession> {
     if (this.closing) throw new Error("Piko is shutting down.");
+    return this.opening ??= this.runtime.createSession().then(session => {
+      this.session = session;
+      this.unsubscribe = session.subscribe(event => {
+        if (event.type === "error") this.publish(event);
+        if (event.type === "message") {
+          if (event.previousId) this.messages.delete(event.previousId);
+          this.messages.set(event.message.id, event);
+        } else this.dirty = true;
+        if (!this.timer) this.timer = setTimeout(() => { this.timer = undefined; void this.flush(); }, 50);
+      });
+      return session;
+    }).catch(error => { this.opening = undefined; throw error; });
   }
-
-  async stopTelegram(input: TelegramInput, message: string): Promise<boolean> {
-    this.requireAvailable();
-    const receipt = this.repository.rememberTelegramStop(this.main.sessionId, input, message);
-    if (!receipt.runId) return false;
-    const run = await this.run(this.main.sessionId, receipt.runId);
-    if (run?.active) await run.cancel();
-    return true;
+  private publish(event: StreamEvent) {
+    const recorded = { ...event, epoch: this.epoch, sequence: ++this.sequence };
+    this.events.push(recorded); if (this.events.length > 128) this.events.shift();
+    for (const listener of this.listeners) listener(recorded);
   }
-
-  private launchRun(sessionId: string, record: RunRecord, message: string): ChatRun {
-    const { inputHash: _, ...metadata } = record;
-    const run = new ChatRun({ ...metadata, message },
-      (state, runtimeState) => this.repository.checkpoint(sessionId, state, runtimeState),
-      () => Promise.all(this.activeRuns(sessionId)
-        .map(member => member.cancelCurrent())).then(() => {}));
-    this.runs.set(sessionId, run);
-    this.inflight.set(record.id, run);
-    const execution = run.execute(() => this.get(sessionId)).catch((error) => {
-      this.storageFailure = new Error("Reply storage is unavailable. Fix the storage issue and restart Piko to recover saved history.");
-      console.error("Reply persistence failed:", error);
+  /** Coalesce output into consistent conversation snapshots, never per-input replies. */
+  async flush() {
+    if (this.pump) return this.pump;
+    this.pump = (async () => {
+      while ((this.dirty || this.messages.size) && !this.closing) {
+        const messages = [...this.messages.values()]; this.messages.clear();
+        for (const message of messages) this.publish(message);
+        if (this.dirty) {
+          this.dirty = false;
+          const conversation = await (await this.get()).snapshot();
+          this.publish({ type: "snapshot", conversation });
+        }
+      }
+    })().catch(error => this.publish({ type: "error", message: error instanceof Error ? error.message : "Could not read conversation." })).finally(() => { this.pump = undefined; });
+    return this.pump;
+  }
+  async snapshot(): Promise<ConversationResponse> { return (await this.get()).snapshot(); }
+  async submit(message: string, requestId: string) {
+    message = normalizeMessage(message);
+    return this.serial(async () => {
+      if (this.maintenance) throw new RuntimeBusyError();
+      const result = await (await this.get()).submit(message, requestId);
+      this.dirty = true; await this.flush(); return result;
     });
-    this.executions.add(execution);
-    void execution.finally(() => { this.executions.delete(execution); this.inflight.delete(record.id); });
-    return run;
   }
-
-  async history(sessionId: string): Promise<Message[]> {
-    const messages = (await this.readHistory(this.repository.context(sessionId))).messages;
-    const runs = this.activeRuns(sessionId);
-    if (!runs.length) return messages;
-    const visible = [...messages];
-    for (const run of runs) {
-      if (!visible.some(message => message.runId === run.snapshot.id && message.role === "user")) {
-        visible.push({ id: `user-${run.snapshot.id}`, role: "user", content: run.snapshot.message,
-          createdAt: run.snapshot.createdAt, runId: run.snapshot.id });
-      }
-    }
-    return visible;
+  async stop(commandId?: string) { return this.serial(async () => { const result = await (await this.get()).abort(commandId); this.dirty = true; await this.flush(); return result; }); }
+  async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {
+    const reserved = await this.serial(async () => {
+      await this.get(); if (this.isStreaming()) throw new RuntimeBusyError();
+      this.maintenance = true;
+      const task = Promise.resolve().then(operation); this.change = task;
+      return { task };
+    });
+    try { return await reserved.task; }
+    finally { this.maintenance = false; this.change = undefined; this.dirty = true; await this.flush(); }
   }
-
-  delete(_sessionId: string): never { throw new Error("Deleting the persistent main conversation is not available."); }
-
-  async get(sessionId: string): Promise<Conversation> {
-    const now = Date.now();
-    for (const [id, value] of this.conversations) {
-      if (now - value.touchedAt > this.options.idleSessionMs && !this.isStreaming(id)) {
-        await value.session.dispose();
-        this.conversations.delete(id);
-      }
+  /** Initial state joins the same publication line as live updates, avoiding snapshot/cursor races. */
+  async observe(listener: (event: StreamEvent) => void, epoch?: string, after = 0): Promise<() => void> {
+    await this.get();
+    const first = this.events[0]?.sequence ?? this.sequence + 1;
+    if (epoch === this.epoch && after <= this.sequence && after >= first - 1) {
+      for (const event of this.events) if (event.sequence! > after) listener(event);
+      this.listeners.add(listener); return () => { this.listeners.delete(listener); };
     }
-    const existing = this.conversations.get(sessionId);
-    if (existing) { existing.touchedAt = now; return existing; }
-    const pending = this.pending.get(sessionId);
-    if (pending) {
-      const conversation = await pending;
-      conversation.touchedAt = Date.now();
-      return conversation;
-    }
-    if (this.conversations.size + this.pending.size >= this.options.maxSessions) {
-      const oldest = [...this.conversations.entries()].filter(([id]) => !this.isStreaming(id))
-        .sort((a, b) => a[1].touchedAt - b[1].touchedAt)[0];
-      if (!oldest) throw new Error("Piko is busy with other conversations. Try again shortly.");
-      await oldest[1].session.dispose();
-      this.conversations.delete(oldest[0]);
-      this.runs.delete(oldest[0]);
-    }
-    const context = this.repository.context(sessionId);
-    const creation = this.createSession(context).then(async (session) => {
-      if (session.exportState) {
-        try { this.repository.saveRuntime(sessionId, session.exportState()); }
-        catch (error) { await session.dispose(); throw error; }
-      }
-      const created = { session, touchedAt: Date.now() };
-      this.conversations.set(sessionId, created);
-      return created;
-    }).finally(() => this.pending.delete(sessionId));
-    this.pending.set(sessionId, creation);
-    return creation;
+    let buffering = true; const pending: StreamEvent[] = [];
+    const receive = (event: StreamEvent) => { if (buffering) pending.push(event); else listener(event); };
+    this.listeners.add(receive);
+    try {
+      this.dirty = true; await this.flush();
+      // A finished pump may still be clearing its promise when observation is attached.
+      if (!pending.some(event => event.type === "snapshot")) await this.flush();
+      const index = pending.findLastIndex(event => event.type === "snapshot");
+      if (index < 0) throw new Error("Could not read conversation snapshot.");
+      for (const event of pending.slice(index)) listener(event);
+      buffering = false;
+      return () => { this.listeners.delete(receive); };
+    } catch (error) { this.listeners.delete(receive); throw error; }
   }
-
-  async dispose(): Promise<void> {
-    if ([...this.inflight.values()].some((run) => run.active) || this.pending.size || this.runtimeChanges.size) throw new Error("Stop active replies before disposing the conversation store.");
-    for (const value of this.conversations.values()) await value.session.dispose();
-    this.conversations.clear();
-    this.runs.clear();
-    this.inflight.clear();
-  }
-
-  async close(): Promise<void> {
-    this.closing = true;
-    await Promise.all([...this.inflight.values()].filter(run => run.active).map(run => run.cancel()));
-    await Promise.all([...this.executions]);
-    await Promise.allSettled([...this.runtimeChanges.values()]);
-    await this.dispose();
+  async close() {
+    if (this.closing) return;
+    await this.tail.catch(() => {});
+    const session = this.session ?? (this.opening && await this.opening);
+    await session?.abort(); await this.change?.catch(() => {}); await this.pump;
+    this.closing = true; clearTimeout(this.timer); this.unsubscribe?.(); this.listeners.clear();
+    await this.runtime.dispose?.();
   }
 }

@@ -14,4 +14,4 @@
 - 输入、滚动和布局的已确认行为见 [产品约定](../../docs/PRODUCT.md)。原生键盘与后台切换需设备验证。
 - OpenMuse UI 与素材授权见 [第三方说明](../../THIRD_PARTY_NOTICES.md)。
 
-客户端通过 `/api/main` 发现后端唯一主会话；工作区、JSONL 与数据库都在后端，AsyncStorage 不再创建独立聊天 ID。职责见 [架构约定](../../docs/ARCHITECTURE.md)，恢复行为见 [工作区与主会话模型](../../docs/features/workspace-and-main-chat.md)。
+客户端通过 `/api/chat` 读取后端唯一主会话，持续 `/api/chat/events` 观察两通道变化，POST 只提交输入。工作区和原生 JSONL 都在后端，不使用 SQLite 或客户端聊天 ID。职责见 [架构约定](../../docs/ARCHITECTURE.md)，恢复行为见 [工作区与主会话模型](../../docs/features/workspace-and-main-chat.md)。

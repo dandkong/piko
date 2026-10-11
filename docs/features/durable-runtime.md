@@ -8,7 +8,7 @@
 
 实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`，替代直接解析 `subscribeCommits` / `pi.live`。Pi 适配器把 `message_start/update/end` 转成 Piko 的独立 message 更新，包含消息身份、完整文字、提交标记与临时身份替换关系；SDK 类型与事件只留在 `server/runtime/`。RN 和 TG 按助手消息更新展示，不累计整轮回答。
 
-初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整 JSONL entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。Run 完成前等待终态事件消费，并用完整原生历史作最终核对。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
+初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整 JSONL entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。输入使用原生 submission 独立结算；会话快照从原生事务读取历史与状态，不再维护 Piko Run 终态。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
 
 会话关闭时停止事件订阅；订阅异常会报告并阻止该会话继续接纳新生成，避免静默丢失实时输出。工具、思考、压缩和 usage 事件已有原生来源，但本次只消费消息与提交状态，不新增这些内容的产品展示，不另建永久事件存储。`watchEvents` 的实验性协议通过运行时适配器隔离，后续升级依赖时需验证事件映射和 snapshot 行为。
 
@@ -155,7 +155,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | PIKO_HOME/extensions 插件入口、本地辅助代码及外部依赖 | 重启后端时重新发现、编译并加载 |
 | 插件自行读取的提示词或配置文件 | 由插件决定：每次调用读取可直接生效；初始化时捕获则需重启 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
-| 工作区其他 md、JSONL/SQLite 和插件持久化 doc | 普通文件按需读取，重启保留存储和 doc 既有状态 |
+| 工作区其他 md、JSONL 和插件持久化 doc | 普通文件按需读取，重启保留存储和 doc 既有状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
 通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 models/settings/auth 文件后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。

@@ -11,10 +11,10 @@ describe("message streams", () => {
     expect(consumeSse(first.remainder + encoded.slice(24)).events).toEqual([messageEvent("hello")]);
   });
   test("parses CRLF, final blocks and replay metadata", () => {
-    expect(consumeSse(encodeSse(messageEvent("hi")).replaceAll("\n", "\r\n") + 'data: {"type":"done"}', true).events)
-      .toEqual([messageEvent("hi"), { type: "done" }]);
-    expect(consumeSse(': heartbeat\n\ndata: {"type":"cancelled","runId":"run","sequence":3}\n\n').events)
-      .toEqual([{ type: "cancelled", runId: "run", sequence: 3 }]);
+    expect(consumeSse(encodeSse(messageEvent("hi")).replaceAll("\n", "\r\n") + 'data: {"type":"refresh"}', true).events)
+      .toEqual([messageEvent("hi"), { type: "refresh" }]);
+    expect(consumeSse(': heartbeat\n\ndata: {"type":"refresh","epoch":"epoch","sequence":3}\n\n').events)
+      .toEqual([{ type: "refresh", epoch: "epoch", sequence: 3 }]);
     const first = consumeSse(encodeSse(messageEvent("你好")).replaceAll("\n", "\r\n").slice(0, -1));
     expect(consumeSse(first.remainder + "\n").events).toEqual([messageEvent("你好")]);
   });

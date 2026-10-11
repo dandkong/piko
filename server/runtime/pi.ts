@@ -1,14 +1,16 @@
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { createRegistry, defineDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
-import type { ChatRuntime, ChatSession, SessionContext, SessionEvent } from "./types";
+import type { ChatRuntime, ChatSession, SessionEvent } from "./types";
 import { SessionCancelledError } from "./types";
-import { exportPiReference, readPiContext, sessionDirectory } from "./pi-context";
-import { projectPiHistory, readPiEntries, readPiHistory, readPiInputs } from "./pi-history";
+import { readPiContext, sessionDirectory } from "./pi-context";
+import { entriesFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiHistory, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
@@ -17,7 +19,12 @@ import { installWorkspacePlugins, type WorkspaceRegistry } from "./extensions";
 import { WorkspaceExecutionEnv } from "./execution-env";
 
 export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
-const Interruptions = defineDoc<{ runs: string[] }>({ kind: "piko.interruptions", version: 1, scope: "conversation", history: "latest", fork: "current", initial: () => ({ runs: [] }) });
+const Recovery = defineDoc<{ interruption: string }>({ kind: "piko.recovery", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ interruption: "" }) });
+const StopReceipts = defineDocFamily<{ processed: boolean; stopped: boolean; tasks: number[] }, null>({ kind: "piko.stop", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true, initial: () => ({ processed: false, stopped: false, tasks: [] }) });
+function receipt(record: SubmissionRecord): import("../../shared/chat").SubmissionReceipt {
+  return { id: String(record.id), ...(record.requestId && { requestId: record.requestId }), status: record.status,
+    ...(record.status === "unanswered" && { error: typeof record.detail === "string" ? record.detail : record.reason }) };
+}
 
 async function registry(paths: WorkspacePaths): Promise<WorkspaceRegistry> {
   const value = createRegistry();
@@ -26,34 +33,38 @@ async function registry(paths: WorkspacePaths): Promise<WorkspaceRegistry> {
   return installWorkspacePlugins(paths.home, value);
 }
 
-/** One open native store per Thread. UI reads raw entries; provider context stays durable's responsibility. */
+/** One native Harness and root conversation per PIKO_HOME. UI reads raw entries; provider context stays durable's responsibility. */
 export class DurableChatSession implements ChatSession {
   private harness!: Harness;
+  private storage!: Storage;
   private conversation!: Conversation;
   private config!: WorkspaceModelConfig;
   private extensions!: WorkspaceRegistry;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
   private eventStream!: AgentEventStream;
-  private observed = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
-  private prompts = new Set<string>();
-  private executionError?: Error;
   private admission: Promise<unknown> = Promise.resolve();
+  private monitors = new Set<Promise<void>>();
+  private failureCleanup?: Promise<void>;
+  private stopping = false;
+  private liveBusy = false;
   private observationError?: Error;
   private delivery?: Promise<void>;
+  private deliveredEntry = 0;
+  private deliveryWaiters = new Set<{ entry: number; resolve: () => void; reject: (error: Error) => void }>();
   private output = new PiMessageEvents(event => this.emit(event));
+  private previousIds = new Map<string, string>();
   private listeners = new Set<(event: SessionEvent) => void>();
   private busy = false;
   private changing = false;
   private changeFinished?: Promise<void>;
-  private abortRequested = false;
   private disposed = false;
   private closing?: Promise<void>;
 
-  constructor(readonly paths: WorkspacePaths, readonly input: SessionContext, private readonly injected?: Models,
+  constructor(readonly paths: WorkspacePaths, private readonly injected?: Models,
     private readonly onDispose?: () => void) {}
 
-  get isStreaming() { return this.busy || this.changing; }
+  get isStreaming() { return this.busy || this.changing || this.stopping || this.liveBusy; }
   get closePromise() { return this.closing; }
   get messages() {
     const messages = projectPiHistory(this.entries, this.inputEntries).messages;
@@ -71,7 +82,8 @@ export class DurableChatSession implements ChatSession {
   }
 
   private async open(config: WorkspaceModelConfig, extensions: WorkspaceRegistry): Promise<void> {
-    const directory = sessionDirectory(runtimePaths(this.paths.home).sessions, this.input);
+    const directory = sessionDirectory(runtimePaths(this.paths.home).sessions);
+    const persisted = existsSync(join(directory, "main.jsonl"));
     const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
     let harness: Harness;
     try {
@@ -83,6 +95,7 @@ export class DurableChatSession implements ChatSession {
     } catch (error) { await storage.close(ctx); throw error; }
     try {
       const existing = await harness.conversation(ROOT_CONVERSATION_ID, ctx);
+      if (persisted && !existing) throw new Error("Durable root conversation is missing.");
       const preferred = config.defaultModel;
       const selected = preferred ? await requireAvailableModel(config.models, preferred) : (await config.models.getAvailable())[0];
       const conversation = existing ?? await harness.root(ctx, { agent: {
@@ -90,31 +103,27 @@ export class DurableChatSession implements ChatSession {
         ...(selected && { model: { provider: selected.provider, modelId: selected.id } }),
         thinkingLevel: preferred?.thinking ?? "off",
       } });
-      // Preserve Piko's explicit-retry contract. Mark all inherited work aborted BEFORE enabling scheduling.
+      if (existing && resolve((await conversation.agent(ctx)).cwd ?? this.paths.workspace) !== resolve(this.paths.workspace)) throw new Error("The configured workspace differs from the saved conversation. Restore its original path or use a new PIKO_HOME.");
+      const live = await harness.snapshot(LiveDoc, conversation.id, ctx);
+      const inbox = await harness.snapshot(InboxDoc, conversation.id, ctx);
+      const interrupted = !!live?.run || !!inbox?.items.some(item => item.mode !== "write");
+      // Startup policy is applied before submit/wait enables the scheduler.
       await conversation.abort(ctx, { background: true });
-      if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({
-        model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off",
+      if (interrupted) await conversation.commit(async tx => {
+        (await tx.doc(Recovery, conversation.id)).interruption = "The previous work was interrupted by a server restart. Please resend if needed.";
+        await tx.appendEntry(conversation.id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are historical context. Do not resume or repeat its tools automatically; respond only to the next user request.", timestamp: Date.now() }] });
       }, ctx);
-      if (this.input.interruptedRunIds.length) await conversation.commit(async tx => {
-        const state = await tx.doc(Interruptions, conversation.id);
-        for (const runId of this.input.interruptedRunIds) {
-          if (state.runs.includes(runId)) continue;
-          await tx.appendEntry(conversation.id, { kind: "piko.interrupted", data: { runId }, model: [{ role: "user",
-            content: `Execution ${runId} was interrupted by a server restart. Saved messages are historical context. Do not resume or repeat that execution or its tools automatically; respond only to the next user request.`,
-            timestamp: Date.now() }] });
-          state.runs.push(runId);
-        }
-      }, ctx);
-      this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
+      if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({ model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off" }, ctx);
+      this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
-      this.inputEntries = await readPiInputs(harness, this.entries);
+      this.inputEntries = await readPiInputs(harness, storage);
       const through = stream.snapshot.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
       this.output.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot, true);
       stream.start(events => this.delivery = this.observe(events));
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
-        for (const observer of this.observed.values()) observer.reject(this.observationError);
+        for (const waiter of this.deliveryWaiters) waiter.reject(this.observationError); this.deliveryWaiters.clear();
         if (!this.disposed) console.error("Piko durable event stream closed:", end);
       });
     } catch (error) { await harness.close(ctx); throw error; }
@@ -123,97 +132,125 @@ export class DurableChatSession implements ChatSession {
   private async observe(events: readonly AgentEvent[]) {
     for (const event of events) {
       if (event.type === "snapshot") {
-        // The read can see later commits. Project only through this snapshot's revision; queued events follow it.
         this.entries = await readPiEntries(this.harness);
-        // Compaction/reset can put a newer head marker before retained older entries.
         const through = event.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
         this.output.restore(this.entries.filter(entry => entry.id <= through), event);
-        // Overflow can replace user-message events too; let clients reconcile their history without changing text cursors.
-        if (this.prompts.size) this.emit({ type: "refresh" });
-        if (!event.run) for (const [runId, observed] of this.observed) {
-          const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, runId), ctx);
-          if ((record?.status === "done" && record.type === "input" && record.answer <= through)
-            || (record?.status === "unanswered" && (record.entry === undefined || record.entry <= through))) observed.resolve();
-        }
+        this.deliveredEntry = Math.max(this.deliveredEntry, through);
+        this.liveBusy = !!event.run;
+        this.emit({ type: "refresh" });
       } else {
-        if ((event.type === "entry_appended" || event.type === "message_end")
-          && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
+        if ((event.type === "entry_appended" || event.type === "message_end") && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
         this.output.apply(event);
-        if (event.type === "message_end" && (event.entry.kind === "pi.user" || event.entry.kind === "pi.assistant")) this.emit({ type: "refresh" });
-        if (event.type === "submission" && event.record.requestId
-          && (event.record.status === "done" || event.record.status === "unanswered")) this.observed.get(event.record.requestId)?.resolve();
+        if (event.type === "entry_appended" || event.type === "message_end") this.deliveredEntry = Math.max(this.deliveredEntry, event.entry.id);
+        if (event.type === "run_start") this.liveBusy = true;
+        if (event.type === "run_end") this.liveBusy = false;
+        if (event.type === "message_end" || event.type === "run_start" || event.type === "run_end" || event.type === "submission") this.emit({ type: "refresh" });
       }
     }
+    for (const waiter of this.deliveryWaiters) if (waiter.entry <= this.deliveredEntry) { this.deliveryWaiters.delete(waiter); waiter.resolve(); }
   }
-
   private emit(event: SessionEvent) {
-    for (const listener of this.listeners) {
-      try { listener(event); } catch (error) { console.error("Piko output observer:", error); }
-    }
+    if (event.type === "message" && !event.final && !this.output.partial(this.entries)) return;
+    if (event.type === "message" && event.previousId) { this.previousIds.set(event.message.id, event.previousId); if (this.previousIds.size > 128) this.previousIds.delete(this.previousIds.keys().next().value!); }
+    for (const listener of this.listeners) { try { listener(event); } catch (error) { console.error("Piko output observer:", error); } }
   }
-
   subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  async prompt(text: string, run?: { id: string; createdAt: number }): Promise<void> {
-    if (!run) throw new Error("A Piko Run identity is required.");
-    if (this.disposed || this.changing || this.busy && !this.prompts.size) throw new Error("This conversation is reconfiguring or closed.");
-    if (this.observationError) throw this.observationError;
-    if (!this.busy) {
-      this.abortRequested = false; this.executionError = undefined;
-    }
-    this.busy = true; this.prompts.add(run.id);
-    const observed = Promise.withResolvers<void>();
-    // A stream can close while the provider is still settling; attach a handler immediately.
-    void observed.promise.catch(() => {});
-    this.observed.set(run.id, { resolve: () => observed.resolve(), reject: observed.reject });
-    try {
-      const admission = this.admission.catch(() => {}).then(async () => {
-        const agent = await this.conversation.agent(ctx);
-        if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
-        await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
-        if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
-        const existing = await this.conversation.commit(async tx => {
-          const record = await tx.submissionByRequest(this.conversation.id, run.id);
-          if (!record) {
-            await tx.appendEntry(this.conversation.id, { kind: "piko.input", data: { runId: run.id, createdAt: run.createdAt } });
-          }
-          return record;
-        }, ctx);
-        if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
-        const submission = await this.conversation.submit({ type: "input", content: text, requestId: run.id, whenBusy: "steer" }, ctx);
-        return { existing, submission };
-      });
-      this.admission = admission;
-      const { existing, submission } = await admission;
-      const settled = await submission.wait(ctx);
-      // A failed run leaves queued inputs in the native inbox. Settle the entire execution without replaying them.
-      if (settled.status === "unanswered" && settled.reason !== "aborted") {
-        this.executionError ??= new Error(typeof settled.detail === "string" ? settled.detail : `Pi could not complete this reply: ${settled.reason}`);
-        this.abortRequested = true;
-        await this.conversation.abort(ctx);
-      }
-      await this.conversation.waitForIdle(ctx);
-      // Submission.wait tracks execution, not delivery. Consume message events before publishing done.
-      if (!existing || (existing.status !== "done" && existing.status !== "unanswered")) await observed.promise;
-      this.entries = await readPiEntries(this.harness);
-      this.inputEntries = await readPiInputs(this.harness, this.entries);
-      // Final history is authoritative, including multi-tool turns and recovered/aborted output.
-      if (this.prompts.size === 1) this.output.restore(this.entries);
-      if (this.abortRequested) throw this.executionError ?? new SessionCancelledError();
-      if (settled.status === "unanswered" && settled.reason === "aborted") throw this.executionError ?? new SessionCancelledError();
-      if (settled.status === "unanswered" && settled.reason !== "aborted") throw new Error(
-        typeof settled.detail === "string" ? settled.detail : `Pi could not complete this reply: ${settled.reason}`);
-    } finally {
-      this.observed.delete(run.id); this.prompts.delete(run.id);
-      if (!this.prompts.size) this.busy = false;
-    }
+  async submission(requestId: string) {
+    const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, requestId), ctx);
+    return record && receipt(record);
   }
+  async snapshot() {
+    const state = await this.harness.commit(async tx => {
+      const entries = await entriesFromTransaction(tx);
+      const inputs = await inputsFromStorage(this.storage);
+      const live = await tx.doc(LiveDoc, this.conversation.id);
+      const latest = (await this.storage.scanSubmissions({ conversationId: this.conversation.id, order: "descending" }, 1, undefined, ctx)).items[0];
+      const inbox = await tx.doc(InboxDoc, this.conversation.id);
+      const queued: import("../../shared/chat").Message[] = [];
+      for (const item of inbox.items) if (item.mode !== "write") {
+        const input = await this.storage.submission(item.id, ctx);
+        queued.push({ id: `input-${item.id}`, role: "user", content: messageText(item.content), createdAt: 0, ...(input?.requestId && { requestId: input.requestId }) });
+      }
+      const recovery = await tx.doc(Recovery, this.conversation.id);
+      return { entries, inputs, running: !!live.run, queued, latest, interruption: recovery.interruption };
+    }, ctx);
+    this.entries = state.entries; this.inputEntries = state.inputs; this.liveBusy = state.running;
+    return { messages: [...this.messages, ...state.queued], busy: this.isStreaming, previousIds: Object.fromEntries(this.previousIds),
+      ...(state.latest && { latest: receipt(state.latest) }), ...(state.interruption && { interruption: state.interruption }) };
+  }
+  async submit(text: string, requestId: string) {
+    const task = this.admission.catch(() => {}).then(async () => {
+      if (this.disposed || this.changing || this.busy || this.stopping) throw new Error("Piko is busy with maintenance or stopping.");
+      if (this.observationError) throw this.observationError;
+      await this.failureCleanup;
+      const existing = await this.submission(requestId);
+      if (existing) return { submission: existing, duplicate: true };
+      const agent = await this.conversation.agent(ctx);
+      if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
+      await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
+      await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; }, ctx);
+      const handle = await this.conversation.submit({ type: "input", content: text, requestId, whenBusy: "steer" }, ctx);
+      this.liveBusy = true;
+      const monitor = handle.wait(ctx).then(async settled => {
+        if (settled.status === "unanswered" && settled.reason !== "aborted" && settled.reason !== "withdrawn_after_failure") {
+          this.emit({ type: "error", message: typeof settled.detail === "string" ? settled.detail : settled.reason });
+          this.failureCleanup = (async () => {
+            await this.conversation.commit(async tx => {
+              const inbox = await tx.doc(InboxDoc, this.conversation.id);
+              for (const item of inbox.items) if (item.mode !== "write") tx.settleSubmission(item.id,
+                { status: "unanswered", reason: "withdrawn_after_failure", detail: typeof settled.detail === "string" ? settled.detail : settled.reason });
+              inbox.items = inbox.items.filter(item => item.mode === "write");
+            }, ctx);
+            await this.abort();
+          })();
+          await this.failureCleanup;
+        }
+        this.emit({ type: "refresh" });
+      }).catch(error => { if (!this.disposed) this.emit({ type: "error", message: error instanceof Error ? error.message : "Reply failed." }); });
+      this.monitors.add(monitor); void monitor.finally(() => this.monitors.delete(monitor));
+      return { submission: receipt(await handle.status(ctx)), duplicate: false };
+    });
+    this.admission = task; return task;
+  }
+  /** Convenience for native adapter tests and callers that need to await completion. */
+  async prompt(text: string, input: { id: string; createdAt: number }) {
+    const admitted = await this.submit(text, input.id);
+    const handle = await this.harness.submission(Number(admitted.submission.id) as SubmissionId, ctx);
+    const settled = await handle!.wait(ctx);
+    await this.conversation.waitForIdle(ctx);
+    await this.failureCleanup;
+    const entry = settled.type === "input" && settled.status === "done" ? settled.answer : settled.entry;
+    if (entry !== undefined && entry > this.deliveredEntry && !this.observationError) await new Promise<void>((resolve, reject) => { this.deliveryWaiters.add({ entry, resolve, reject }); });
+    await this.delivery;
+    if (this.observationError) throw this.observationError;
+    if (settled.status === "unanswered") throw settled.reason === "aborted" ? new SessionCancelledError() : new Error(typeof settled.detail === "string" ? settled.detail : settled.reason);
+  }
+  async abort(commandId?: string): Promise<boolean> {
+    const wasActive = this.isStreaming;
+    this.stopping = true; this.emit({ type: "refresh" });
+    try {
+      if (!commandId) { await this.conversation.abort(ctx, { background: true }); this.liveBusy = false; return wasActive; }
+      // Capture original task IDs and withdraw original queued inputs atomically with the receipt.
+      const target = await this.conversation.commit(async tx => {
+        const saved = await tx.doc(StopReceipts, this.conversation.id, commandId, null);
+        if (saved.processed) return { stopped: saved.stopped, tasks: [...saved.tasks] };
+        let cursor: Cursor | undefined; const tasks: number[] = [];
+        do {
+          const page = await tx.scanTasks({ conversationId: this.conversation.id }, 500, cursor);
+          for (const task of page.items) if (task.state.status !== "terminal") tasks.push(task.id);
+          cursor = page.next;
+        } while (cursor);
+        const inbox = await tx.doc(InboxDoc, this.conversation.id);
+        const stopped = tasks.length > 0 || inbox.items.some(item => item.mode !== "write");
+        for (const item of inbox.items) if (item.mode !== "write") tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
+        inbox.items = inbox.items.filter(item => item.mode === "write");
+        saved.processed = true; saved.stopped = stopped; saved.tasks = tasks;
+        return { stopped, tasks };
+      }, ctx);
+      for (const id of target.tasks) await this.harness.abortTask(id as TaskId, ctx);
+      return target.stopped;
 
-  abort() { this.abortRequested = true; return this.conversation.abort(ctx, { background: true }); }
-  exportState() { return exportPiReference(runtimePaths(this.paths.home).sessions, this.input.threadId); }
-  async history() {
-    this.entries = await readPiEntries(this.harness);
-    this.inputEntries = await readPiInputs(this.harness, this.entries);
-    return { ...projectPiHistory(this.entries, this.inputEntries), messages: this.messages };
+    } finally { this.stopping = false; this.emit({ type: "refresh" }); }
   }
   private async closeNative() {
     await this.eventStream.stop();
@@ -230,7 +267,7 @@ export class DurableChatSession implements ChatSession {
     })();
     return this.closing;
   }
-  private requireIdle() { if (this.disposed || this.busy || this.changing) throw new Error("Stop the current reply before changing runtime configuration."); }
+  private requireIdle() { if (this.disposed || this.isStreaming) throw new Error("Stop the current reply before changing runtime configuration."); }
   private async change(operation: () => Promise<void>) {
     this.requireIdle();
     this.changing = true;
@@ -280,46 +317,37 @@ export class DurableChatSession implements ChatSession {
   }
 }
 
-export async function createPiSession(paths: WorkspacePaths, input: SessionContext, models?: Models) {
-  const session = new DurableChatSession(paths, input, models);
+export async function createPiSession(paths: WorkspacePaths, models?: Models) {
+  const session = new DurableChatSession(paths, models);
   await session.init(); return session;
 }
 
-/** Serialize opening, reading and changing stores; generation waits outside that admission line. */
+/** One native Harness owns the workspace. Opening is serialized; model work runs independently. */
 export function createPiRuntime(paths: WorkspacePaths, options: { models?: Models } = {}): ChatRuntime {
-  const sessions = new Map<string, DurableChatSession>();
-  let tail: Promise<unknown> = Promise.resolve();
-  const serial = <T>(operation: () => Promise<T>): Promise<T> => {
-    const task = tail.catch(() => {}).then(operation); tail = task; return task;
-  };
-  async function get(input?: SessionContext): Promise<DurableChatSession> {
-    if (!input) throw new Error("A persistent Piko Thread is required.");
-    const current = sessions.get(input.threadId);
-    if (current && !current.closePromise) return current;
-    if (current?.closePromise) await current.closePromise;
-    const session = new DurableChatSession(paths, input, options.models, () => { sessions.delete(input.threadId); });
-    await session.init(); sessions.set(input.threadId, session); return session;
+  let session: DurableChatSession | undefined; let opening: Promise<DurableChatSession> | undefined;
+  async function get() {
+    if (session && !session.closePromise) return session;
+    if (session?.closePromise) await session.closePromise;
+    if (!opening) opening = (async () => {
+      const value = new DurableChatSession(paths, options.models); await value.init(); session = value; return value;
+    })().finally(() => { opening = undefined; });
+    return opening;
   }
   return {
-    isModelReady: () => serial(async () => {
-      const active = [...sessions.values()].find(session => !session.closePromise);
-      return active ? active.modelReady() : (await (await loadWorkspaceModels(paths.home, options.models)).models.getAvailable()).length > 0;
-    }),
-    createSession: input => serial(() => get(input)),
-    readHistory: input => serial(async () => {
-      sessionDirectory(runtimePaths(paths.home).sessions, input);
-      const active = sessions.get(input.threadId);
-      if (active && !active.closePromise) return active.history();
-      if (active?.closePromise) await active.closePromise;
-      const native = await readPiContext(runtimePaths(paths.home).sessions, input);
-      if (!native) return { messages: [], runs: new Map() };
-      try { return await readPiHistory(native.session); }
-      finally { await native.session.close(ctx); }
-    }),
-    describe: input => serial(async () => (await get(input)).describe()),
-    configure: (input, selection) => serial(async () => (await get(input)).configure(selection)),
-    compact: async input => { const session = await serial(() => get(input)); return session.compact(); },
-    stop: async input => { const session = await serial(() => get(input)); await session.abort(); },
-    dispose: () => serial(async () => { for (const session of [...sessions.values()]) await session.dispose(); }),
+    isModelReady: async () => session && !session.closePromise ? session.modelReady() : (await (await loadWorkspaceModels(paths.home, options.models)).models.getAvailable()).length > 0,
+    createSession: get,
+    readHistory: async () => {
+      if (session && !session.closePromise) return session.snapshot();
+      if (opening) return (await opening).snapshot();
+      if (session?.closePromise) await session.closePromise;
+      const native = await readPiContext(runtimePaths(paths.home).sessions);
+      if (!native) return { messages: [], busy: false };
+      try { return { ...await readPiHistory(native.session, native.storage), busy: false }; } finally { await native.session.close(ctx); }
+    },
+    describe: async () => (await get()).describe(),
+    configure: async selection => (await get()).configure(selection),
+    compact: async () => (await get()).compact(),
+    stop: async commandId => (await get()).abort(commandId),
+    dispose: async () => { if (opening) await opening; await session?.dispose(); },
   };
 }

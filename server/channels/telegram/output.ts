@@ -1,7 +1,7 @@
-import type { ChatRun } from "../../chat/run";
+import type { ConversationStore } from "../../chat/conversations";
 import { isFormatError, type TelegramTransport } from "./api";
 import remend from "remend";
-import type { MessageEvent } from "../../../shared/messages";
+import { applyMessageEvent, type MessageEvent } from "../../../shared/messages";
 
 export const TELEGRAM_RICH_LIMIT = 30_000;
 export const TELEGRAM_PLAIN_LIMIT = 4000;
@@ -99,49 +99,42 @@ export class TelegramMessageOutput {
   }
 }
 
-/** Snapshot coalescing and all network waits happen outside the synchronous input listener. */
-export async function deliverRun(run: ChatRun, reply: TelegramReply, api: TelegramTransport, chatId: string,
-  signal: AbortSignal, intervalMs = TELEGRAM_STREAM_INTERVAL_MS,
-  output = new TelegramMessageOutput(api, chatId, reply)): Promise<void> {
-  let changed = true;
-  const sync = async () => {
-    for (const event of run.outputs) await output.update(event);
-  };
-  let failure: unknown;
-  const unsubscribe = run.subscribe(run.snapshot.lastEventId, () => { changed = true; });
-  let lastTyping = 0;
+/** Conversation output is independent of the submission that enabled delivery. */
+export async function deliverConversation(store: ConversationStore, api: TelegramTransport, chatId: string,
+  signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
+  const output = new TelegramMessageOutput(api, chatId);
+  let conversation = await store.snapshot(); let dirty = true;
+  const unsubscribe = await store.observe(event => {
+    if (event.type === "snapshot") { conversation = event.conversation; dirty = true; }
+    else if (event.type === "message") {
+      conversation = { ...conversation, messages: applyMessageEvent(conversation.messages, event),
+        previousIds: event.previousId ? { ...conversation.previousIds, [event.message.id]: event.previousId } : conversation.previousIds };
+      dirty = true;
+    }
+  });
   try {
+    let typing = 0;
     while (!signal.aborted) {
-      const snapshot = run.snapshot;
-      if (!run.active) {
-        await sync();
-        const suffix = snapshot.status === "cancelled" ? "\n\nReply stopped."
-          : snapshot.status === "failed" ? "\n\nCouldn't finish this reply. Please try again." : "";
-        const partial = run.outputs.find(event => !event.final);
-        if (partial) await output.update({ ...partial, final: true,
-          message: { ...partial.message, content: partial.message.content + suffix } });
-        else if (suffix || !run.outputs.some(event => event.message.content.trim())) await new TelegramReply(api, chatId, "plain")
-          .update(suffix.trim() || "No text response.", true);
+      const snapshot = conversation;
+      if (dirty) {
+        dirty = false;
+        for (const message of snapshot.messages) {
+          if (message.role !== "assistant" || known.has(message.id)) continue;
+          await output.update({ type: "message", message, final: !message.id.startsWith("live-"),
+            ...(snapshot.previousIds?.[message.id] && { previousId: snapshot.previousIds[message.id] }) });
+        }
+      }
+      if (!snapshot.busy && snapshot === conversation && !dirty) {
+        if (snapshot.latest?.status === "unanswered") await api.send(chatId,
+          snapshot.latest.error === "aborted" ? "Reply stopped." : "Reply failed. Check the Piko app or /recent for saved messages.", false);
         return;
       }
-      if (Date.now() - lastTyping >= 4000) {
-        // Typing failures do not interrupt answer delivery.
-        await api.typing(chatId).catch(() => {});
-        lastTyping = Date.now();
-      }
-      if (changed) {
-        changed = false;
-        // Typing/network waits may have allowed another update; read after clearing the dirty flag.
-        try { await sync(); failure = undefined; }
-        catch (error) { failure = error; }
-      }
-      await new Promise<void>((resolve) => {
+      if (Date.now() - typing >= 4000) { typing = Date.now(); await api.typing(chatId).catch(() => {}); }
+      await new Promise<void>(resolve => {
         if (signal.aborted) { resolve(); return; }
         const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
-        const timer = setTimeout(done, intervalMs);
-        signal.addEventListener("abort", done, { once: true });
+        const timer = setTimeout(done, intervalMs); signal.addEventListener("abort", done, { once: true });
       });
     }
-    if (failure) throw failure;
   } finally { unsubscribe(); }
 }

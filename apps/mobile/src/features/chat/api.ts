@@ -1,26 +1,17 @@
-import type {
-  ConversationResponse,
-  HealthResponse,
-} from "../../../../../shared/chat";
-import { apiFetch, readJson, requestJson } from "../../api/client";
-import { observeRun } from "./transport";
-
-export function checkHealth(): Promise<HealthResponse> {
-  return requestJson<HealthResponse>("/api/health");
+import type { ConversationResponse, HealthResponse } from "../../../../../shared/chat";
+import { apiFetch, readJson } from "../../api/client";
+import { observeConversation, submitMessage } from "./transport";
+async function chatJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const controller = new AbortController(); const abort = () => controller.abort();
+  const timer = setTimeout(abort, 10000); init.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    if (init.signal?.aborted) abort();
+    return await readJson<T>(await apiFetch(path, { ...init, signal: controller.signal }));
+  } finally { clearTimeout(timer); init.signal?.removeEventListener("abort", abort); }
 }
-
-export async function loadConversation(sessionId: string, signal?: AbortSignal, runId?: string): Promise<ConversationResponse> {
-  return readJson<ConversationResponse>(await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}${runId ? `?runId=${encodeURIComponent(runId)}` : ""}`, { signal }));
-}
-
-export function streamMessage(observer: Parameters<typeof observeRun>[0]): Promise<void> {
-  return observeRun(observer, { fetch: apiFetch, load: loadConversation });
-}
-
-export async function cancelRun(sessionId: string, runId: string): Promise<void> {
-  await readJson(await apiFetch(`/api/sessions/${sessionId}/runs/${runId}/cancel`, { method: "POST" }));
-}
-
-export function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
+export function checkHealth(): Promise<HealthResponse> { return chatJson("/api/health"); }
+export function loadConversation(signal?: AbortSignal): Promise<ConversationResponse> { return chatJson("/api/chat", { signal }); }
+export function observe(options: Parameters<typeof observeConversation>[0]) { return observeConversation(options, { fetch: apiFetch }); }
+export function submit(message: string, requestId: string, signal: AbortSignal) { return submitMessage(message, requestId, signal, { fetch: apiFetch }); }
+export async function stopConversation(requestId: string) { await chatJson("/api/chat/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId }) }); }
+export function isAbortError(error: unknown): boolean { return error instanceof Error && error.name === "AbortError"; }

@@ -2,11 +2,11 @@ import { mkdirSync, realpathSync, writeFileSync, lstatSync, openSync, readSync, 
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { defaultPikoFile } from "../config/defaults";
 
-export type WorkspacePaths = { home: string; workspace: string; state: string; database: string; resources: string };
+export type WorkspacePaths = { home: string; workspace: string; state: string; resources: string };
 
 export function workspacePaths(home: string, workspace = join(home, "workspace")): WorkspacePaths {
   if (!isAbsolute(home) || !isAbsolute(workspace)) throw new Error("Piko home and workspace must be absolute paths.");
-  return { home: resolve(home), workspace: resolve(workspace), state: resolve(home, "state"), database: resolve(home, "state/piko.sqlite"),
+  return { home: resolve(home), workspace: resolve(workspace), state: resolve(home, "state"),
     resources: resolve(import.meta.dir, "../resources") };
 }
 
@@ -22,7 +22,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   const workspace = realpathSync(paths.workspace);
   const state = realpathSync(paths.state);
   if (isWithin(workspace, state)) throw new Error("Piko state must be outside the assistant workspace.");
-  for (const directory of ["config", "extensions", "skills", "state/durable-sessions", "state/tmp"]) {
+  for (const directory of ["config", "extensions", "skills", "state/durable", "state/tmp"]) {
     const path = join(paths.home, directory);
     mkdirSync(path, { recursive: true });
     if (!isWithin(realpathSync(paths.home), realpathSync(path))) throw new Error(`Piko data directory escapes its root: ${directory}`);
@@ -47,7 +47,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     if (!lstatSync(path).isFile()) throw new Error(`Workspace guidance must be a regular file: ${name}`);
   }
-  return { ...paths, home: realpathSync(paths.home), workspace, state, database: join(state, "piko.sqlite") };
+  return { ...paths, home: realpathSync(paths.home), workspace, state };
 }
 
 /** Bounded reads, including allocation; arbitrary files do not become prompt instructions. */

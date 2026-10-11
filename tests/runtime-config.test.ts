@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { fixture, cleanup, repository, waitUntil } from "./fixtures/durable";
+import { fixture, cleanup, waitUntil } from "./fixtures/durable";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createPiRuntime } from "../server/runtime/pi";
 import { createApp } from "../server/app";
@@ -28,7 +28,7 @@ test("native workspace plugins execute tools and preserve docs; code changes tak
   await writeFile(join(directory, "index.ts"), plugin("one-"));
   await writeFile(join(directory, "lib/helper.ts"), 'export const label = "a";');
   let session = await f.createSession();
-  expect((await f.runtime.describe!(f.input)).plugins[0]).toMatchObject({ name: "remember", tools: ["remember"] });
+  expect((await f.runtime.describe!()).plugins[0]).toMatchObject({ name: "remember", tools: ["remember"] });
   const run = async (expected: string) => {
     f.faux.setResponses([fauxAssistantMessage(fauxToolCall("remember", {}), { stopReason: "toolUse" }),
       context => { expect(JSON.stringify(context.messages)).toContain(expected); return fauxAssistantMessage(expected); }]);
@@ -39,17 +39,17 @@ test("native workspace plugins execute tools and preserve docs; code changes tak
   await run("one-a");
   await f.runtime.dispose!();
   const restarted = f.createRuntime();
-  session = await restarted.createSession(f.input);
+  session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
   await run("one-b");
   await writeFile(join(directory, "index.ts"), "syntax is broken ???");
   await run("one-b");
-  const state = session.exportState!(); await session.dispose();
-  await expect(restarted.createSession(f.input)).rejects.toThrow("Cannot load plugin");
+  await session.dispose();
+  await expect(restarted.createSession()).rejects.toThrow("Cannot load plugin");
   await writeFile(join(directory, "index.ts"), plugin("one-"));
-  session = await restarted.createSession(f.input);
+  session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
   expect(session.messages.at(-1)?.content).toBe("one-b");
-  expect((await restarted.readHistory({ ...f.input, state })).messages.at(-1)?.content).toBe("one-b");
-  const data = await readFile(join(f.paths.home, "state/durable-sessions", f.input.threadId, "main.jsonl"), "utf8");
+  expect((await restarted.readHistory()).messages.at(-1)?.content).toBe("one-b");
+  const data = await readFile(join(f.paths.home, "state/durable", "main.jsonl"), "utf8");
   expect(data).toContain("test.remember");
 });
 
@@ -58,27 +58,26 @@ test("model profiles and thinking selections persist across restart; file edits 
   await writeFile(settings, JSON.stringify({ version: 1, defaultProfile: "quick", profiles: {
     quick: { provider: "faux", model: "fast", thinking: "off" }, review: { provider: "faux", model: "reasoning", thinking: "high" },
   } }));
-  const repo = repository(f.paths); const config = defaultServerConfig();
-  const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
+  const config = defaultServerConfig();
+  const store = new ConversationStore(f.runtime);
   const app = createApp({ config, runtime: f.runtime, conversations: store });
-  const input = repo.context(repo.main.sessionId);
   const post = (path: string, value?: unknown) => app(new Request("http://local/api/runtime/" + path,
     { method: "POST", ...(value !== undefined ? { body: JSON.stringify(value) } : {}) }));
   expect((await (await app(new Request("http://local/api/runtime"))).json()).selection.model).toBe("fast");
   expect((await post("selection", { profile: "review" })).status).toBe(200);
-  expect((await f.runtime.describe!(input)).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
+  expect((await f.runtime.describe!()).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
   expect((await post("selection", { thinking: "bogus" })).status).toBe(422);
   expect((await post("selection", { provider: "faux", model: "fast", thinking: "high" })).status).toBe(409);
   await writeFile(settings, '{"credential":"must-not-leak"');
   const response = await post("reload"); expect(response.status).toBe(404); expect(await response.text()).not.toContain("must-not-leak");
   f.faux.setResponses([fauxAssistantMessage("still works")]);
-  const session = await f.runtime.createSession(input);
+  const session = await f.createSession();
   await session.prompt("hello", { id: crypto.randomUUID(), createdAt: 1 });
-  const state = session.exportState!(); await session.dispose();
+  await store.close();
   await writeFile(settings, JSON.stringify({ version: 1 }));
-  await f.runtime.createSession({ ...input, state });
-  expect((await f.runtime.describe!({ ...input, state })).selection?.thinking).toBe("high");
-  await f.runtime.dispose!(); await store.dispose();
+  await f.runtime.createSession();
+  expect((await f.runtime.describe!()).selection?.thinking).toBe("high");
+  await f.runtime.dispose!();
 });
 
 test("JSON model and auth configuration reaches a real local OpenAI-compatible request without personal credentials", async () => {
@@ -103,12 +102,12 @@ test("JSON model and auth configuration reaches a real local OpenAI-compatible r
     main: { provider: "local", model: "test-model", thinking: "high" },
   } }));
   const runtime = createPiRuntime(f.paths); cleanup(() => runtime.dispose!());
-  const session = await runtime.createSession(f.input);
+  const session = await runtime.createSession() as import("../server/runtime/pi").DurableChatSession;
   await session.prompt("local only", { id: crypto.randomUUID(), createdAt: 1 });
   expect(requests[0]?.headers.get("authorization")).toBe("Bearer only-local-test-key");
   expect(requests[0]?.headers.get("x-piko-config-test")).toBe("shared-local-env-value");
   expect(requests[0]?.body).toMatchObject({ model: "test-model", temperature: 0.2, max_tokens: 128, top_p: 0.7, reasoning_effort: "high" });
-  expect(JSON.stringify(await runtime.describe!(f.input))).not.toContain("only-local-test-key");
+  expect(JSON.stringify(await runtime.describe!())).not.toContain("only-local-test-key");
   expect(session.messages.at(-1)?.content).toBe("local answer");
 });
 
@@ -128,27 +127,27 @@ test("credential writes serialize and invalid file edits do not replace the acti
 test("a model-free conversation can activate newly configured credentials and profile after restart", async () => {
   const f = await fixture(); const models = createModels();
   const runtime = createPiRuntime(f.paths, { models }); cleanup(() => runtime.dispose!());
-  await runtime.createSession(f.input);
-  expect((await runtime.describe!(f.input)).selection).toBeUndefined();
+  await runtime.createSession();
+  expect((await runtime.describe!()).selection).toBeUndefined();
   models.setProvider(f.faux.provider);
   await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, defaultProfile: "main",
     profiles: { main: { provider: "faux", model: "reasoning", thinking: "high" } } }));
   await runtime.dispose!();
   const restarted = createPiRuntime(f.paths, { models }); cleanup(() => restarted.dispose!());
-  const session = await restarted.createSession(f.input);
-  expect((await restarted.describe!(f.input)).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
+  const session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
+  expect((await restarted.describe!()).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
   f.faux.setResponses([fauxAssistantMessage("configured")]);
   await session.prompt("hello", { id: crypto.randomUUID(), createdAt: 1 });
   expect(session.messages.at(-1)?.content).toBe("configured");
 });
 
-test("runtime cancel preserves the Run cancellation state while generation is busy", async () => {
-  const f = await fixture(5); const repo = repository(f.paths); const config = defaultServerConfig();
-  const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
+test("runtime cancel settles native input state while generation is busy", async () => {
+  const f = await fixture(5); const config = defaultServerConfig();
+  const store = new ConversationStore(f.runtime);
   cleanup(() => store.close());
   const app = createApp({ config, runtime: f.runtime, conversations: store });
   f.faux.setResponses([fauxAssistantMessage("A long answer that should be stopped while streaming.")]);
-  const run = await store.startRun(repo.main.sessionId, crypto.randomUUID(), "stop this");
+  const id = crypto.randomUUID(); await store.submit("stop this", id);
   await waitUntil(() => f.faux.state.callCount > 0);
   const compact = await app(new Request("http://local/api/runtime/compact", { method: "POST" }));
   expect(compact.status).toBe(409);
@@ -156,7 +155,6 @@ test("runtime cancel preserves the Run cancellation state while generation is bu
   expect(removed.status).toBe(404);
   const response = await app(new Request("http://local/api/runtime/cancel", { method: "POST" }));
   expect(response.status).toBe(200);
-  await waitUntil(() => !run.active);
-  expect(run.snapshot.status).toBe("cancelled");
-  expect(repo.run(repo.main.sessionId, run.snapshot.id)?.status).toBe("cancelled");
+  await waitUntil(() => !store.isStreaming());
+  expect((await (await store.get()).submission(id))?.status).toBe("unanswered");
 });

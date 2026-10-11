@@ -1,9 +1,8 @@
 import { RuntimeBusyError, type ConversationStore } from "../../chat/conversations";
-import type { RunStatus } from "../../../shared/chat";
 import type { ChatRuntime } from "../../runtime/types";
+import { normalizeMessage } from "../../chat/input";
 import { telegramErrorCode, type TelegramTransport } from "./api";
-import { deliverRun, TelegramReply, TelegramMessageOutput, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
-import type { ChatRun } from "../../chat/run";
+import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, selectionText, type TelegramCallback } from "./menus";
 
 export type TelegramMessage = {
@@ -22,16 +21,11 @@ export const TELEGRAM_COMMANDS = [
 const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
   TELEGRAM_COMMANDS.map(item => `/${item.command} — ${item.description}`).join("\n") +
   "\n\nUse /recent to see replies from the app. Model changes and maintenance are available when Piko is idle.";
-const RUN_LABELS: Record<RunStatus, string> = {
-  queued: "Queued", running: "Replying", cancelling: "Stopping", succeeded: "Done", failed: "Failed", cancelled: "Stopped",
-};
-
 export class TelegramChannel {
   private accepting = true;
   private readonly controller = new AbortController();
   private readonly tasks = new Set<Promise<void>>();
-  private readonly deliveries = new Set<ChatRun>();
-  private readonly outputs = new Map<string, TelegramMessageOutput>();
+  private readonly deliveries = new Map<string, Promise<void>>();
   private readonly menus: TelegramMenus;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
@@ -61,29 +55,26 @@ export class TelegramChannel {
       // Stop admission/control is awaited; network presentation is always independent.
       if (match[1].toLowerCase() === "stop") {
         try {
-          const stopped = await this.conversations.stopTelegram({ botId: this.identity.botId, chatId: message.chatId,
-            messageId: message.messageId, actorId: message.actorId }, text);
+          const stopped = await this.conversations.stop(`telegram:${this.identity.botId}:${message.chatId}:${message.messageId}:stop`);
           this.feedback(message, stopped ? "Stop requested." : "No reply to stop.");
         } catch { this.feedback(message, "Couldn't stop the reply. Try /stop again."); }
       } else this.track(this.command(message, match[1].toLowerCase()));
       return;
     }
-    const result = await this.conversations.startTelegram({ botId: this.identity.botId, chatId: message.chatId,
-      messageId: message.messageId, actorId: message.actorId }, message.text);
-    if (result.disposition === "busy") this.feedback(message, "Piko is busy. Please wait, then send your message again.");
-    else if (result.disposition === "invalid") this.feedback(message, "Send a message with 1–12,000 characters.");
-    else if (result.run && !result.duplicate && ![...this.deliveries].some(run => run.active)) {
-      const run = result.run;
-      const output = this.outputs.get(message.chatId) ?? new TelegramMessageOutput(this.api, message.chatId);
-      this.outputs.set(message.chatId, output);
-      this.deliveries.add(run);
-      this.track(deliverRun(run, new TelegramReply(this.api, message.chatId), this.api,
-        message.chatId, this.controller.signal, this.intervalMs, output).finally(() => {
-          this.deliveries.delete(run);
-          if (!this.deliveries.size) this.outputs.clear();
-        }));
-    } else if (result.duplicate) {
-      this.feedback(message, "Already processed. Use /recent to view the reply.");
+    try { normalizeMessage(message.text); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
+    try {
+      const baseline = await this.conversations.snapshot();
+      const result = await this.conversations.submit(message.text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`);
+      if (result.duplicate) return;
+      if (!this.deliveries.has(message.chatId)) {
+        const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
+        const task = deliverConversation(this.conversations, this.api, message.chatId, this.controller.signal, known, this.intervalMs)
+          .finally(() => { if (this.deliveries.get(message.chatId) === task) this.deliveries.delete(message.chatId); });
+        this.deliveries.set(message.chatId, task); this.track(task);
+      }
+    } catch (error) {
+      if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy. Try again when it's ready."); return; }
+      throw error;
     }
   }
 
@@ -99,15 +90,14 @@ export class TelegramChannel {
 
   private async executeCommand(message: TelegramMessage, command: string): Promise<void> {
     let text: string;
-    const sessionId = this.conversations.main.sessionId;
     if (command === "start" || command === "help") text = HELP;
     else if (command === "status") {
-      const run = await this.conversations.run(sessionId);
-      text = `Status: ${run?.active ? RUN_LABELS[run.snapshot.status] : this.conversations.isStreaming(sessionId) ? "Busy" : "Ready"}` +
-        (run && !run.active ? `\nLast reply: ${run.snapshot.errorCode === "interrupted" ? "Interrupted. Please resend your message." : RUN_LABELS[run.snapshot.status]}` : "");
+      const snapshot = await this.conversations.snapshot();
+      text = `Status: ${snapshot.busy ? "Replying" : "Ready"}` + (snapshot.interruption ? `\n${snapshot.interruption}` : "") +
+        (snapshot.latest?.status === "unanswered" ? `\nLast input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}` : "");
       if (this.runtime.describe) {
         try {
-          const description = await this.runtime.describe(this.conversations.context());
+          const description = await this.runtime.describe();
           text += `\n${selectionText(description)}\nSkills: ${description.skills.length}\nPlugins: ${description.plugins.length}`;
         } catch { text += "\nModel details unavailable."; }
       }
@@ -116,21 +106,21 @@ export class TelegramChannel {
     } else if (command === "compact" && this.runtime.compact) {
       const result = await this.conversations.changeRuntime(async () => {
         this.feedback(message, "Compacting context…");
-        return this.runtime.compact!(this.conversations.context());
+        return this.runtime.compact!();
       });
       text = result.status === "compacted" ? "Context compacted. Your chat history is preserved."
         : result.status === "cancelled" ? "Compaction stopped."
         : result.reason === "stale" ? "Context changed. The summary wasn't applied."
         : "Context unchanged. No summary created.";
       if (this.runtime.describe) {
-        const description = await this.runtime.describe(this.conversations.context()).catch(() => undefined);
+        const description = await this.runtime.describe().catch(() => undefined);
         if (description) text += `\n${selectionText(description)}`;
       }
     } else if (command === "recent") {
-      const history = await this.conversations.history(sessionId);
+      const history = (await this.conversations.snapshot()).messages;
       text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";
     } else if ((command === "skills" || command === "plugins") && this.runtime.describe) {
-      const description = await this.runtime.describe(this.conversations.context());
+      const description = await this.runtime.describe();
       text = command === "skills" ? description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available."
         : description.plugins.map(item => `${item.name}${item.tools.length ? ` — ${item.tools.join(", ")}` : ""}`).join("\n") || "No plugins loaded.";
     } else text = "Unknown command. Use /help to see what's available.";

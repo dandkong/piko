@@ -6,8 +6,7 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { initializeWorkspace } from "../../server/domain/workspace";
 import { loadPikoConfig } from "../../server/config";
-import { createPiRuntime } from "../../server/runtime/pi";
-import { ChatRepository } from "../../server/domain/chat-repository";
+import { createPiRuntime, DurableChatSession } from "../../server/runtime/pi";
 
 const cleanups: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -27,13 +26,7 @@ export async function fixture(tokensPerSecond = 100_000) {
   const models = createModels(); models.setProvider(faux.provider);
   const createRuntime = () => { const runtime = createPiRuntime(paths, { models }); cleanup(() => runtime.dispose!()); return runtime; };
   const runtime = createRuntime();
-  const input = { threadId: crypto.randomUUID(), interruptedRunIds: [] as string[] };
-  return { root, paths, faux, models, runtime, input, createSession: () => runtime.createSession(input), createRuntime };
-}
-
-export function repository(paths: Awaited<ReturnType<typeof fixture>>["paths"]) {
-  const repo = new ChatRepository(paths.database, paths.workspace);
-  cleanup(() => repo.close()); return repo;
+  return { root, paths, faux, models, runtime, createSession: async () => await runtime.createSession() as DurableChatSession, createRuntime };
 }
 
 export async function waitUntil(predicate: () => boolean | Promise<boolean>) {

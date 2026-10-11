@@ -1,20 +1,18 @@
 import { expect, test } from "bun:test";
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { Harness, createRegistry, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID, UserEntry } from "@earendil-works/pi-durable";
+import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
-import { fixture, repository, waitUntil } from "./fixtures/durable";
-import { initializeWorkspace, readGuidance } from "../server/domain/workspace";
+import { fixture, cleanup, waitUntil } from "./fixtures/durable";
+import { initializeWorkspace, workspacePaths, readGuidance } from "../server/domain/workspace";
+import { loadPikoConfig } from "../server/config";
+import { readPiEntries } from "../server/runtime/pi-history";
+import { runtimePaths } from "../server/runtime/config/paths";
 import { acquireBackendLock } from "../server/domain/backend-lock";
 import { ConversationStore } from "../server/chat/conversations";
-import { ChatRun } from "../server/chat/run";
-import { createApp } from "../server/app";
-import { defaultServerConfig, loadPikoConfig } from "../server/config";
-import type { RunSnapshot, StreamEvent } from "../shared/chat";
-import { readPiEntries } from "../server/runtime/pi-history";
-import { DurableChatSession } from "../server/runtime/pi";
-
 test("initialization preserves guidance and JSON configuration, bounds reads and rejects conflicting paths", async () => {
   const f = await fixture();
   for (const name of ["AGENTS.md", "MEMORY.md"]) await writeFile(join(f.paths.workspace, name), "mine".repeat(100));
@@ -41,112 +39,52 @@ test("a live backend lock excludes another writer and stale lock ownership is re
   expect(existsSync(join(f.paths.state, "backend.lock"))).toBe(false);
 });
 
-test("stable main identity, hashed deduplication, retry and side relations persist without storing bodies in SQLite", async () => {
-  const f = await fixture(); const repo = repository(f.paths); const main = repo.main;
-  const id = crypto.randomUUID(); const meta = repo.reserve(main.sessionId, id, "input");
-  repo.checkpoint(main.sessionId, { ...meta, message: "input", status: "failed", lastEventId: 2 });
-  expect(repo.reserve(main.sessionId, id, "input").status).toBe("failed");
-  expect(() => repo.reserve(main.sessionId, id, "changed")).toThrow("already used");
-  const retry = crypto.randomUUID(); expect(repo.reserve(main.sessionId, retry, "input", id).retryOfRunId).toBe(id);
-  const columns = repo.db.query<{ name: string }, []>("PRAGMA table_info(runs)").all().map(row => row.name);
-  expect(columns).toEqual(["ordinal", "id", "thread_id", "input_hash", "created_at", "status", "last_event_id", "error", "error_code", "retry_of_run_id"]);
-  expect(() => repo.db.query("INSERT INTO threads (id,workspace_id,kind,created_at) VALUES (?,?,'main',0)")
-    .run(crypto.randomUUID(), main.workspace.id)).toThrow();
-  const side = crypto.randomUUID();
-  repo.db.query("INSERT INTO threads (id,workspace_id,kind,parent_thread_id,created_at) VALUES (?,?,'side',?,0)")
-    .run(side, main.workspace.id, main.thread.id);
-  expect(() => repo.db.query("INSERT INTO threads (id,workspace_id,kind,parent_thread_id,created_at) VALUES (?,?,'side',?,0)")
-    .run(crypto.randomUUID(), main.workspace.id, side)).toThrow("main Thread");
-  repo.close(); const restart = repository(f.paths);
-  expect(restart.main).toEqual(main);
-  expect(restart.latest(main.sessionId)).toMatchObject({ id: retry, status: "failed", errorCode: "interrupted" });
-});
 
-test("restart retains native messages, aborts uncertain work before scheduling, and records one hidden interruption notice", async () => {
-  const f = await fixture(30); const repo = repository(f.paths); const id = crypto.randomUUID(); const thread = repo.main.sessionId;
-  const meta = repo.reserve(thread, id, "work");
-  const session = await f.runtime.createSession(repo.context(thread)) as DurableChatSession;
-  repo.saveRuntime(thread, session.exportState());
-  repo.checkpoint(thread, { ...meta, message: "work", status: "running" });
-  f.faux.setResponses([fauxAssistantMessage("A very long answer that will still be running when the process closes.")]);
-  const pending = session.prompt("work", { id, createdAt: 1 }).catch(() => {});
-  await waitUntil(() => f.faux.state.callCount > 0); await Bun.sleep(80);
-  await f.runtime.dispose!(); await pending; repo.close();
-  const resumed = repository(f.paths); const runtime = f.createRuntime();
-  expect(resumed.latest(thread)).toMatchObject({ status: "failed", errorCode: "interrupted" });
-  expect((await runtime.readHistory(resumed.context(thread))).messages[0]?.content).toBe("work");
-  const reopened = await runtime.createSession(resumed.context(thread)) as DurableChatSession;
-  expect(f.faux.state.callCount).toBe(1);
-  expect((await readPiEntries(reopened.nativeHarness)).filter(entry => entry.kind === "piko.interrupted")).toHaveLength(1);
-  await reopened.dispose();
-  const again = await runtime.createSession(resumed.context(thread)) as DurableChatSession;
-  expect((await readPiEntries(again.nativeHarness)).filter(entry => entry.kind === "piko.interrupted")).toHaveLength(1);
-  expect(f.faux.state.callCount).toBe(1);
+test("native submission IDs deduplicate after reopen without SQL or Piko input markers", async () => {
+ const f = await fixture(); const s = await f.createSession(); const id = crypto.randomUUID();
+ f.faux.setResponses([fauxAssistantMessage("Answer")]); await s.prompt("Question", { id, createdAt: 1 });
+ const first = await s.submission(id); const before = (await s.snapshot()).messages;
+ expect((await readPiEntries(s.nativeHarness)).some(e => e.kind === "piko.input" || e.kind === "piko.run")).toBe(false);
+ await f.runtime.dispose!(); const restarted = f.createRuntime(); const next = await restarted.createSession();
+ expect(await next.submit("Question", id)).toEqual({ duplicate: true, submission: first! });
+ expect((await next.snapshot()).messages).toEqual(before); expect(f.faux.state.callCount).toBe(1);
+ expect(existsSync(join(f.paths.state, "piko.sqlite"))).toBe(false);
+ expect(readdirSync(f.paths.state)).not.toContain("piko.sqlite");
 });
-
-test("a submission interrupted before native admission has no invented body and remains deduplicated", async () => {
-  const f = await fixture(); const repo = repository(f.paths); const thread = repo.main.sessionId, id = crypto.randomUUID();
-  repo.reserve(thread, id, "accepted but not started"); repo.close();
-  const resumed = repository(f.paths);
-  const store = new ConversationStore(f.runtime.createSession, defaultServerConfig(), resumed, f.runtime.readHistory);
-  expect(await store.history(thread)).toEqual([]);
-  expect((await store.run(thread))?.snapshot).toMatchObject({ message: "", errorCode: "interrupted" });
-  expect((await store.startRun(thread, id, "accepted but not started")).snapshot.status).toBe("failed");
-  await expect(store.startRun(thread, id, "different")).rejects.toThrow("already used");
-  expect(f.faux.state.callCount).toBe(0); await store.dispose();
+test("startup withdraws persisted unfinished work before model scheduling, preserving raw history", async () => {
+ const f = await fixture(); const path = runtimePaths(f.paths.home).sessions;
+ const storage = await openNodeJsonlStorage(path, ctx, { fsync: true }); const raw = await Harness.open(storage, { models: f.models, registry: createRegistry() }, ctx);
+ const root = await raw.root(ctx);
+ // Construct native unfinished input without starting a Harness scheduler.
+ await raw.commit(async tx => {
+   const input = await tx.createSubmission({ conversationId: root.id, requestId: "unfinished", type: "input", status: "queued" });
+   (await tx.doc(InboxDoc, root.id)).items.push({ id: input.id, mode: "steer", content: "must not replay" });
+   await tx.doc(LiveDoc, root.id);
+   await tx.appendEntry(UserEntry, root.id, { model: [{ role: "user", content: "Already saved", timestamp: 1 }] });
+ }, ctx); await raw.close(ctx);
+ const s = await f.createSession();
+ expect(s.native.id).toBe(ROOT_CONVERSATION_ID);
+ expect((await s.submission("unfinished"))?.status).toBe("unanswered");
+ expect((await s.snapshot()).messages.map(m=>m.content)).toEqual(["Already saved"]);
+ expect((await s.snapshot()).interruption).toContain("interrupted"); expect(f.faux.state.callCount).toBe(0);
 });
-
-test("main API, native history, SSE replay and duplicate requests never reexecute the model", async () => {
-  const f = await fixture(); const repo = repository(f.paths); const config = defaultServerConfig();
-  const store = new ConversationStore(f.runtime.createSession, config, repo, f.runtime.readHistory);
-  const app = createApp({ config, runtime: f.runtime, conversations: store });
-  const discovery = () => app(new Request("http://local/api/main")).then(response => response.json());
-  expect(await discovery()).toEqual(await discovery());
-  expect((await app(new Request("http://local/api/sessions/" + crypto.randomUUID()))).status).toBe(409);
-  f.faux.setResponses([fauxAssistantMessage("saved")]);
-  const id = crypto.randomUUID();
-  const request = () => new Request("http://local/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: repo.main.sessionId, runId: id, message: "hi" }) });
-  const [a, b] = await Promise.all([app(request()), app(request())]);
-  const [first, duplicate] = await Promise.all([a.text(), b.text()]);
-  expect(first).toContain('"content":"saved"'); expect(duplicate).toContain('"type":"done"');
-  expect(f.faux.state.callCount).toBe(1);
-  const before = await store.history(repo.main.sessionId);
-  expect(before.map(message => message.content)).toEqual(["hi", "saved"]);
-  await store.dispose(); repo.close();
-  const resumed = repository(f.paths); const restartRuntime = f.createRuntime();
-  const restartStore = new ConversationStore(restartRuntime.createSession, config, resumed, restartRuntime.readHistory);
-  const restartApp = createApp({ config, runtime: restartRuntime, conversations: restartStore });
-  expect((await restartApp(request())).status).toBe(409);
-  const snapshot = await (await restartApp(new Request("http://local/api/sessions/" + resumed.main.sessionId))).json();
-  expect(snapshot.messages).toEqual(before);
-  expect(snapshot.run).toMatchObject({ message: "hi", status: "succeeded" });
-  expect(f.faux.state.callCount).toBe(1); await restartStore.dispose();
+test("old stop receipts cannot abort a later execution, including after a restart", async () => {
+ const f = await fixture(); let s = await f.createSession();
+ expect(await s.abort("old-idle-stop")).toBe(false);
+ await f.runtime.dispose!(); const restarted = f.createRuntime(); s = await restarted.createSession() as typeof s;
+ const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(()=>gate.resolve());
+ f.faux.setResponses([async()=>{entered.resolve();await gate.promise;return fauxAssistantMessage("New answer");}]);
+ await s.submit("New work", "new"); await entered.promise;
+ expect(await s.abort("old-idle-stop")).toBe(false); expect((await s.snapshot()).busy).toBe(true);
+ gate.resolve(); await s.native.waitForIdle(ctx); expect((await s.submission("new"))?.status).toBe("done");
 });
-
-test("message snapshots remain transient and a failed terminal flush cannot publish success", async () => {
-  const f = await fixture(); const session = await f.createSession();
-  f.faux.setResponses([fauxAssistantMessage("saved")]);
-  const events: StreamEvent[] = [], writes: RunSnapshot[] = [];
-  const run = new ChatRun({ id: crypto.randomUUID(), message: "input", status: "queued", createdAt: 1, lastEventId: 0 },
-    snapshot => { writes.push(snapshot); if (snapshot.status === "succeeded") throw new Error("disk full"); });
-  run.subscribe(0, event => events.push(event));
-  await expect(run.execute(async () => ({ session, touchedAt: 1 }))).rejects.toThrow("disk full");
-  expect(events.map(event => event.type)).toEqual(["refresh", "message", "message", "refresh"]);
-  expect(run.snapshot).toMatchObject({ status: "running", lastEventId: 4 });
-  expect(run.outputs.filter(event => event.final).map(event => event.message.content)).toEqual(["saved"]);
-  expect(writes.map(snapshot => snapshot.status)).toEqual(["running", "succeeded"]);
-});
-
-test("the initial schema includes Telegram receipts and incompatible development schemas preserve user data", async () => {
-  const f = await fixture(); const repo = repository(f.paths);
-  expect(repo.db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(1);
-  expect(repo.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='telegram_inputs'").get()).toBeTruthy();
-  repo.close();
-  for (const version of [2, 3, 4]) {
-    const db = new Database(f.paths.database);
-    db.exec(`PRAGMA user_version=${version}`); db.close();
-    expect(() => repository(f.paths)).toThrow("Incompatible development database");
-    expect(existsSync(f.paths.database)).toBe(true);
-  }
+test("conversation observers detach independently and stale epochs receive a fresh snapshot", async () => {
+ const f = await fixture(); const store = new ConversationStore(f.runtime); cleanup(()=>store.close());
+ const first: any[]=[]; const stop=await store.observe(e=>first.push(e));
+ expect(first[0].type).toBe("snapshot"); const epoch=first[0].epoch; const cursor=first[0].sequence;
+ stop(); f.faux.setResponses([fauxAssistantMessage("Saved")]); await store.submit("Input", "id");
+ await waitUntil(async()=> (await (await store.get()).submission("id"))?.status === "done"); await store.flush();
+ expect(first).toHaveLength(1); const replay:any[]=[]; const detach=await store.observe(e=>replay.push(e),epoch,cursor);detach();
+ expect(replay.length).toBeGreaterThan(0); const reset:any[]=[]; const stop2=await store.observe(e=>reset.push(e),"old-process",99999);stop2();
+ expect(reset[0].conversation.messages.map((m:any)=>m.content)).toEqual(["Input","Saved"]);
 });

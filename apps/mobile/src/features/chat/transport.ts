@@ -1,143 +1,68 @@
-import { isRunActive, isStreamTerminal, type ConversationResponse, type RunSnapshot, type StreamEvent } from "../../../../../shared/chat";
 import { consumeSse } from "../../../../../shared/sse";
-
-type Transport = {
-  fetch: (path: string, init?: RequestInit) => Promise<Response>;
-  load: (sessionId: string, signal: AbortSignal, runId?: string) => Promise<ConversationResponse>;
-  wait?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-};
-type Observer = {
-  sessionId: string;
-  run: RunSnapshot;
-  message?: string;
-  signal: AbortSignal;
-  onEvent: (event: StreamEvent) => void;
-  onSnapshot: (conversation: ConversationResponse) => void;
-  onReady: () => void;
-  onReconnecting: (reconnecting: boolean) => void;
-};
-
-export class HttpStreamError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
-}
-
-function abortError(): Error { return Object.assign(new Error("Request aborted."), { name: "AbortError" }); }
-
-export function waitForRetry(milliseconds: number, signal: AbortSignal): Promise<void> {
+import type { StreamEvent } from "../../../../../shared/chat";
+export class HttpStreamError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+export function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(abortError()); return; }
-    const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(abortError()); };
-    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, milliseconds);
-    signal.addEventListener("abort", abort, { once: true });
+    const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(new DOMException("Aborted", "AbortError")); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
   });
 }
-
-/** Reconnect the same submission observer; cursors and message identities prevent duplicate output or prompts. */
-export async function observeRun(observer: Observer, transport: Transport): Promise<void> {
-  const { sessionId, run, signal, onEvent, onSnapshot, onReady, onReconnecting } = observer;
-  let cursor = run.lastEventId;
-  let accepted = observer.message === undefined;
-  let failures = 0;
-  if (signal.aborted) throw abortError();
-  const loadSnapshot = async () => {
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    signal.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, 15_000);
-    try { return await transport.load(sessionId, controller.signal, run.id); }
-    finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
-  };
-  const terminalSnapshot = (snapshot: RunSnapshot) => {
-    if (isRunActive(snapshot)) return false;
-    onEvent(snapshot.status === "failed" ? { type: "error", message: snapshot.error ?? "Reply failed." }
-      : snapshot.status === "cancelled" ? { type: "cancelled" } : { type: "done" });
-    return true;
-  };
-  if (terminalSnapshot(run)) return;
-
-  while (!signal.aborted) {
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    signal.addEventListener("abort", abort, { once: true });
-    let watchdog: ReturnType<typeof setTimeout>;
-    const resetWatchdog = () => { clearTimeout(watchdog); watchdog = setTimeout(abort, 45_000); };
-    resetWatchdog();
+/** Persistent conversation observation; no input is ever posted by reconnect logic. */
+export async function observeConversation(options: { signal: AbortSignal; onEvent: (event: StreamEvent) => void; onReconnecting: (value: boolean) => void },
+  transport: { fetch: (path: string, init?: RequestInit) => Promise<Response>; wait?: typeof waitForRetry }) {
+  let epoch: string | undefined; let sequence = 0; let failures = 0;
+  const wait = transport.wait ?? waitForRetry;
+  while (!options.signal.aborted) {
+    const controller = new AbortController(); const abort = () => controller.abort();
+    options.signal.addEventListener("abort", abort, { once: true });
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let watchdog: ReturnType<typeof setTimeout>;
+    const touch = () => { clearTimeout(watchdog); watchdog = setTimeout(abort, 30000); };
     try {
-      const response = await transport.fetch(accepted
-        ? `/api/sessions/${sessionId}/runs/${run.id}/events?after=${cursor}` : "/api/chat", accepted
-        ? { signal: controller.signal, headers: { Accept: "text/event-stream" } }
-        : {
-          method: "POST", signal: controller.signal,
-          headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, runId: run.id, message: observer.message, after: cursor, retryOfRunId: run.retryOfRunId }),
-        });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new HttpStreamError(response.status, payload?.error ?? `Request failed (${response.status}).`);
-      }
-      accepted = true;
-      onReady();
-      if (!response.body) throw new Error("This runtime did not provide a streaming response body.");
-      reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let pending = "";
-      while (!signal.aborted) {
-        const { done, value } = await reader.read();
-        if (done) throw new Error("Reply stream ended before completion.");
-        resetWatchdog();
-        pending += decoder.decode(value, { stream: true });
-        const parsed = consumeSse(pending);
-        pending = parsed.remainder;
+      touch();
+      const response = await transport.fetch(`/api/chat/events${epoch ? `?epoch=${encodeURIComponent(epoch)}&after=${sequence}` : ""}`, { signal: controller.signal });
+      if (!response.ok) throw new HttpStreamError("Could not observe conversation.", response.status);
+      if (!response.body) throw new Error("Streaming response is unavailable.");
+      reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+      while (!options.signal.aborted) {
+        const chunk = await reader.read(); if (chunk.done) break; touch();
+        options.onReconnecting(false); failures = 0;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const parsed = consumeSse(buffer); buffer = parsed.remainder;
         for (const event of parsed.events) {
-          if (event.runId !== run.id || event.sequence === undefined) throw new Error("Invalid reply event.");
-          if (event.sequence <= cursor) continue;
-          if (event.sequence !== cursor + 1) throw new Error("Reply event gap. Reloading progress.");
-          cursor = event.sequence;
-          failures = 0;
-          onReconnecting(false);
-          onEvent(event);
-          if (isStreamTerminal(event)) return;
+          if (event.sequence !== undefined && event.epoch) {
+            if (event.epoch === epoch && event.sequence <= sequence) continue;
+            if (event.type !== "snapshot" && (event.epoch !== epoch || event.sequence !== sequence + 1)) { epoch = undefined; sequence = 0; throw new Error("Conversation event gap."); }
+            epoch = event.epoch; sequence = event.sequence;
+          }
+          options.onEvent(event);
         }
       }
-    } catch (error) {
-      if (signal.aborted) throw abortError();
-      if (error instanceof HttpStreamError && error.status !== 409 && error.status < 500) throw error;
-      if (++failures > 5) throw new Error("Connection interrupted. Return to the conversation to reconnect; the reply may still be running.");
-      // Release the old connection before querying progress or waiting to reconnect.
-      controller.abort();
-      clearTimeout(watchdog!);
-      onReconnecting(true);
-      try {
-        const snapshot = await loadSnapshot();
-        if (snapshot.run?.id === run.id) {
-          // A restart before Pi saved the user message leaves only the accepted request's hash.
-          if (snapshot.run.message && snapshot.run.message !== run.message) throw new HttpStreamError(409, "This runId belongs to another message.");
-          accepted = true;
-          cursor = snapshot.run.lastEventId;
-          onSnapshot(snapshot);
-          onReady();
-          if (terminalSnapshot(snapshot.run)) { onReconnecting(false); return; }
-        } else if (error instanceof HttpStreamError && error.status === 409) {
-          throw error;
-        } else if (accepted || (snapshot.run && isRunActive(snapshot.run))) {
-          throw new HttpStreamError(404, "This reply is no longer available. Reload the conversation.");
-        }
-      } catch (recoveryError) {
-        if (signal.aborted) throw abortError();
-        if (recoveryError instanceof HttpStreamError) throw recoveryError;
-        if (error instanceof HttpStreamError && error.status === 409) throw error;
-      }
-      await (transport.wait ?? waitForRetry)(Math.min(400 * 2 ** (failures - 1), 4000), signal);
-    } finally {
-      controller.abort();
-      clearTimeout(watchdog!);
-      signal.removeEventListener("abort", abort);
-      if (reader) {
-        await reader.cancel().catch(() => {});
-        reader.releaseLock();
-      }
-    }
+      if (options.signal.aborted) return;
+      throw new Error("Conversation disconnected.");
+    } catch {
+      if (options.signal.aborted) return;
+      options.onReconnecting(true);
+    } finally { clearTimeout(watchdog!); controller.abort(); await reader?.cancel().catch(() => {}); options.signal.removeEventListener("abort", abort); }
+    try { await wait(Math.min(10000, 500 * 2 ** Math.min(failures++, 5)), options.signal); } catch { return; }
   }
-  throw abortError();
+}
+/** Unknown acknowledgements retry the same request; a new ID is only for a new user action. */
+export async function submitMessage(message: string, requestId: string, signal: AbortSignal,
+  transport: { fetch: (path: string, init?: RequestInit) => Promise<Response>; wait?: typeof waitForRetry }) {
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController(); const abort = () => controller.abort();
+    const timer = setTimeout(abort, 10000); signal.addEventListener("abort", abort, { once: true });
+    try {
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const response = await transport.fetch("/api/chat", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message }) });
+      const result = await response.json();
+      if (!response.ok) throw new HttpStreamError(result.error ?? "Couldn't send message.", response.status);
+      return result;
+    } catch (error) {
+      if (signal.aborted || error instanceof HttpStreamError && error.status < 500 || attempt >= 2) throw error;
+    } finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
+    await (transport.wait ?? waitForRetry)(500 * 2 ** attempt, signal);
+  }
 }

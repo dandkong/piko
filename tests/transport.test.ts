@@ -1,186 +1,27 @@
-import { messageEvent } from "./fixtures/messages";
-import { describe, expect, test } from "bun:test";
-import type { ConversationResponse, RunSnapshot, StreamEvent } from "../shared/chat";
+import { expect, test } from "bun:test";
+import { observeConversation, submitMessage } from "../apps/mobile/src/features/chat/transport";
 import { encodeSse } from "../shared/sse";
-import { observeRun, waitForRetry } from "../apps/mobile/src/features/chat/transport";
+test("lost input acknowledgements retry the same identity and message",async()=>{
+ const bodies:any[]=[];let calls=0;
+ const result=await submitMessage("Hello","stable",new AbortController().signal,{fetch:async(_path,init)=>{bodies.push(JSON.parse(init!.body as string));if(++calls===1)throw new Error("lost acknowledgement");return Response.json({submission:{id:"3"},duplicate:true});},wait:async()=>{}});
+ expect(result.duplicate).toBe(true);expect(bodies).toEqual([{requestId:"stable",message:"Hello"},{requestId:"stable",message:"Hello"}]);
+});
+test("conversation reconnect uses its cursor, accepts a new epoch and never submits input",async()=>{
+ const controller=new AbortController();const paths:string[]=[];const events:any[]=[];
+ await observeConversation({signal:controller.signal,onReconnecting:()=>{},onEvent:e=>{events.push(e);if(events.length===2)controller.abort();}},{fetch:async path=>{paths.push(path);return new Response(encodeSse({type:"snapshot",epoch:paths.length===1?"first":"restarted",sequence:0,conversation:{messages:[],busy:false}}));},wait:async()=>{}});
+ expect(paths).toEqual(["/api/chat/events","/api/chat/events?epoch=first&after=0"]);expect(events.map(e=>e.epoch)).toEqual(["first","restarted"]);
+});
+test("replayed frames are ignored and malformed frames recover instead of overwriting state",async()=>{
+ const controller=new AbortController();let fetches=0;const sequences:number[]=[];
+ await observeConversation({signal:controller.signal,onReconnecting:()=>{},onEvent:e=>{sequences.push(e.sequence!);if(e.sequence===2)controller.abort();}},{fetch:async()=>{
+  fetches++;return new Response(fetches===1?encodeSse({type:"snapshot",epoch:"same",sequence:1,conversation:{messages:[],busy:false}})+"data: {bad}\n\n":encodeSse({type:"snapshot",epoch:"same",sequence:1,conversation:{messages:[],busy:false}})+encodeSse({type:"snapshot",epoch:"same",sequence:2,conversation:{messages:[],busy:true}}));
+ },wait:async()=>{}});expect(sequences).toEqual([1,2]);
+});
 
-const sessionId = "b9b7c60a-b2e2-4af0-8a61-fb0903629aca";
-const runId = "7a5c9c78-030a-4c2a-b6f7-13974210b807";
-const run: RunSnapshot = { id: runId, status: "running", message: "Hi", createdAt: 1, lastEventId: 0 };
-function event(sequence: number, value: StreamEvent): StreamEvent { return { ...value, runId, sequence }; }
-function stream(...events: StreamEvent[]) { return new Response(events.map(encodeSse).join("")); }
-function observation(message?: string) {
-  const events: StreamEvent[] = [];
-  const snapshots: ConversationResponse[] = [];
-  const connectionStates: boolean[] = [];
-  const controller = new AbortController();
-  let ready = 0;
-  return {
-    events, snapshots, connectionStates, controller, get ready() { return ready; },
-    options: {
-      sessionId, run, message, signal: controller.signal,
-      onEvent: (event: StreamEvent) => { events.push(event); },
-      onSnapshot: (snapshot: ConversationResponse) => { snapshots.push(snapshot); },
-      onReady: () => { ready++; },
-      onReconnecting: (state: boolean) => { connectionStates.push(state); },
-    },
-  };
-}
 
-describe("Run transport recovery", () => {
-  test("input refresh events remain on the stream and reconnect requests the observed input identity", async () => {
-    const state = observation(); let requests = 0; const loaded: string[] = [];
-    await observeRun(state.options, {
-      fetch: async () => ++requests === 1 ? stream(event(1, { type: "refresh" }), event(2, messageEvent("Before.")))
-        : stream(event(3, { type: "refresh" }), event(4, messageEvent("After.")), event(5, { type: "done" })),
-      load: async (id, signal, requestedRun) => {
-        loaded.push(requestedRun!);
-        return { sessionId, messages: [messageEvent("Before.").message], run: { ...run, lastEventId: 2 } };
-      }, wait: async () => {},
-    });
-    expect(loaded).toEqual([runId]);
-    expect(state.events.map(event => event.type)).toEqual(["refresh", "message", "refresh", "message", "done"]);
-    expect(requests).toBe(2);
-  });
-
-  test("a durable retry can replace streamed text and continue on the same SSE connection", async () => {
-    const state = observation(); let text = "";
-    await observeRun({ ...state.options, onEvent(value) {
-      state.options.onEvent(value);
-      if (value.type === "message") text = value.message.content;
-    } }, {
-      fetch: async () => stream(event(1, messageEvent("discarded partial")),
-        event(2, messageEvent("new")), event(3, messageEvent("new answer")), event(4, { type: "done" })),
-      load: async () => { throw new Error("Should not reload."); },
-    });
-    expect(text).toBe("new answer");
-    expect(state.events).toHaveLength(4);
-    expect(state.snapshots).toEqual([]);
-  });
-  test("replayed events are applied once, including split UTF-8 data", async () => {
-    const state = observation();
-    const bytes = new TextEncoder().encode([
-      event(1, messageEvent("你好")), event(1, messageEvent("你好")), event(2, { type: "done" }),
-    ].map(encodeSse).join(""));
-    await observeRun(state.options, {
-      fetch: async () => new Response(new ReadableStream({ start(controller) {
-        for (let i = 0; i < bytes.length; i += 3) controller.enqueue(bytes.slice(i, i + 3));
-        controller.close();
-      } })),
-      load: async () => { throw new Error("Should not reload."); },
-    });
-    expect(state.events).toEqual([event(1, messageEvent("你好")), event(2, { type: "done" })]);
-    expect(state.snapshots).toHaveLength(0);
-  });
-
-  test("an interrupted reply resumes from its snapshot without duplicating text", async () => {
-    const state = observation("Hi");
-    const paths: string[] = [];
-    let visibleText = "";
-    await observeRun({ ...state.options,
-      onEvent: (value) => { state.options.onEvent(value); if (value.type === "message") visibleText = value.message.content; },
-      onSnapshot: (snapshot) => { state.options.onSnapshot(snapshot); visibleText = snapshot.messages.at(-1)?.content ?? ""; },
-    }, {
-      fetch: async (path) => {
-        paths.push(path);
-        return paths.length === 1 ? stream(event(1, messageEvent("Hello")))
-          : stream(event(3, messageEvent("Hello! world")), event(4, { type: "done" }));
-      },
-      load: async () => ({ sessionId, messages: [messageEvent("Hello!").message], run: { ...run, lastEventId: 2 } }),
-      wait: async () => {},
-    });
-    expect(paths).toEqual(["/api/chat", `/api/sessions/${sessionId}/runs/${runId}/events?after=2`]);
-    expect(visibleText).toBe("Hello! world");
-    expect(state.snapshots[0]?.messages.at(-1)?.content).toBe("Hello!");
-    expect(state.connectionStates).toContain(true);
-  });
-
-  test("a lost submission response recovers the accepted Run instead of submitting again", async () => {
-    const state = observation("Hi");
-    let submissions = 0;
-    await observeRun(state.options, {
-      fetch: async () => { submissions++; throw new TypeError("Network disconnected after acceptance."); },
-      load: async () => ({ sessionId, messages: [messageEvent("Done").message], run: { ...run, status: "succeeded", lastEventId: 2 } }),
-      wait: async () => {},
-    });
-    expect(submissions).toBe(1);
-    expect(state.snapshots[0]?.messages.at(-1)?.content).toBe("Done");
-    expect(state.events).toEqual([{ type: "done" }]);
-  });
-
-  test("failed acceptance retries the same runId", async () => {
-    const state = observation("Hi");
-    const bodies: unknown[] = [];
-    await observeRun(state.options, {
-      fetch: async (path, init) => {
-        expect(path).toBe("/api/chat");
-        bodies.push(JSON.parse(init!.body as string));
-        if (bodies.length === 1) throw new TypeError("Offline before acceptance.");
-        return stream(event(1, { type: "done" }));
-      },
-      load: async () => ({ sessionId, messages: [] }), wait: async () => {},
-    });
-    expect(bodies).toEqual([
-      { sessionId, runId, message: "Hi", after: 0 }, { sessionId, runId, message: "Hi", after: 0 },
-    ]);
-  });
-
-  test("an expired replay cursor reloads the snapshot and subscribes at its new cursor", async () => {
-    const state = observation();
-    const paths: string[] = [];
-    await observeRun(state.options, {
-      fetch: async (path) => {
-        paths.push(path);
-        return paths.length === 1 ? Response.json({ error: "Event history expired." }, { status: 409 })
-          : stream(event(2501, { type: "cancelled" }));
-      },
-      load: async () => ({ sessionId, messages: [], run: { ...run, lastEventId: 2500 } }),
-      wait: async () => {},
-    });
-    expect(paths[1]).toEndWith("after=2500");
-    expect(state.events).toEqual([event(2501, { type: "cancelled" })]);
-  });
-
-  test("when snapshot loading fails, reconnect uses the last received event cursor", async () => {
-    const state = observation();
-    const paths: string[] = [];
-    await observeRun(state.options, {
-      fetch: async (path) => {
-        paths.push(path);
-        return paths.length === 1 ? stream(event(1, messageEvent("Hello"))) : stream(event(2, { type: "done" }));
-      },
-      load: async () => { throw new TypeError("Network error."); }, wait: async () => {},
-    });
-    expect(paths[1]).toEndWith("after=1");
-  });
-
-  test("a server restart never silently starts a replacement reply", async () => {
-    const state = observation();
-    let requests = 0;
-    await expect(observeRun(state.options, {
-      fetch: async () => { requests++; return Response.json({ error: "Reply is no longer available." }, { status: 404 }); },
-      load: async () => ({ sessionId, messages: [] }), wait: async () => {},
-    })).rejects.toThrow("no longer available");
-    expect(requests).toBe(1);
-  });
-
-  test("retries are bounded and use exponential backoff", async () => {
-    const state = observation();
-    const delays: number[] = [];
-    let requests = 0;
-    await expect(observeRun(state.options, {
-      fetch: async () => { requests++; throw new TypeError("Offline."); },
-      load: async () => { throw new TypeError("Offline."); },
-      wait: async (delay) => { delays.push(delay); },
-    })).rejects.toThrow("Connection interrupted");
-    expect(requests).toBe(6);
-    expect(delays).toEqual([400, 800, 1600, 3200, 4000]);
-  });
-
-  test("aborting a reconnect wait cleans up immediately", async () => {
-    const controller = new AbortController();
-    const waiting = waitForRetry(60_000, controller.signal);
-    controller.abort();
-    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
-  });
+test("an event gap discards the stale cursor and recovers through a fresh snapshot",async()=>{
+ const controller=new AbortController();const paths:string[]=[];const events:any[]=[];
+ await observeConversation({signal:controller.signal,onReconnecting:()=>{},onEvent:e=>{events.push(e);if(events.length===2)controller.abort();}},{fetch:async path=>{
+  paths.push(path);return new Response(paths.length===1?encodeSse({type:"snapshot",epoch:"same",sequence:1,conversation:{messages:[],busy:false}})+encodeSse({type:"refresh",epoch:"same",sequence:3}):encodeSse({type:"snapshot",epoch:"same",sequence:4,conversation:{messages:[],busy:false}}));
+ },wait:async()=>{}});expect(paths).toEqual(["/api/chat/events","/api/chat/events"]);expect(events.map(e=>e.sequence)).toEqual([1,4]);
 });

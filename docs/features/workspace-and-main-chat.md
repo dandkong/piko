@@ -1,42 +1,42 @@
 # 工作区与主会话模型
 
-状态：已迁移到 pi-durable，并更新至 1.1.0。原有主会话、UI 布局、键盘、Markdown、停止、去重和重连语义保留。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，配置与插件用法见 [Durable 配置](durable-runtime.md)。
+状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.1.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与插件见 [Durable 配置](durable-runtime.md)。
 
 ## 范围与初始化
 
-唯一、持续的主会话；长期工作区与产品元数据分离。side chat 只预留类型和父关系，自动记忆、后台任务、工具进度与产物管理仍未实现。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话。Side chat 的交互、记忆提取、后台调度、工具进度和产物管理尚未实现；未来会话复用同一个 Harness。
 
-PIKO_HOME 默认 `~/.piko`，应用配置 `workspace.path` 或 PIKO_WORKSPACE 可单独指定工作区，均要求绝对路径；统一加载规则见 [应用配置](application-config.md)。首次启动只补缺失配置（含 piko.json）和用户指导模板，不覆盖已有文件。工作区包含 `.agents/skills`、memory、projects、artifacts、AGENTS.md、MEMORY.md；state 位于工作区之外，单后端写进程锁保证不会同时写入同一状态目录。
+默认 PIKO_HOME 为 ~/.piko，workspace.path 或 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
 | 存储 | 内容 |
 | --- | --- |
-| config/settings.json、models.json、auth.json | 默认模型/预设、供应商、凭据与运行设置 |
-| extensions/、skills/ | 用户 durable 插件与公共技能 |
-| state/piko.sqlite | Workspace/Thread 身份、原生引用；Run 状态、哈希、时间、重试来源、错误和游标 |
-| state/durable-sessions/<thread-id>/ | 唯一会话正文来源；main.jsonl 与 doc-*.jsonl 成套保存 |
-| state/tmp/ | 工具溢出文件与可清理插件 bundle |
-| 当前进程内存 | 活跃文本快照、最多 2,048 条 SSE 事件与订阅 |
-| workspace/ | 用户指导、记忆、技能与工作成果 |
+| config/piko.json、.env | 应用配置与可选覆盖 |
+| config/settings.json、models.json、auth.json | 模型、预设、凭据与运行设置 |
+| extensions/、skills/ | 用户插件与公共技能 |
+| state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
+| state/tmp/ | 工具溢出与可清理插件 bundle |
+| 当前进程内存 | 流式消息、128 条会话 SSE 重放、TG 投递身份 |
+| workspace/ | AGENTS.md、MEMORY.md、技能与工作成果 |
 
-SQLite schema=1，包含 TG 输入/停止命令身份与决定元数据，不迁移旧 schema 状态。Thread UUID 是 API sessionId；SQL 原生引用 version=2，指定该 Thread 的目录与 root conversation，不保存 leaf/context 快照。没有独立消息表、Run 正文日志或持久化 delta。两通道规则见 [Telegram 通道](telegram-channel.md)。
+没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。旧 SQLite 和 durable-sessions 不迁移，也不作为当前主会话来源。
 
 ## 展示与上下文
 
-历史从指定 conversation 的原始 entries 分页读取后正序投影，完整保留 reset、上下文编辑和压缩前的消息。气泡 ID 为 pi-<entry ID>，时间来自原生 model message。只显示用户/助手文本和 display=true 的 piko.result；工具、思考、隐藏 entry 和压缩摘要不显示。
+一次原生 commit 内读取完整原始 entries、提交绑定与状态，再正序投影用户/助手文字；保留 reset、上下文编辑和压缩前历史。气泡 ID 为 pi-<entry ID>，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；display=true 的 piko.result 可形成被动回复。
 
-piko.input 只保存每条输入的 runId/createdAt，通过原生 submission 的 entry 引用关联用户条目，不保存正文。助手条目独立展示，不写执行分组标记，不累计整轮回答，不隐藏已完成回复。生成中使用临时消息身份，提交后原位替换为原生 entry 身份。原生用户条目尚未出现时临时显示各条提交；终态重新读取原生投影，这层展示状态不落盘。
-
-模型上下文由 durable 处理。工具、思考、文档和摘要仍保留在原生日志；UI 历史不使用 `conversation.context()` 的压缩结果。
+每条用户消息从原生 submission.entry 获取 requestId，不额外写 piko.input。助手消息独立展示，不累计整轮回答、不强行配对。当前流式消息采用临时 ID，保存后原位替换；原生 inbox 里的未应用输入临时显示，撤回后消失。模型上下文和压缩由 Durable 处理，UI 不读取压缩后的 context 代替历史。
 
 ## 执行、停止与传输
 
-SQL 先预留每条输入的 Run 身份、输入 SHA-256 和重试来源，再提交原生输入；durable requestId 使用 run UUID。相同 UUID/输入/重试来源复用已有提交，不同内容拒绝。同 Thread 的活跃输入使用 whenBusy=steer + steeringMode=all，在原生边界全部加入当前工作；助手输出由 conversation 消息流独立产生，不与输入逐条配对，不强行打断已开始的模型请求或工具。显式重试要求新 UUID、原输入和失败 Run 引用。UI 原文提交，不展开 CLI 技能命令。
+POST /api/chat 接收 {requestId,message}，返回原生提交回执。RN 新请求生成 UUID，网络重试保持该 ID；TG 使用 telegram:<botId>:<chatId>:<messageId>。同 ID 返回原提交；新意图使用新 ID，不再做哈希冲突或 retryOfRunId 关联校验。用户主动重试生成新 ID，连接恢复只观察、不自动重发。
 
-Run 状态及时提交 SQL，终态前 fsync 原生日志；存储失败不能发布成功。SSE 消息快照只在内存，首段立即发布，同一未完成消息其余更新最多 50 毫秒合并。原生 retry 修正文本时更新当前消息的完整正文，已提交的助手消息继续保留。
+普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
 
-断线只退订，不取消执行。停止按钮走独立 Run cancel API，取消它参与的整个执行及尚未应用输入；重复停止不会重开执行。失败也撤回该执行的剩余输入，不自动重跑。未落入原生用户 entries 的撤回输入不进入最终聊天历史。45 秒无数据、页面刷新和回前台触发快照恢复，按原输入 runId 查询，事件重放过期或重启后不伪造旧事件。
+GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。事件携带 epoch/sequence，最多 128 条内存重放；失效时发送完整 snapshot，重启不伪造旧事件。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
 
-API 契约见 [架构说明](../ARCHITECTURE.md)。运行时 API 提供配置元数据、模型/思考选择、手动压缩与取消；选择和压缩在空闲边界执行，配置及插件代码修改后重启生效，UI 暂无配置页面。
+POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
+
+RN 在前台持续观察两通道变化，原生快照加未确认的本地输入构成列表；过期 HTTP 刷新不会覆盖较新的观察结果。TG 按助手消息维护投递，网络发送不阻塞接纳或执行。接口见 [架构说明](../ARCHITECTURE.md)，通道边界见 [Telegram 通道](telegram-channel.md)。
 
 ## 资源与工具
 
@@ -60,23 +60,20 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 中断与损坏恢复
 
-1. 启动用 durable 原生 storage 校验日志，不启用调度；已引用目录缺失、引用身份不符或完整记录损坏则拒绝继续。
-2. 原生 storage 恢复末尾半条记录及未确认的 sidecar 事务；不使用旧 JSONL 格式或手动父链恢复。
-3. SQL 遗留 queued/running/cancelling Run 标记 failed + interrupted，保留已保存消息，不自动重试。
-4. 打开 Harness 后、普通生成前撤销所有遗留执行作用域（含 background），避免重放不确定工具操作。
-5. 向原生上下文添加一次隐藏中断说明，通过原生 doc 按 runId 去重，不复制原输入、不调用模型。
-6. 原生日志领先于 SQL 引用可从合法目录读取；原生回复领先于 SQL 终态时仍展示保存内容，状态保持中断。
-
-原生会话与 SQL 没有跨存储事务。尚未保存的流式文字可能丢失；输入尚未写入原生日志时只有哈希去重元数据，需要用户重新发送。恢复不回滚工具副作用，也不隐式恢复后台产品任务。首期完整历史读取，UI 分页加载按规模再开发。
+1. 启动取得锁、打开固定 state/durable，校验日志、root 与工作区关联。
+2. 完整损坏记录拒绝继续；剩余 doc 日志但 main.jsonl 缺失时明确报错。Durable 自行恢复残尾与未确认 sidecar 事务。
+3. 启用调度前 abort({background:true}) 撤销遗留执行作用域及待应用输入，不自动重跑。
+4. 有遗留生成或输入时写原生 piko.recovery 中断提示和隐藏上下文说明，不复制输入、不调用模型；下一次接纳清除提示。
+5. 已保存历史继续展示；尚未保存的文字不保证恢复。恢复不回滚工具的外部副作用。
 
 ## 开发数据与备份
 
-旧版 schema 不兼容，使用新的 PIKO_HOME 测试即可，旧数据保留。不要只删除数据库然后继续复用旧会话目录，也不要在后端运行时删除状态。
+当前布局不兼容旧版元数据，不迁移旧聊天；旧 durable-sessions 保留但不读取，新主会话在 state/durable 初始化。旧 piko.sqlite 及其 WAL/SHM 可在停止后端后删除，配置、模型凭据、工作区文件和技能不随清理删除。需要完全重置新会话时，先备份并停止后端，再清理整个 state/durable，不能只删除 main.jsonl。
 
-备份先停止 API，再复制整个 PIKO_HOME 和单独指定的工作区；恢复使用同批次文件并保留原工作区绝对路径。main.jsonl 和 doc-*.jsonl 共同构成会话存储，不能只复制 main。
+备份停止 API 后复制整个 PIKO_HOME 和单独指定的工作区，main.jsonl 与 doc-*.jsonl 成套保存；恢复保留原工作区绝对路径。
 
 ## 后续与验证
 
-后台任务可复用 durable 原生任务、文档和 conversation；摘要可通过被动 write submission 加入主会话。调度、投递去重、任务 UI、通知、权限和后台恢复策略尚未实现，不提前建立第二套正文存储。
+原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；调度、投递 outbox、权限、side chat 交互及后台恢复策略尚未实现。
 
-自动化覆盖初始化/路径边界、主会话/side 关系、输入去重/重试、完整历史、原生压缩、上下文编辑、残尾/损坏/缺失、SQL 引用滞后、中断去重、插件/模型配置与重启、真实本机 HTTP 模型适配、停止、SSE 重连和文本修正。真实长对话、设备后台/键盘/网络仍需使用验证。
+自动化覆盖初始化/路径、原生去重与重启、完整历史、压缩、残尾/损坏/缺失、中断撤回、插件/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。

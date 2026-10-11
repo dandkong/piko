@@ -1,8 +1,7 @@
-import type { Cursor, EntryRecord, Session, ConversationId } from "@earendil-works/pi-durable";
+import type { Cursor, EntryRecord, Session, Storage, ConversationId, Tx } from "@earendil-works/pi-durable";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { isSessionId, type Message } from "../../shared/chat";
-import type { SessionHistory } from "./types";
+import type { Message } from "../../shared/chat";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -13,65 +12,55 @@ export function messageText(content: unknown): string {
 
 /** Full history, including entries before reset/compaction and context edits. */
 export async function readPiEntries(session: Session, conversationId: ConversationId = ROOT_CONVERSATION_ID): Promise<EntryRecord[]> {
-  return session.commit(async tx => {
-    const entries: EntryRecord[] = [];
-    let cursor: Cursor | undefined;
-    do {
-      const page = await tx.scanEntries({ conversationId }, 500, cursor);
-      entries.push(...page.items);
-      cursor = page.next;
-    } while (cursor);
-    return entries.sort((a, b) => a.id - b.id);
-  }, context);
+  return session.commit(tx => entriesFromTransaction(tx, conversationId), context);
 }
 
-export async function readPiHistory(session: Session): Promise<SessionHistory> {
-  const entries = await readPiEntries(session);
-  return projectPiHistory(entries, await readPiInputs(session, entries));
+export async function entriesFromTransaction(tx: Tx, conversationId = ROOT_CONVERSATION_ID): Promise<EntryRecord[]> {
+  const entries: EntryRecord[] = [];
+  let cursor: Cursor | undefined;
+  do {
+    const page = await tx.scanEntries({ conversationId }, 500, cursor);
+    entries.push(...page.items);
+    cursor = page.next;
+  } while (cursor);
+  return entries.sort((a, b) => a.id - b.id);
 }
 
-/** Bind placed user entries to request identities using native submission records, without storing their bodies. */
-export async function readPiInputs(session: Session, entries: readonly EntryRecord[]): Promise<Map<number, string>> {
-  return session.commit(async tx => {
-    const bindings = new Map<number, string>();
-    for (const entry of entries) {
-      if (entry.kind !== "piko.input") continue;
-      const id = data(entry).runId;
-      if (!isSessionId(id)) continue;
-      const submission = await tx.submissionByRequest(entry.conversationId, id);
-      if (submission?.type === "input" && submission.entry !== undefined) bindings.set(submission.entry, id);
-    }
-    return bindings;
-  }, context);
+export async function readPiInputs(session: Session, storage: Storage): Promise<Map<number, string>> {
+  return session.commit(() => inputsFromStorage(storage), context);
 }
 
-export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>()): SessionHistory {
+/** Call on the native commit line so submission bindings and entries share a consistent read. */
+export async function inputsFromStorage(storage: Storage): Promise<Map<number, string>> {
+  const bindings = new Map<number, string>(); let cursor: Cursor | undefined;
+  do {
+    const page = await storage.scanSubmissions({ conversationId: ROOT_CONVERSATION_ID }, 500, cursor, context);
+    for (const record of page.items) if (record.type === "input" && record.requestId && record.entry !== undefined) bindings.set(record.entry, record.requestId);
+    cursor = page.next;
+  } while (cursor);
+  return bindings;
+}
+export async function readPiHistory(session: Session, storage: Storage) {
+  return session.commit(async tx => projectPiHistory(await entriesFromTransaction(tx), await inputsFromStorage(storage)), context);
+}
+
+export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>()) {
   const messages: Message[] = [];
-  const runs: SessionHistory["runs"] = new Map();
-  for (const entry of entries) {
-    if (entry.kind !== "piko.input") continue;
-    const value = data(entry);
-    if (isSessionId(value.runId)) runs.set(value.runId, { message: "" });
-  }
   for (const entry of entries) {
     if (entry.kind === "pi.user" || entry.kind === "pi.assistant") {
       for (const message of entry.model ?? []) {
         if (message.role !== "user" && message.role !== "assistant") continue;
         const content = messageText(message.content);
-        const messageRunId = message.role === "user" ? inputs.get(entry.id) : undefined;
-        const run = messageRunId && runs.get(messageRunId);
-        if (run) {
-          if (message.role === "user" && !run.message) run.message = content;
-        }
+        const requestId = message.role === "user" ? inputs.get(entry.id) : undefined;
         if (content.trim()) messages.push({ id: "pi-" + entry.id, role: message.role, content,
-          createdAt: message.timestamp, ...(messageRunId && { runId: messageRunId }) });
+          createdAt: message.timestamp, ...(requestId && { requestId }) });
       }
     } else if (entry.kind === "piko.result" && data(entry).display === true) {
       const content = (entry.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
       if (content.trim()) messages.push({ id: "pi-" + entry.id, role: "assistant", content, createdAt: Number(data(entry).createdAt ?? 0) });
     }
   }
-  return { messages, runs };
+  return { messages };
 }
 
 function data(entry: EntryRecord): Record<string, unknown> {
