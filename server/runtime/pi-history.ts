@@ -1,6 +1,7 @@
 import type { Cursor, EntryRecord, Session, Storage, ConversationId, Tx } from "@earendil-works/pi-durable";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+import { internalInput } from "./input-origin";
 import type { Message } from "../../shared/chat";
 
 export function messageText(content: unknown): string {
@@ -41,12 +42,17 @@ export async function inputsFromStorage(storage: Storage): Promise<Map<number, s
   return bindings;
 }
 export async function readPiHistory(session: Session, storage: Storage) {
-  return session.commit(async tx => projectPiHistory(await entriesFromTransaction(tx), await inputsFromStorage(storage)), context);
+  return session.commit(async tx => {
+    const entries = await entriesFromTransaction(tx); const inputs = await inputsFromStorage(storage); const hidden = new Set<number>();
+    for (const [entry, requestId] of inputs) if (await internalInput(tx, requestId)) hidden.add(entry);
+    return projectPiHistory(entries, inputs, hidden);
+  }, context);
 }
 
-export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>()) {
+export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>(), hidden = new Set<number>()) {
   const messages: Message[] = [];
   for (const entry of entries) {
+    if (hidden.has(entry.id)) continue;
     if (entry.kind === "pi.user" || entry.kind === "pi.assistant") {
       for (const message of entry.model ?? []) {
         if (message.role !== "user" && message.role !== "assistant") continue;

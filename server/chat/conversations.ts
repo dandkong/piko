@@ -1,5 +1,5 @@
 import type { ConversationResponse, StreamEvent } from "../../shared/chat";
-import type { ChatRuntime, ChatSession } from "../runtime/types";
+import type { BackgroundReply, InputSource, ChatRuntime, ChatSession } from "../runtime/types";
 import { normalizeMessage } from "./input";
 export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
 /** Conversation-wide observation and transient replay. Native submissions own execution state. */
@@ -11,6 +11,9 @@ export class ConversationStore {
   private opening?: Promise<ChatSession>;
   private session?: ChatSession;
   private unsubscribe?: () => void;
+  private unsubscribeReplies?: () => void;
+  private replyListeners = new Set<(reply: BackgroundReply) => Promise<void>>();
+  private pendingReplies: BackgroundReply[] = [];
   private closing = false;
   private maintenance = false;
   private tail: Promise<unknown> = Promise.resolve();
@@ -27,6 +30,10 @@ export class ConversationStore {
     if (this.closing) throw new Error("Piko is shutting down.");
     return this.opening ??= this.runtime.createSession().then(session => {
       this.session = session;
+      this.unsubscribeReplies = session.subscribeBackgroundReplies?.(async reply => {
+        if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
+        await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
+      });
       this.unsubscribe = session.subscribe(event => {
         if (event.type === "error") this.publish(event);
         if (event.type === "message") {
@@ -60,13 +67,18 @@ export class ConversationStore {
     return this.pump;
   }
   async snapshot(): Promise<ConversationResponse> { return (await this.get()).snapshot(); }
-  async submit(message: string, requestId: string) {
+  async submit(message: string, requestId: string, source?: InputSource) {
     message = normalizeMessage(message);
     return this.serial(async () => {
       if (this.maintenance) throw new RuntimeBusyError();
-      const result = await (await this.get()).submit(message, requestId);
+      const result = await (await this.get()).submit(message, requestId, source);
       this.dirty = true; await this.flush(); return result;
     });
+  }
+  async subscribeBackgroundReplies(listener: (reply: BackgroundReply) => Promise<void>) {
+    this.replyListeners.add(listener);
+    for (const reply of this.pendingReplies.splice(0)) await listener(reply);
+    return () => { this.replyListeners.delete(listener); };
   }
   async stop(commandId?: string) { return this.serial(async () => { const result = await (await this.get()).abort(commandId); this.dirty = true; await this.flush(); return result; }); }
   async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {
@@ -106,7 +118,7 @@ export class ConversationStore {
     await this.tail.catch(() => {});
     const session = this.session ?? (this.opening && await this.opening);
     await session?.abort(); await this.change?.catch(() => {}); await this.pump;
-    this.closing = true; clearTimeout(this.timer); this.unsubscribe?.(); this.listeners.clear();
+    this.closing = true; clearTimeout(this.timer); this.unsubscribe?.(); this.unsubscribeReplies?.(); this.replyListeners.clear(); this.pendingReplies = []; this.listeners.clear();
     await this.runtime.dispose?.();
   }
 }

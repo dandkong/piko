@@ -2,16 +2,18 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor, configure as configureAgent } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
-import type { ChatRuntime, ChatSession, SessionEvent } from "./types";
+import type { BackgroundReply, InputSource, ChatRuntime, ChatSession, SessionEvent } from "./types";
 import { SessionCancelledError } from "./types";
 import { readPiContext, sessionDirectory } from "./pi-context";
 import { entriesFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiHistory, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
+import { createSubagentExtension, prepareRestart, subagentIds } from "./subagents";
+import { internalInput, registerInput } from "./input-origin";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, type WorkspaceModelConfig } from "./model-config";
@@ -26,10 +28,11 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
     ...(record.status === "unanswered" && { error: typeof record.detail === "string" ? record.detail : record.reason }) };
 }
 
-async function registry(paths: WorkspacePaths): Promise<WorkspaceRegistry> {
+async function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): Promise<WorkspaceRegistry> {
   const value = createRegistry();
   value.install(CodingTools);
   value.install(createWorkspaceResources(paths));
+  value.install(subagents);
   return installWorkspacePlugins(paths.home, value);
 }
 
@@ -53,6 +56,9 @@ export class DurableChatSession implements ChatSession {
   private deliveredEntry = 0;
   private deliveryWaiters = new Set<{ entry: number; resolve: () => void; reject: (error: Error) => void }>();
   private output = new PiMessageEvents(event => this.emit(event));
+  private hiddenEntries = new Set<number>();
+  private replyListeners = new Set<(reply: BackgroundReply) => Promise<void>>();
+  private pendingReplies: BackgroundReply[] = [];
   private previousIds = new Map<string, string>();
   private listeners = new Set<(event: SessionEvent) => void>();
   private busy = false;
@@ -67,7 +73,7 @@ export class DurableChatSession implements ChatSession {
   get isStreaming() { return this.busy || this.changing || this.stopping || this.liveBusy; }
   get closePromise() { return this.closing; }
   get messages() {
-    const messages = projectPiHistory(this.entries, this.inputEntries).messages;
+    const messages = projectPiHistory(this.entries, this.inputEntries, this.hiddenEntries).messages;
     const partial = this.output.partial(this.entries);
     return partial?.content.trim() ? [...messages, partial] : messages;
   }
@@ -76,7 +82,13 @@ export class DurableChatSession implements ChatSession {
 
   async init(): Promise<void> {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
-    const extensions = await registry(this.paths);
+    const extensions = await registry(this.paths, createSubagentExtension({ storage: () => this.storage,
+      canReport: () => !this.busy && !this.changing && !this.stopping && !this.disposed,
+      onReply: async reply => {
+        if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
+        await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
+      },
+    }));
     try { await this.open(config, extensions); }
     catch (error) { await extensions.dispose(); throw error; }
   }
@@ -108,19 +120,33 @@ export class DurableChatSession implements ChatSession {
       const inbox = await harness.snapshot(InboxDoc, conversation.id, ctx);
       const interrupted = !!live?.run || !!inbox?.items.some(item => item.mode !== "write");
       // Startup policy is applied before submit/wait enables the scheduler.
-      await conversation.abort(ctx, { background: true });
-      if (interrupted) await conversation.commit(async tx => {
+      const recovery = await prepareRestart(harness);
+      if (interrupted || recovery.interrupted) await conversation.commit(async tx => {
         (await tx.doc(Recovery, conversation.id)).interruption = "The previous work was interrupted by a server restart. Please resend if needed.";
-        await tx.appendEntry(conversation.id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are historical context. Do not resume or repeat its tools automatically; respond only to the next user request.", timestamp: Date.now() }] });
+        await tx.appendEntry(conversation.id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are historical context. Do not resume or repeat its tools automatically; act only on new user requests or newly delivered background results; do not resume interrupted work.", timestamp: Date.now() }] });
       }, ctx);
       if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({ model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off" }, ctx);
+      // Registry/plugin configuration is rebuilt at startup; children share the current root selection.
+      const rootAgent = await conversation.agent(ctx);
+      await harness.commit(async tx => {
+        const ids = await subagentIds(tx);
+        for (const id of ids) await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
+          cwd: rootAgent.cwd, extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents"),
+          tools: rootAgent.tools.filter(item => item.name !== "subagent") });
+      }, ctx);
       this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
       this.inputEntries = await readPiInputs(harness, storage);
+      this.hiddenEntries = await harness.commit(async tx => {
+        const hidden = new Set<number>();
+        for (const [entry, requestId] of this.inputEntries) if (await internalInput(tx, requestId)) hidden.add(entry);
+        return hidden;
+      }, ctx);
       const through = stream.snapshot.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
       this.output.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot, true);
       stream.start(events => this.delivery = this.observe(events));
+      harness.resume();
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
         for (const waiter of this.deliveryWaiters) waiter.reject(this.observationError); this.deliveryWaiters.clear();
@@ -155,6 +181,11 @@ export class DurableChatSession implements ChatSession {
     for (const listener of this.listeners) { try { listener(event); } catch (error) { console.error("Piko output observer:", error); } }
   }
   subscribe(listener: (event: SessionEvent) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  subscribeBackgroundReplies(listener: (reply: BackgroundReply) => Promise<void>) {
+    this.replyListeners.add(listener);
+    for (const reply of this.pendingReplies.splice(0)) void listener(reply).catch(error => console.warn("Piko background delivery attachment failed.", error instanceof Error ? error.name : "unknown"));
+    return () => { this.replyListeners.delete(listener); };
+  }
   async submission(requestId: string) {
     const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, requestId), ctx);
     return record && receipt(record);
@@ -163,22 +194,32 @@ export class DurableChatSession implements ChatSession {
     const state = await this.harness.commit(async tx => {
       const entries = await entriesFromTransaction(tx);
       const inputs = await inputsFromStorage(this.storage);
+      const hidden = new Set<number>();
+      for (const [entry, requestId] of inputs) if (await internalInput(tx, requestId)) hidden.add(entry);
       const live = await tx.doc(LiveDoc, this.conversation.id);
-      const latest = (await this.storage.scanSubmissions({ conversationId: this.conversation.id, order: "descending" }, 1, undefined, ctx)).items[0];
+      let latest: SubmissionRecord | undefined;
+      let cursor: Cursor | undefined;
+      do {
+        const page = await this.storage.scanSubmissions({ conversationId: this.conversation.id, order: "descending" }, 100, cursor, ctx);
+        for (const input of page.items) if (!await internalInput(tx, input.requestId)) { latest = input; break; }
+        cursor = page.next;
+      } while (!latest && cursor);
       const inbox = await tx.doc(InboxDoc, this.conversation.id);
       const queued: import("../../shared/chat").Message[] = [];
       for (const item of inbox.items) if (item.mode !== "write") {
         const input = await this.storage.submission(item.id, ctx);
+        if (await internalInput(tx, input?.requestId)) continue;
         queued.push({ id: `input-${item.id}`, role: "user", content: messageText(item.content), createdAt: 0, ...(input?.requestId && { requestId: input.requestId }) });
       }
       const recovery = await tx.doc(Recovery, this.conversation.id);
-      return { entries, inputs, running: !!live.run, queued, latest, interruption: recovery.interruption };
+      return { entries, inputs, hidden, running: !!live.run || inbox.items.some(item => item.mode !== "write"), queued, latest, interruption: recovery.interruption };
     }, ctx);
-    this.entries = state.entries; this.inputEntries = state.inputs; this.liveBusy = state.running;
+    this.entries = state.entries; this.inputEntries = state.inputs; this.hiddenEntries = state.hidden; this.liveBusy = state.running;
     return { messages: [...this.messages, ...state.queued], busy: this.isStreaming, previousIds: Object.fromEntries(this.previousIds),
       ...(state.latest && { latest: receipt(state.latest) }), ...(state.interruption && { interruption: state.interruption }) };
   }
-  async submit(text: string, requestId: string) {
+  async submit(text: string, requestId: string, source: InputSource = { channel: "app" }) {
+    if (requestId.startsWith("piko:")) throw new Error("Reserved input identity.");
     const task = this.admission.catch(() => {}).then(async () => {
       if (this.disposed || this.changing || this.busy || this.stopping) throw new Error("Piko is busy with maintenance or stopping.");
       if (this.observationError) throw this.observationError;
@@ -188,7 +229,7 @@ export class DurableChatSession implements ChatSession {
       const agent = await this.conversation.agent(ctx);
       if (!agent.model) throw new Error("No model is configured. Add credentials and a profile in PIKO_HOME/config.");
       await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
-      await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; }, ctx);
+      await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; await registerInput(tx, requestId, source); }, ctx);
       const handle = await this.conversation.submit({ type: "input", content: text, requestId, whenBusy: "steer" }, ctx);
       this.liveBusy = true;
       const monitor = handle.wait(ctx).then(async settled => {
@@ -229,7 +270,7 @@ export class DurableChatSession implements ChatSession {
     const wasActive = this.isStreaming;
     this.stopping = true; this.emit({ type: "refresh" });
     try {
-      if (!commandId) { await this.conversation.abort(ctx, { background: true }); this.liveBusy = false; return wasActive; }
+      if (!commandId) { await this.conversation.abort(ctx); this.liveBusy = false; return wasActive; }
       // Capture original task IDs and withdraw original queued inputs atomically with the receipt.
       const target = await this.conversation.commit(async tx => {
         const saved = await tx.doc(StopReceipts, this.conversation.id, commandId, null);
@@ -237,7 +278,7 @@ export class DurableChatSession implements ChatSession {
         let cursor: Cursor | undefined; const tasks: number[] = [];
         do {
           const page = await tx.scanTasks({ conversationId: this.conversation.id }, 500, cursor);
-          for (const task of page.items) if (task.state.status !== "terminal") tasks.push(task.id);
+          for (const task of page.items) if (task.state.status !== "terminal" && !task.background) tasks.push(task.id);
           cursor = page.next;
         } while (cursor);
         const inbox = await tx.doc(InboxDoc, this.conversation.id);
@@ -283,7 +324,12 @@ export class DurableChatSession implements ChatSession {
     const model = await requireAvailableModel(this.config.models, profile);
     const thinking = profile.thinking ?? ("provider" in selection ? clampThinkingLevel(model, agent.thinkingLevel) : "off");
     if (!getSupportedThinkingLevels(model).includes(thinking)) throw new Error("This model does not support that thinking level.");
-    await this.conversation.configure({ model: { provider: model.provider, modelId: model.id }, thinkingLevel: thinking }, ctx);
+    await this.harness.commit(async tx => {
+      const ids = await subagentIds(tx);
+      const selection = { model: { provider: model.provider, modelId: model.id }, thinkingLevel: thinking };
+      await configureAgent(tx, this.conversation.id, selection);
+      for (const id of ids) await configureAgent(tx, id, selection);
+    }, ctx);
   }); }
   async describe(): Promise<RuntimeDescription> {
     const agent = await this.conversation.agent(ctx);

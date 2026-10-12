@@ -3,6 +3,7 @@ import { Bot, GrammyError } from "grammy";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { fixture, cleanup, waitUntil } from "./fixtures/durable";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { ConversationStore } from "../server/chat/conversations";
 import { TELEGRAM_COMMANDS, TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
 import { TelegramBot } from "../server/channels/telegram/bot";
@@ -257,4 +258,48 @@ test("callback authorization, source binding and stale thinking menus cannot cha
  await click("wrong-chat",{chatId:"99"});await waitUntil(()=>f.api.answers.some(a=>a.id==="wrong-chat"));expect(f.api.answers.at(-1)?.alert).toBe(true);
  await f.runtime.configure!({provider:"faux",model:"reasoning"});await click("stale");await waitUntil(()=>f.api.answers.some(a=>a.id==="stale"));expect(f.api.answers.at(-1)?.alert).toBe(true);
  expect((await f.runtime.describe!()).selection?.model).toBe("reasoning");expect((await f.store.snapshot()).messages).toEqual([]);
+});
+
+
+test("Telegram delivers only the main assistant reply after a background report arrives while idle",async()=>{
+ const f=await setup();const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
+ const route:import("@earendil-works/pi-ai/providers/faux").FauxResponseFactory=async context=>{
+  if(getCurrentSystemPrompt(context.messages).includes("You are a background workspace assistant delegated")){entered.resolve();await gate.promise;return fauxAssistantMessage("Private worker result");}
+  const last=JSON.stringify(context.messages.findLast(message=>message.role==="user")?.content);
+  if(last.includes("Internal result"))return fauxAssistantMessage("Main assistant summary");
+  if(context.messages.findLast(message=>message.role!=="system")?.role==="toolResult")return fauxAssistantMessage("Accepted");
+  return fauxAssistantMessage(fauxToolCall("subagent",{action:"spawn",task:"Check"}),{stopReason:"toolUse"});
+ };
+ f.faux.setResponses(Array.from({length:10},()=>route));await f.channel.handle(message);await entered.promise;
+ await waitUntil(()=>f.api.messages.get("1")?.text==="Accepted");await f.channel.drain(100); // deliberately detach the first delivery after main idle
+ expect((await f.store.snapshot()).busy).toBe(false);
+ // A fresh channel observes reports; the prior observer has completed, not merely remained attached.
+ const channel=new TelegramChannel({botId:"77",username:"piko_bot",userId:"42"},f.store,f.runtime,f.api,5);cleanup(async()=>{channel.stopAccepting();await channel.drain(100);});f.channel.stopAccepting();
+ gate.resolve();await waitUntil(()=>[...f.api.messages.values()].some(item=>item.text==="Main assistant summary"));
+ expect([...f.api.messages.values()].map(item=>item.text)).toEqual(["Accepted","Main assistant summary"]);
+ expect(f.api.writes.every(item=>item.rich)).toBe(true);
+ expect((await f.store.snapshot()).messages.filter(item=>item.role==="user").map(item=>item.content)).toEqual(["Task"]);
+});
+
+test("a silent main response to background findings produces no Telegram completion notification",async()=>{
+ const f=await setup();const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());let reported=false;
+ const route:import("@earendil-works/pi-ai/providers/faux").FauxResponseFactory=async context=>{
+  if(getCurrentSystemPrompt(context.messages).includes("You are a background workspace assistant delegated")){entered.resolve();await gate.promise;return fauxAssistantMessage("Private worker result");}
+  if(JSON.stringify(context.messages.findLast(message=>message.role==="user")?.content).includes("Internal result")){reported=true;return fauxAssistantMessage("");}
+  if(context.messages.findLast(message=>message.role!=="system")?.role==="toolResult")return fauxAssistantMessage("Accepted");
+  return fauxAssistantMessage(fauxToolCall("subagent",{action:"spawn",task:"Check"}),{stopReason:"toolUse"});
+ };
+ f.faux.setResponses(Array.from({length:10},()=>route));await f.channel.handle(message);await entered.promise;await waitUntil(()=>f.api.messages.size===1);gate.resolve();await waitUntil(()=>reported);await f.channel.drain(200);
+ expect([...f.api.messages.values()].map(item=>item.text)).toEqual(["Accepted"]);
+});
+
+test("RN background findings remain in the app without a Telegram push",async()=>{
+ const f=await setup();const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
+ const route:import("@earendil-works/pi-ai/providers/faux").FauxResponseFactory=async context=>{
+  if(getCurrentSystemPrompt(context.messages).includes("You are a background workspace assistant delegated")){entered.resolve();await gate.promise;return fauxAssistantMessage("Worker result");}
+  if(JSON.stringify(context.messages.findLast(message=>message.role==="user")?.content).includes("Internal result"))return fauxAssistantMessage("App summary");
+  if(context.messages.findLast(message=>message.role!=="system")?.role==="toolResult")return fauxAssistantMessage("Accepted");
+  return fauxAssistantMessage(fauxToolCall("subagent",{action:"spawn",task:"Check"}),{stopReason:"toolUse"});
+ };
+ f.faux.setResponses(Array.from({length:10},()=>route));await f.store.submit("Task","app-task");await entered.promise;gate.resolve();await waitUntil(async()=> (await f.store.snapshot()).messages.some(item=>item.content==="App summary"));expect(f.api.messages.size).toBe(0);
 });

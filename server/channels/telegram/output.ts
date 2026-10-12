@@ -101,15 +101,17 @@ export class TelegramMessageOutput {
 
 /** Conversation output is independent of the submission that enabled delivery. */
 export async function deliverConversation(store: ConversationStore, api: TelegramTransport, chatId: string,
-  signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS): Promise<void> {
+  signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS, awaitStart = false, finished: () => Promise<boolean> = async () => true): Promise<void> {
   const output = new TelegramMessageOutput(api, chatId);
   let conversation = await store.snapshot(); let dirty = true;
+  let started = !awaitStart || conversation.busy || conversation.messages.some(message => message.role === "assistant" && !known.has(message.id));
+  const startDeadline = Date.now() + 30000;
   const unsubscribe = await store.observe(event => {
-    if (event.type === "snapshot") { conversation = event.conversation; dirty = true; }
+    if (event.type === "snapshot") { conversation = event.conversation; dirty = true; if (conversation.busy) started = true; }
     else if (event.type === "message") {
       conversation = { ...conversation, messages: applyMessageEvent(conversation.messages, event),
         previousIds: event.previousId ? { ...conversation.previousIds, [event.message.id]: event.previousId } : conversation.previousIds };
-      dirty = true;
+      dirty = true; started = true;
     }
   });
   try {
@@ -124,7 +126,18 @@ export async function deliverConversation(store: ConversationStore, api: Telegra
             ...(snapshot.previousIds?.[message.id] && { previousId: snapshot.previousIds[message.id] }) });
         }
       }
-      if (!snapshot.busy && snapshot === conversation && !dirty) {
+      if ((!snapshot.busy && started || Date.now() > startDeadline && !started) && snapshot === conversation && !dirty) {
+        const drained = await finished();
+        if (snapshot !== conversation || dirty) continue;
+        if (!drained && Date.now() <= startDeadline) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs)); continue;
+        }
+        // The native receipt can settle before the coalesced feed publishes its final message.
+        const current = await store.snapshot();
+        const sameMessages = current.messages.length === snapshot.messages.length && current.messages.every((message, index) =>
+          message.id === snapshot.messages[index].id && message.content === snapshot.messages[index].content);
+        if (current.busy || !sameMessages || current.latest?.status !== snapshot.latest?.status) { conversation = current; dirty = true; continue; }
+        if (snapshot !== conversation || dirty) continue;
         if (snapshot.latest?.status === "unanswered") await api.send(chatId,
           snapshot.latest.error === "aborted" ? "Reply stopped." : "Reply failed. Check the Piko app or /recent for saved messages.", false);
         return;

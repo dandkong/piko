@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话。Side chat 的交互、记忆提取、后台调度、工具进度和产物管理尚未实现；未来会话复用同一个 Harness。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。Side chat 的交互、记忆提取、后台调度、工具进度和产物管理尚未实现；未来会话复用同一个 Harness。
 
 默认 PIKO_HOME 为 ~/.piko，workspace.path 或 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
@@ -62,7 +62,7 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 1. 启动取得锁、打开固定 state/durable，校验日志、root 与工作区关联。
 2. 完整损坏记录拒绝继续；剩余 doc 日志但 main.jsonl 缺失时明确报错。Durable 自行恢复残尾与未确认 sidecar 事务。
-3. 启用调度前 abort({background:true}) 撤销遗留执行作用域及待应用输入，不自动重跑。
+3. 启用调度前撤回遗留输入并取消不确定执行；仅保留已完成子任务的 Reporter report 阶段，随后 resume 回传结果，不自动重跑模型和工具。
 4. 有遗留生成或输入时写原生 piko.recovery 中断提示和隐藏上下文说明，不复制输入、不调用模型；下一次接纳清除提示。
 5. 已保存历史继续展示；尚未保存的文字不保证恢复。恢复不回滚工具的外部副作用。
 
@@ -74,6 +74,6 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 后续与验证
 
-原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；调度、投递 outbox、权限、side chat 交互及后台恢复策略尚未实现。
+原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；长期调度、投递 outbox、权限及 side chat 交互尚未实现；后台委派及已完成结果的回传恢复已接入。
 
 自动化覆盖初始化/路径、原生去重与重启、完整历史、压缩、残尾/损坏/缺失、中断撤回、插件/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。

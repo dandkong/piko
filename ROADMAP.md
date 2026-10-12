@@ -13,6 +13,7 @@
 - HTTP、工作区与 Telegram 已迁移到统一应用配置，支持 `piko.json`、共享 `.env` 和进程环境覆盖；启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
+- 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。
 - 菜单、通知、附件、Activity / Ideas / Goals / Apps 是禁用占位。
 
 ## 近期开发顺序
@@ -55,12 +56,13 @@
 
 运行时和 HTTP 返回 compacted/skipped/cancelled，skipped 附 no_summary/stale 原因，失败通过错误反馈；TG 采用对应英文提示。已通过原生摘要实际应用、空上下文跳过、reset 使摘要过时、停止摘要生成和生成失败测试，完整原生历史保持可见。后台自动压缩继续由 durable 处理，是否增加可见提醒仍待设计，不因修正主动命令结果就新增通知。
 
-### Side chat、委派与后台工作（运行时方向已确定，产品交互待设计）
+### 后台委派（已实现）与 Side chat（待设计）
 
-- 同一工作区采用一个 Harness 管理多个 conversation，共享存储、调度与 registry；模型、思考、工具、指导和 cwd 可按 conversation 配置。当前已采用一个 Harness/root 的固定存储；增加 conversation、会话入口和资源环境适配尚未实现。
-- 用户专题会话与助手委派会话区分所有权：独立 side chat 不随主会话停止；前台委派采用原生 owned conversation/child task，通过工具 `details.conversationId` 关联查看。新建和 fork 的上下文范围、结论回传方式仍需设计，不自动同步两边全部消息。
-- 后台工作复用原生 task、checkpoint、document、write/input submission 和 reporter；外部副作用使用幂等身份，结论回传使用稳定 requestId 去重。write 只写记录，input 会唤起模型，投递方式按产品场景选择。
-- 接入后台任务前拆分“停止当前工作”和“停止所有工作”，调整当前统一 `abort({ background: true })` 的范围；前台执行继续采用重启中断策略，哪些后台任务可恢复需明确后再启用。持久化 checkpoint 不保证外部副作用恰好执行一次。
+[后台子 Agent](docs/features/background-subagents.md) 已接入。主助手继续交流，子 Agent 共用配置、工具和工作区资源，仅禁止嵌套；一次委派新建一个持久化子会话，不继承主聊天历史；额外背景写入任务，不增加展示或完成通知。结果用可信内部 follow-up 交回主 Agent，由它决定回复或保持安静。TG 来源只投递主 Agent 的实际回复，RN 来源不额外推 TG。
+
+同一 Harness 管理 root 与 owned 子 conversation。原生 background Anchor/Reporter 独立于委派工具调用；模型选择同步，报告按原生回答 ID 去重，内部来源与取消元数据用原生 doc，不复制执行状态或正文。普通停止保留后台工作；明确子任务停止撤回尚未处理的报告。重启中断不确定执行，仅恢复已经完成结果的纯回传阶段。自动化已覆盖，真实模型/Bot 仍需验证。
+
+用户 side chat 的专题入口、背景共享与结论回传另行设计，不开放会话切换。长期产品调度、并发限额和可靠 outbox 待设计；持久化 checkpoint 不保证外部副作用恰好一次。
 
 ### 结构化状态与配置生效（待按功能接入）
 
@@ -74,7 +76,7 @@
 
 | 能力 | 核心结果与依赖 |
 | --- | --- |
-| Background Tasks | 复用 durable 原生任务、文档、独立 conversation 和去重投递；先明确停止范围与重启恢复策略，再接入产品调度和 UI |
+| Background Tasks | 复用 durable 原生任务、文档、独立 conversation 和去重投递；后台委派已接入；长期调度、并发限额和 UI 后续设计 |
 | Goals | 长期目标关联任务、检查点、时间线和产物 |
 | Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
 | Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |

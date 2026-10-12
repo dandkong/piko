@@ -27,10 +27,17 @@ export class TelegramChannel {
   private readonly tasks = new Set<Promise<void>>();
   private readonly deliveries = new Map<string, Promise<void>>();
   private readonly menus: TelegramMenus;
+  private pendingReports = new Map<string, Set<string>>();
+  private unsubscribeReplies?: () => void;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
     private readonly api: TelegramTransport, private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
+    this.track(conversations.subscribeBackgroundReplies(async reply => {
+      if (!this.accepting || reply.source.channel !== "telegram" || reply.source.botId !== this.identity.botId || reply.source.chatId !== this.identity.userId) return;
+      const pending = this.pendingReports.get(reply.source.chatId) ?? new Set<string>(); pending.add(reply.requestId); this.pendingReports.set(reply.source.chatId, pending);
+      this.startDelivery(reply.source.chatId, new Set(reply.knownMessageIds));
+    }).then(unsubscribe => { if (this.accepting) this.unsubscribeReplies = unsubscribe; else unsubscribe(); }));
   }
 
   handleCallback(callback: TelegramCallback): void {
@@ -64,20 +71,31 @@ export class TelegramChannel {
     try { normalizeMessage(message.text); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
     try {
       const baseline = await this.conversations.snapshot();
-      const result = await this.conversations.submit(message.text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`);
+      const result = await this.conversations.submit(message.text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId });
       if (result.duplicate) return;
-      if (!this.deliveries.has(message.chatId)) {
-        const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
-        const task = deliverConversation(this.conversations, this.api, message.chatId, this.controller.signal, known, this.intervalMs)
-          .finally(() => { if (this.deliveries.get(message.chatId) === task) this.deliveries.delete(message.chatId); });
-        this.deliveries.set(message.chatId, task); this.track(task);
-      }
+      const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
+      this.startDelivery(message.chatId, known);
     } catch (error) {
       if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy. Try again when it's ready."); return; }
       throw error;
     }
   }
 
+  private startDelivery(chatId: string, known: Set<string>) {
+    if (this.deliveries.has(chatId)) return;
+    const task = deliverConversation(this.conversations, this.api, chatId, this.controller.signal, known, this.intervalMs, true, async () => {
+      const pending = this.pendingReports.get(chatId);
+      if (!pending?.size) return true;
+      const session = await this.conversations.get();
+      for (const id of [...pending]) {
+        const receipt = await session.submission(id);
+        if (receipt?.status === "done" || receipt?.status === "unanswered") pending.delete(id);
+      }
+      return pending.size === 0;
+    })
+      .finally(() => { if (this.deliveries.get(chatId) === task) this.deliveries.delete(chatId); this.pendingReports.delete(chatId); });
+    this.deliveries.set(chatId, task); this.track(task);
+  }
   private async command(message: TelegramMessage, command: string): Promise<void> {
     try { await this.executeCommand(message, command); }
     catch (error) {
@@ -137,7 +155,7 @@ export class TelegramChannel {
     void task.then(() => this.tasks.delete(task));
   }
 
-  stopAccepting(): void { this.accepting = false; }
+  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); }
 
   async drain(timeoutMs = 3000): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;

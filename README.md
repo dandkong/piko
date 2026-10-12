@@ -4,7 +4,7 @@
 
 Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具。
+Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具，并支持后台子 Agent 委派。
 
 ## 文档入口
 
@@ -15,6 +15,7 @@ Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun �
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [Durable 配置与插件](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能、插件与运行时控制 API |
+| [后台子 Agent](docs/features/background-subagents.md) | 共享资源、持久化子会话、私有回传与停止/恢复范围 |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
 | [Linux 正式入口](docs/features/linux-deployment.md) | Web + API/SSE + TG 单进程、构建和 systemd 部署 |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
@@ -177,8 +178,9 @@ bun run build:web
 ## 当前边界
 
 - 工作区和唯一主会话已持久化，Pi 上下文使用原生 JSONL 与压缩机制；side chat 将复用同一 Harness 的 conversation，交互尚未实现。
+- 后台子 Agent 共用工作区、模型、工具、插件和技能；禁止嵌套，不增加任务展示。一次委派一个持久化子会话，结果私下交回主 Agent，由它决定回复或保持安静；普通停止不取消独立子工作。
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过会话停止接口终止当前工作，也可取消手动压缩。
-- Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 128 条事件只保存在内存，过期或重启后加载快照。同 `requestId` 的重复提交由 Durable 去重，重启后仍不会重复执行；启动撤销遗留工作并显示中断提示，不自动重跑。
+- Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 最近 128 条事件只保存在内存，过期或重启后加载快照。同 `requestId` 的重复提交由 Durable 去重，重启后仍不会重复执行；启动撤销不确定工作并显示中断提示，不自动重跑；已完成子任务的纯回传阶段可以恢复。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。原生 inbox 中尚未应用的输入会在启动时撤回，用户需要主动重新发送；不从另一套日志重建正文。
 - JSON 模型配置、思考强度、模型预设、durable 插件和手动压缩已接入；服务端提供模型/思考选择及压缩 API，TG 已提供模型/思考按钮与压缩命令，配置及插件代码修改后重启生效，RN 配置管理界面尚未实现。Durable 插件使用 `defineExtension`，不直接兼容 coding-agent CLI 扩展。
 - durable 1.1.0 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。

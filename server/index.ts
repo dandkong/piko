@@ -21,6 +21,7 @@ const runtime = createPiRuntime(paths);
 // Open and validate native state, withdrawing inherited work before accepting requests.
 await runtime.createSession();
 const conversations = new ConversationStore(runtime);
+await conversations.get();
 const server = Bun.serve({
   development: false,
   hostname: config.hostname,

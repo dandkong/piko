@@ -227,3 +227,7 @@ export default defineExtension({
 read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。附件、RN 配置管理、工具轨迹、任务和插件管理 UI 尚未接入。
 
 验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置校验、插件/doc 持久化与辅助文件修改后重启、历史压缩与重启去重；真机后台与真实长对话仍需使用验证。
+
+## 后台子 Agent
+
+主 Agent 的 subagent 工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、用户插件、指导和技能共用，只移除委派工具。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见 [后台子 Agent](background-subagents.md)。

@@ -31,7 +31,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。Side chat 将来在同一 Harness 内增加 conversation，产品交互尚未实现。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置和资源，仅移除嵌套委派；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md)。
 
 默认目录在后端机器 `~/.piko`，独立于源码。`server/config.ts` 按默认值 < config/piko.json < config/.env < 进程环境合并、转换、校验后注入；PIKO_HOME 仅由进程环境定位。模型文件独立，不继承个人 Pi CLI。详细字段见 [应用配置](features/application-config.md)。
 
@@ -81,12 +81,13 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 | 对象 | 来源与用途 |
 | --- | --- |
 | Workspace | 应用配置中的规范化路径；原生 Agent.cwd 关联工作区 |
-| Conversation | Harness 的 root；未来 side chat 复用原生关系 |
+| Conversation | Harness 的 root 和 owned 后台子会话；未来 side chat 复用原生关系 |
 | Submission | 原生 requestId 去重；queued / placed / done / unanswered |
 | Task、InboxDoc、LiveDoc | 原生执行、待应用输入和当前生成状态 |
 | Message | 完整原始 entries 的展示投影，不另存正文 |
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
+| piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
 | StreamEvent | 当前进程 epoch、递增 sequence；最多 128 条内存重放 |
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
@@ -112,7 +113,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 接纳串行，模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
 
-停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
+停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
 原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，不再双写 SQL 或另发 Piko 执行终态。watchEvents 将消息、条目和执行变化转换为普通跨端事件；SDK 事件不直接进入 UI。消息更新最多 50ms 合并，状态变化发送完整 snapshot；积压时从原始 entries 校正。工具、思考和自动压缩的展示尚未接入。
 
@@ -122,13 +123,13 @@ SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标�
 
 启动先取得锁、打开固定原生存储、校验 root/cwd，再接收 HTTP/TG。完整损坏记录或剩余 doc 日志缺少 main.jsonl 时拒绝继续；Durable 原生处理残尾及 sidecar 恢复。整个目录被移除视为新会话，无另一个数据库可恢复正文。
 
-启用调度前调用原生 abort({background:true}) 撤销遗留执行和未应用输入，不自动重放不确定操作。有遗留生成或输入时，将中断提示存入 piko.recovery 并添加隐藏上下文说明，不触发模型；已保存历史继续展示。尚未保存的流式文字不承诺恢复，不回滚外部工具副作用。
+启用调度前撤回遗留输入并用原生 abortTask 取消不确定执行；保留已经完成回答的 Reporter report 阶段，随后 resume 回传结果，不重放主/子模型或工具执行。有遗留生成或输入时，将中断提示存入 piko.recovery 并添加隐藏上下文说明，不触发模型；已保存历史继续展示。尚未保存的流式文字不承诺恢复，不回滚外部工具副作用。
 
-退出停止接纳和 polling，取消原生任务、有界收尾 TG 投递，关闭订阅、Harness/storage 并释放锁。备份前停止 API，复制整个 PIKO_HOME 和单独指定的工作区；main 与 doc 日志成套保存，恢复保留工作区绝对路径。当前 UI 全量历史读取，增量加载按规模再开发。
+退出停止接纳和 polling，取消主会话当前非 background 工作、有界收尾 TG 投递，关闭订阅、Harness/storage 并释放锁。备份前停止 API，复制整个 PIKO_HOME 和单独指定的工作区；main 与 doc 日志成套保存，恢复保留工作区绝对路径。当前 UI 全量历史读取，增量加载按规模再开发。
 
 ## Telegram 通道
 
-TG 与 RN 共用 ConversationStore 和 root。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；持久化接纳成功才确认 polling update，重复输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
+TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。TG 来源可重新开启投递观察，RN 来源不额外推 TG。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；持久化接纳成功才确认 polling update，重复输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
 
 RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每条助手消息有独立 Rich Markdown 消息，条内流式编辑；补充输入不重发旧回复。TG 加入 RN 正在执行的工作只观察未完成及后续消息，纯 RN 工作默认不推送 TG。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
 

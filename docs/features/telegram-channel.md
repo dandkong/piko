@@ -100,3 +100,7 @@ TG 启用失败或运行中失联报告到后端日志，并保留 RN 使用能�
 使用临时目录、原生 faux provider 和本机模拟 Bot API，无真实 Bot 凭据或付费模型调用。自动化覆盖鉴权、原生提交重投、RN/TG steer、独立助手消息、RN-only 与 TG 加入、旧停止命令、模型/思考菜单、压缩取消、流式首条/编辑、富文本降级与 Unicode 拆分、429/认证分类，以及 polling 接纳后确认和 webhook 拒绝。
 
 会话持久化、重启中断、HTTP/SSE 游标恢复在 persistence、server、transport 等测试覆盖。真实 Telegram 客户端、网络限流和 Android/iOS 前后台体验需要设备验证；不能以模拟测试代替。媒体、工具展示、持久投递 outbox 和主动通知仍未实现。
+
+## 后台委派回复
+
+子 Agent 不增加 TG 命令、工具展示或完成通知。TG 输入发起的后台工作记录经过验证的 Bot/chat 来源；完成结果私下 follow-up 给主 Agent，必要时重新观察空闲后的 root 回复。只投递主 Agent 实际生成的文字，保持 Rich Markdown 与按助手消息独立发送；主 Agent 保持安静则没有通知，RN 来源不额外推 TG。普通 /stop 保留独立子任务，明确取消子工作由主 Agent 的委派工具处理。平台发送状态仍在内存，重启不保证补发，详情见 [后台子 Agent](background-subagents.md)。

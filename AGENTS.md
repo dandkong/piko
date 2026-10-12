@@ -18,6 +18,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 ## 已确定的方向
 
 - 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。
+- 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、工作区资源和工具，仅移除嵌套委派；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
 - side chat 后续复用同一 Harness 的原生 conversation 与关系，交互、上下文共享和结论回传仍待设计。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
 - 用户技能采用 `.agents/skills/<name>/SKILL.md`，也可放在 `PIKO_HOME/skills`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。
