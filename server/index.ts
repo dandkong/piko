@@ -5,7 +5,12 @@ import { createPiRuntime } from "./runtime/pi";
 import { initializeWorkspace } from "./domain/workspace";
 import { acquireBackendLock } from "./domain/backend-lock";
 import { TelegramBot } from "./channels/telegram/bot";
+import { resolve } from "node:path";
+import { createWebHandler } from "./web";
 
+// A production entry serves the prebuilt website; API development remains independent of Expo exports.
+const web = process.argv.includes("--web")
+  ? await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web")) : undefined;
 const piko = loadPikoConfig();
 for (const warning of piko.warnings) console.warn(warning);
 const config = piko.http;
@@ -17,11 +22,12 @@ const runtime = createPiRuntime(paths);
 await runtime.createSession();
 const conversations = new ConversationStore(runtime);
 const server = Bun.serve({
+  development: false,
   hostname: config.hostname,
   port: config.port,
   // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
   idleTimeout: 60,
-  fetch: createApp({ config, runtime, conversations }),
+  fetch: createApp({ config, runtime, conversations, web }),
 });
 
 let telegram: TelegramBot | undefined;
@@ -31,6 +37,7 @@ if (piko.channels.telegram.enabled) {
 }
 
 console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
+if (web) console.log("Piko Web is available at the same address.");
 console.log(`pi-durable runtime; model configuration: ${paths.home}/config; read, write, edit and bash are enabled.`);
 console.log(`Piko workspace: ${paths.workspace}`);
 console.log(`Piko main conversation: root; state: ${paths.state}`);

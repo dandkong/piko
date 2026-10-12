@@ -1,7 +1,8 @@
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
 
-const DEFAULT_API_URL = Platform.OS === "android" ? "http://10.0.2.2:8787" : "http://127.0.0.1:8787";
+const DEFAULT_API_URL = Platform.OS === "web" && !__DEV__ ? ""
+  : Platform.OS === "android" ? "http://10.0.2.2:8787" : "http://127.0.0.1:8787";
 export const API_URL = (process.env.EXPO_PUBLIC_PIKO_API_URL || DEFAULT_API_URL).replace(/\/$/, "");
 
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {

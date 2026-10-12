@@ -1,0 +1,23 @@
+[Unit]
+Description=Piko Web, API and Telegram
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=piko
+Group=piko
+WorkingDirectory=/opt/piko
+ExecStart=/home/piko/.bun/bin/bun server/index.ts --web
+Environment=NODE_ENV=production
+Environment=PIKO_HOME=/var/lib/piko
+StateDirectory=piko
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "bun server/index.ts --web",
+    "start:api": "bun server/index.ts",
     "dev": "bun scripts/dev.ts",
     "dev:api": "bun --watch server/index.ts",
     "dev:mobile": "bun run --cwd apps/mobile start",

@@ -6,13 +6,14 @@ import { RuntimeBusyError } from "./chat/conversations";
 import { chatStream } from "./chat/stream";
 import { json, withCors } from "./http";
 import { runtimeRequest } from "./runtime/http";
-export function createApp({ config, runtime, conversations }: { config: ServerConfig; runtime: ChatRuntime; conversations: ConversationStore }) {
+import type { WebHandler } from "./web";
+export function createApp({ config, runtime, conversations, web }: { config: ServerConfig; runtime: ChatRuntime; conversations: ConversationStore; web?: WebHandler }) {
   return async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
     const origin = request.headers.get("origin");
-    if (origin && !config.allowedOrigins.has(origin)) return new Response("Origin not allowed.", { status: 403 });
+    if (origin && origin !== url.origin && !config.allowedOrigins.has(origin)) return new Response("Origin not allowed.", { status: 403 });
     const reply = (response: Response) => withCors(request, response);
     if (request.method === "OPTIONS") return reply(new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Accept, Content-Type" } }));
-    const url = new URL(request.url);
     try {
       if (url.pathname.startsWith("/api/runtime")) {
         const response = await runtimeRequest(request, runtime, conversations.isStreaming(), operation => conversations.changeRuntime(operation), id => conversations.stop(id));
@@ -44,7 +45,8 @@ export function createApp({ config, runtime, conversations }: { config: ServerCo
         if (typeof input.message !== "string" || !input.message.trim() || input.message.length > MAX_MESSAGE_LENGTH) return reply(json({ error: "Message must contain 1–12,000 characters." }, 422));
         return reply(json(await conversations.submit(input.message, input.requestId)));
       }
-      return reply(url.pathname.startsWith("/api/") ? json({ error: "Not found." }, 404) : new Response("Piko API is running."));
+      if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return reply(json({ error: "Not found." }, 404));
+      return reply(web ? await web(request) : new Response("Piko API is running."));
     } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "Request failed." }, error instanceof RuntimeBusyError ? 409 : 503)); }
   };
 }

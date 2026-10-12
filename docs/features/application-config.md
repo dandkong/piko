@@ -82,3 +82,7 @@ JSON 语法、核心字段类型、未知核心字段、HTTP 和路径配置错�
 已有环境变量继续按表映射。原先仅凭 token 启动 TG 的方式改为显式启用，需补充 `PIKO_TELEGRAM_ENABLED=true` 或修改 `piko.json`。这次改动不修改数据库 schema、模型凭据格式或原生会话日志。
 
 自动化覆盖默认值与读取副作用、文件/env 优先级、两种输入的校验错误一致、高优先级修正无效字段、空覆盖/未知字段、路径边界、严格参数解析、凭据引用、通道错误隔离、不覆盖用户文件和共享 `.env` 的模型请求。
+
+## 正式 Web 部署
+
+正式 `bun run start` 沿用同一 HTTP、工作区和 Telegram 配置，固定托管 apps/mobile/dist/web；Web 构建默认同源 /api，同源请求无需额外 CORS 配置，跨源仍需白名单。HTTPS 代理终止时按实际公网 Origin 填 http.corsOrigins；后端不从代理头推断可信来源。开发 Web 与原生端默认地址不变，EXPO_PUBLIC_PIKO_API_URL 是构建时的客户端覆盖，不属于运行时 piko.json。详细步骤见 [Linux 正式入口](linux-deployment.md)。

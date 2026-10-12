@@ -16,6 +16,7 @@ Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun �
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [Durable 配置与插件](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能、插件与运行时控制 API |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
+| [Linux 正式入口](docs/features/linux-deployment.md) | Web + API/SSE + TG 单进程、构建和 systemd 部署 |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
 
 启动与验证以本文为准。文档区分已实现、已确定但未实现和待设计；目前是具备长期工作区和持久主会话的文本聊天原型。
@@ -81,7 +82,7 @@ bun run dev:api
 bun run dev:mobile
 ```
 
-默认 API 地址是 Android Emulator 的 `http://10.0.2.2:8787`，Web 和 iOS Simulator 的 `http://127.0.0.1:8787`。Android Emulator 使用 Expo Go 时，保持 Expo 和 API 同时运行。独立启动 API 时需要手动配置 Web 的 `PIKO_CORS_ORIGINS`；使用其他 Web 地址或端口时，加入其准确的 Origin 并重启 API。
+默认 API 地址是 Android Emulator 的 `http://10.0.2.2:8787`，开发 Web 和 iOS Simulator 的 `http://127.0.0.1:8787`。Android Emulator 使用 Expo Go 时，保持 Expo 和 API 同时运行。独立启动 API 时需要手动配置 Web 的 `PIKO_CORS_ORIGINS`；使用其他 Web 地址或端口时，加入其准确的 Origin 并重启 API。
 
 ### Android 本机构建
 
@@ -147,6 +148,19 @@ bun run dev:api
 同一任务内的多条助手文字回复在 TG 按原生消息分别发送，每条内部保持流式编辑；与 RN 历史分条对应，暂不展示工具。
 
 通道错误不关闭 RN。身份、模型和工作区配置在后端，token 不提交到仓库；附件、群聊、语音和后台推送尚未接入。发送失败或后端重启可能漏发 TG 回复，原生历史可在 RN 或 `/recent` 查询。详见 [通道说明](docs/features/telegram-channel.md)。
+
+## Linux 正式运行
+
+在源码根目录安装两端依赖后：
+
+```bash
+bun run build:web
+PIKO_HOME=/home/your-user/.piko bun run start
+```
+
+同一端口提供网页、API/SSE 和已启用的 Telegram，默认 http://127.0.0.1:8787。正式 Web 默认同源访问 API，无需写入服务器地址；start 不启动 Expo、不启用 watch、不自动构建。仅 API/TG 可用 `bun run start:api`。
+
+[Linux 部署说明](docs/features/linux-deployment.md) 包含配置、路径、访问及 systemd；模板在 [deploy/piko.service](deploy/piko.service)，先按实际账号与路径调整。当前 API 没有登录验证，对外入口须通过受保护的网络或认证代理。
 
 ## 检查与导出
 
