@@ -38,6 +38,8 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 正式 Web 默认使用同源 /api，同一构建可从 localhost、局域网或域名访问，无需写入服务器地址。开发 Web 仍默认使用 127.0.0.1:8787，Android/iOS 默认地址不变。EXPO_PUBLIC_PIKO_API_URL 可在构建前覆盖；构建后的服务环境不会改写网页地址，同源部署不要沿用开发时的该变量。
 
+生产导出包含 PWA manifest、水豚应用图标及 iOS 主屏幕元数据。iPhone Safari 打开 HTTPS 地址后选择“分享 → 添加到主屏幕”，启动时以 standalone 独立窗口显示。当前未注册 Service Worker，不支持离线访问，也避免缓存旧客户端或 API/SSE 响应。
+
 静态服务只读取导出目录，拒绝隐藏文件、非法路径和越界链接。HTML 与无指纹文件要求重新验证，带内容指纹的资源可长期缓存。未知 API 与缺失脚本/图片返回 404，浏览器页面导航才使用 SPA fallback。Piko 不过滤 Origin，跨源浏览器请求会获得 CORS 响应头；部署访问控制由反向代理或网络边界负责。
 
 ## systemd

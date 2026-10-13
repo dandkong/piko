@@ -6,7 +6,18 @@
     "version": "0.1.0",
     "platforms": ["ios", "android", "web"],
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/capybara.png",
+      "name": "Piko",
+      "shortName": "Piko",
+      "lang": "zh-CN",
+      "description": "Piko 个人助理",
+      "startUrl": "/",
+      "scope": "/",
+      "display": "standalone",
+      "orientation": "portrait",
+      "themeColor": "#FCFCFC",
+      "backgroundColor": "#FCFCFC"
     },
     "icon": "./assets/capybara.png",
     "orientation": "portrait",
