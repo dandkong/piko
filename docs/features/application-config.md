@@ -67,7 +67,7 @@ PIKO_TELEGRAM_BOT_TOKEN="填写 BotFather 提供的 token"
 
 布尔值 `false` 是明确覆盖，不按字符串是否非空判断。空端口、空工作区、空主机或启用通道的空凭据均视为错误。
 
-`.env` 支持注释、可选 `export`、单/双引号，不执行 Shell、不展开命令或变量；Windows 路径建议用单引号。进程中未定义的变量不会抹掉本地值。该文件不注入 Expo 或全局进程环境。
+`.env` 支持注释、可选 `export`、单/双引号，不执行 Shell、不展开命令或变量；Windows 路径建议用单引号。进程中未定义的变量不会抹掉本地值。该文件不注入 Expo 或全局进程环境。内置搜索同样复用这个环境读取入口，只读取 `BRAVE_SEARCH_API_KEY`，进程值覆盖本地值；不在 piko.json 新增供应商/Key 字段，不随产品发布凭据，见 [网络工具](web-tools.md)。
 
 `bun run dev`、`dev:web`、`dev:android` 使用同一个配置入口检查 API 地址与端口。开发 Web 与 API 使用不同端口时，Piko 返回浏览器所需的 CORS 响应头，不要求维护 Origin 白名单。客户端 `EXPO_PUBLIC_PIKO_API_URL` 仍由 Expo 的环境配置提供，修改 API 地址或端口时须相应设置客户端地址。
 

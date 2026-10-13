@@ -4,7 +4,7 @@
 
 Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具，并支持后台子 Agent 委派。
+Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具、内置 web_search/web_extract，并支持后台子 Agent 委派。搜索凭据由部署者在后端环境配置，日常使用无需选择服务商。
 
 ## 文档入口
 
@@ -15,6 +15,7 @@ Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun �
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [Durable 配置与插件](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能、插件与运行时控制 API |
+| [内置搜索与网页提取](docs/features/web-tools.md) | 搜索/提取契约、后端环境凭据、能力来源、取消与请求限制 |
 | [后台子 Agent](docs/features/background-subagents.md) | 共享资源、持久化子会话、私有回传与停止/恢复范围 |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
 | [Linux 正式入口](docs/features/linux-deployment.md) | Web + API/SSE + TG 单进程、构建和 systemd 部署 |
@@ -102,6 +103,7 @@ bun run android
 
 - Piko 应用配置集中在 `PIKO_HOME/config/piko.json`，首次启动补齐默认文件。HTTP、工作区和通道配置统一加载；优先级为默认值 < 配置文件 < `config/.env` < 进程环境变量，修改后重启 API。字段、env 映射和示例见 [应用配置](docs/features/application-config.md)。
 - `PIKO_HOST`、`PIKO_PORT` 覆盖 API 监听地址与端口，默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
+- 后端 `BRAVE_SEARCH_API_KEY` 启用内置 `web_search`，可由进程环境或私有 `PIKO_HOME/config/.env` 提供；修改后重启 API。凭据不进入工具参数、前端或发布包，缺失不阻止启动和网页提取。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
 - `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。

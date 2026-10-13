@@ -20,7 +20,8 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/chat/ | 文本校验、接纳与管理操作互斥、会话观察和内存重放 |
 | server/channels/telegram/ | 私聊身份、命令、轮询确认与回复呈现 |
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
-| server/runtime/ | Durable/pi-ai 适配、配置、插件、资源与原生历史投影 |
+| server/runtime/ | Durable/pi-ai 适配、配置、插件、内置工具注册、资源与原生历史投影 |
+| server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 | tests/ | 协议、原生状态、并发、恢复、配置与通道验证 |
@@ -74,6 +75,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 - 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
 - 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
+- web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据区分 builtin/extension 与配置状态，用户插件不能注册同名网络工具；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
 - 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.1.0 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。
 
 ## 原生状态与历史投影

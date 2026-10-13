@@ -9,6 +9,7 @@
 - Bun 托管 pi-durable 1.1.0 + pi-ai 1.1.0，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
 - 服务端唯一主会话，Durable 原生 JSONL 是唯一会话内容来源；UI 投影完整 conversation entries，Piko 不使用 SQLite 或 Run；原生 submission/inbox/live 管理去重和执行，重启撤销遗留工作并显示中断提示，流式片段不另行持久化。
 - 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建技能和执行脚本，全局扩展不自动加载。
+- 内置 web_search/web_extract 已接入；搜索保持 query/maxResults 参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单区分内置/用户扩展及配置状态，工作区技能/脚本不自动成为内置能力。[网络工具](docs/features/web-tools.md)。
 - 独立 JSON 模型/凭据/预设配置、思考强度、durable 插件及选择/压缩/取消 API 已接入；TG 增加模型/思考按钮菜单、压缩与详细状态，共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。RN 模型配置界面、图片读取尚未接入。
 - HTTP、工作区与 Telegram 已迁移到统一应用配置，支持 `piko.json`、共享 `.env` 和进程环境覆盖；启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。

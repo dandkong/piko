@@ -15,7 +15,7 @@ test("durable runs coding tools, refreshes skills, and persists native tool resu
   const events: SessionEvent[] = []; session.subscribe(event => events.push(event));
   f.faux.setResponses([
     context => {
-      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "subagent", "write"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "subagent", "web_extract", "web_search", "write"]);
       expect(getCurrentSystemPrompt(context.messages)).toContain("<available_skills>");
       return fauxAssistantMessage([
         fauxToolCall("write", { path: "artifacts/probe.txt", content: "hello from Piko" }),

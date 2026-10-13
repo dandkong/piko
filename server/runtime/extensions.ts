@@ -192,6 +192,7 @@ async function compile(
 export async function installWorkspacePlugins(
   cwd: string,
   registry: Registry,
+  reservedToolNames: readonly string[] = [],
 ): Promise<WorkspaceRegistry> {
   const entries = await discover(cwd);
   const plugins: WorkspacePlugin[] = [];
@@ -240,6 +241,9 @@ export async function installWorkspacePlugins(
           `Duplicate or reserved extension name ${extension.name} in ${entry}`,
         );
       names.add(extension.name);
+      for (const tool of extension.tools ?? []) if (reservedToolNames.includes(tool.name)) {
+        throw new Error(`Plugin ${entry} cannot replace reserved built-in tool ${tool.name}.`);
+      }
       try {
         registry.install(extension);
       } catch (error) {

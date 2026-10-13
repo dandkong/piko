@@ -16,7 +16,7 @@ test("a durable background job shares resources, cannot nest, and reports privat
   let reports = 0;
   const route: FauxResponseFactory = async context => {
     if (worker(context.messages)) {
-      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "web_extract", "web_search", "write"]);
       expect(getCurrentSystemPrompt(context.messages)).toContain("MEMORY.md");
       expect(lastText(context.messages)).toContain("Research"); entered.resolve(); await gate.promise;
       return fauxAssistantMessage("Worker findings");
@@ -271,7 +271,7 @@ test("a new child receives only its task and shared resources and executes tools
       expect(context.messages.some(message => JSON.stringify(message).includes("再派一个30秒的任务"))).toBe(false);
       expect(getCurrentSystemPrompt(context.messages)).toContain("AGENTS.md");
       expect(getCurrentSystemPrompt(context.messages)).toContain("MEMORY.md");
-      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "write"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name).sort()).toEqual(["bash", "edit", "read", "web_extract", "web_search", "write"]);
       return fauxAssistantMessage(fauxToolCall("write", { path: "child-demo.txt", content: "done" }), { stopReason: "toolUse" });
     }
     if (lastText(context.messages).includes("Internal result")) return fauxAssistantMessage("Verified child report");

@@ -216,6 +216,8 @@ export default defineExtension({
 });
 ```
 
+宿主内置网络工具为 `piko-web` extension，不从用户插件目录发现，不出现在 plugins 清单。`GET /api/runtime` 的 tools 清单区分 builtin/extension 及配置状态；用户插件不能注册同名 `web_search`、`web_extract`。网络凭据、契约和限制见 [内置网络工具](web-tools.md)。
+
 重启后模型可使用这个工具，状态由会话 doc 日志持久化，重启后读取同一个 doc 会拿到已有值。文档落盘由 durable 管理，不需要自己创建第二份状态 JSON。工具定义不意味着 Piko 已有项目笔记产品界面。
 
 插件可定义 tools、sections、hooks、wraps、tasks；插件代码按本机权限执行，第三方依赖在插件目录安装。Bun 编译保留源文件 import.meta 路径，宿主 Pi/Chord/TypeBox 共用实例；启动时编译本地传递依赖，缓存放 state/tmp。重复/保留扩展名或非法入口会阻止运行时初始化。插件代码修改后重启生效。

@@ -18,6 +18,8 @@ import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, type WorkspaceModelConfig } from "./model-config";
 import { installWorkspacePlugins, type WorkspaceRegistry } from "./extensions";
+import { readConfigEnvironment } from "../config/files";
+import { BUILTIN_WEB_TOOL_NAMES, createWebTools } from "./web-tools";
 import { WorkspaceExecutionEnv } from "./execution-env";
 
 export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
@@ -28,12 +30,15 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
     ...(record.status === "unanswered" && { error: typeof record.detail === "string" ? record.detail : record.reason }) };
 }
 
-async function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): Promise<WorkspaceRegistry> {
+type SessionRegistry = WorkspaceRegistry & { searchConfigured: boolean };
+async function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): Promise<SessionRegistry> {
   const value = createRegistry();
+  const web = createWebTools(readConfigEnvironment(paths.home));
   value.install(CodingTools);
   value.install(createWorkspaceResources(paths));
+  value.install(web.extension);
   value.install(subagents);
-  return installWorkspacePlugins(paths.home, value);
+  return { ...await installWorkspacePlugins(paths.home, value, BUILTIN_WEB_TOOL_NAMES), searchConfigured: web.searchConfigured };
 }
 
 /** One native Harness and root conversation per PIKO_HOME. UI reads raw entries; provider context stays durable's responsibility. */
@@ -42,7 +47,7 @@ export class DurableChatSession implements ChatSession {
   private storage!: Storage;
   private conversation!: Conversation;
   private config!: WorkspaceModelConfig;
-  private extensions!: WorkspaceRegistry;
+  private extensions!: SessionRegistry;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
   private eventStream!: AgentEventStream;
@@ -93,7 +98,7 @@ export class DurableChatSession implements ChatSession {
     catch (error) { await extensions.dispose(); throw error; }
   }
 
-  private async open(config: WorkspaceModelConfig, extensions: WorkspaceRegistry): Promise<void> {
+  private async open(config: WorkspaceModelConfig, extensions: SessionRegistry): Promise<void> {
     const directory = sessionDirectory(runtimePaths(this.paths.home).sessions);
     const persisted = existsSync(join(directory, "main.jsonl"));
     const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
@@ -334,7 +339,14 @@ export class DurableChatSession implements ChatSession {
   async describe(): Promise<RuntimeDescription> {
     const agent = await this.conversation.agent(ctx);
     const resources = await loadWorkspaceResources(this.paths);
-    return { runtime: "pi-durable", ...(agent.model && { selection: { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } }),
+    const pluginNames = new Set(this.extensions.plugins.map(plugin => plugin.name));
+    const owners = new Map(this.extensions.registry.snapshot().tools()
+      .filter(item => agent.extensions.some(extension => extension.name === item.extension.name))
+      .map(item => [item.tool.name, item.extension.name]));
+    const tools = agent.tools.map(tool => ({ name: tool.name,
+      source: pluginNames.has(owners.get(tool.name) ?? "") ? "extension" as const : "builtin" as const,
+      status: tool.name === "web_search" && !this.extensions.searchConfigured ? "unconfigured" as const : "available" as const }));
+    return { runtime: "pi-durable", tools, ...(agent.model && { selection: { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } }),
       models: (await this.config.models.getAvailable()).map(model => ({ provider: model.provider, id: model.id, name: model.name,
         imageInput: model.input.includes("image"), contextWindow: model.contextWindow, thinkingLevels: getSupportedThinkingLevels(model) as ModelThinkingLevel[] })),
       profiles: this.config.profiles, skills: resources.skills, plugins: this.extensions.plugins };

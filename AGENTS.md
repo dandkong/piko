@@ -32,7 +32,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
 - `shared/` 保存跨端契约，不依赖 React Native、Bun 或 Pi SDK。
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
-- 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具，以后端进程的本机权限运行，默认工作目录为助手工作区。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
+- 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具及内置 web_search/web_extract；文件/命令工具以后端进程的本机权限运行，默认工作目录为助手工作区。网络业务逻辑在 server/tools，SDK 注册在 server/runtime/web-tools.ts；搜索凭据由后端环境配置，不进入模型参数或客户端，见 [内置网络工具](docs/features/web-tools.md)。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
 - 显式指定 Piko 资源范围，避免自动继承个人 Pi CLI 的全局技能、扩展或祖先目录指导。
 - 模型和凭据使用 `PIKO_HOME/config/{settings,models,auth}.json`，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，配置及插件代码修改后重启后端生效；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
 - Piko 应用配置通过 `server/config.ts` 统一加载 HTTP、工作区与通道；env 只做字段映射与类型转换，默认值 < `config/piko.json` < `config/.env` < 进程环境，合并后共用一套校验，使用处不自行读取 `PIKO_*`。`PIKO_HOME` 仅从进程环境定位目录；模型保持独立文件并复用通用 env 读取，应用配置修改后重启。见 [应用配置](docs/features/application-config.md)。
