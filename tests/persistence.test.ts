@@ -29,6 +29,8 @@ test("initialization preserves guidance and JSON configuration, bounds reads and
   expect(existsSync(join(f.paths.home, "config/settings.json"))).toBe(false);
   expect(await readFile(join(f.paths.home, "config/.env"), "utf8")).toContain("private");
   expect(existsSync(join(f.paths.home, "config/auth.json"))).toBe(false);
+  expect(existsSync(join(f.paths.home, "extensions"))).toBe(false);
+  expect(existsSync(join(f.paths.home, "skills"))).toBe(false);
   expect(existsSync(join(f.paths.workspace, ".agents/skills"))).toBe(true);
   expect(() => loadPikoConfig({ PIKO_HOME: "relative" })).toThrow("absolute");
   expect(() => initializeWorkspace({ ...f.paths, state: join(f.paths.workspace, "state") })).toThrow("outside");

@@ -54,7 +54,7 @@ function extractFallback(document: Document): { title: string; content: string }
   return { title, content: normalizeWhitespace(document.body?.textContent || document.documentElement.textContent || "") };
 }
 
-/** Same Readability → Markdown projection as the existing web_extract extension.
+/** Same Readability → Markdown projection as the existing web_extract tool.
  * HTML is parsed only: scripts and subresources are not enabled.
  */
 export async function extractWebPage(args: ExtractArguments, options: ExtractOptions = {}, signal?: AbortSignal): Promise<ExtractedPage> {

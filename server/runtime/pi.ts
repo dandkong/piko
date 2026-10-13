@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor, configure as configureAgent } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor, type Registry, configure as configureAgent } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
@@ -17,10 +17,9 @@ import { internalInput, registerInput } from "./input-origin";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, type WorkspaceModelConfig } from "./model-config";
-import { installWorkspacePlugins, type WorkspaceRegistry } from "./extensions";
 import { readConfigEnvironment } from "../config/files";
 import { readApplicationSettings } from "../config";
-import { BUILTIN_WEB_TOOL_NAMES, createWebTools } from "./web-tools";
+import { createWebTools } from "./web-tools";
 import { WorkspaceExecutionEnv } from "./execution-env";
 
 export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
@@ -31,15 +30,15 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
     ...(record.status === "unanswered" && { error: typeof record.detail === "string" ? record.detail : record.reason }) };
 }
 
-type SessionRegistry = WorkspaceRegistry & { searchConfigured: boolean };
-async function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): Promise<SessionRegistry> {
+type SessionRegistry = { registry: Registry; searchConfigured: boolean };
+function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): SessionRegistry {
   const value = createRegistry();
   const web = createWebTools(readConfigEnvironment(paths.home), { settings: readApplicationSettings(paths.home).tools });
   value.install(CodingTools);
   value.install(createWorkspaceResources(paths));
   value.install(web.extension);
   value.install(subagents);
-  return { ...await installWorkspacePlugins(paths.home, value, BUILTIN_WEB_TOOL_NAMES), searchConfigured: web.searchConfigured };
+  return { registry: value, searchConfigured: web.searchConfigured };
 }
 
 /** One native Harness and root conversation per PIKO_HOME. UI reads raw entries; provider context stays durable's responsibility. */
@@ -89,15 +88,14 @@ export class DurableChatSession implements ChatSession {
 
   async init(): Promise<void> {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
-    const extensions = await registry(this.paths, createSubagentExtension({ storage: () => this.storage,
+    const extensions = registry(this.paths, createSubagentExtension({ storage: () => this.storage,
       canReport: () => !this.busy && !this.changing && !this.stopping && !this.disposed,
       onReply: async reply => {
         if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
     }));
-    try { await this.open(config, extensions); }
-    catch (error) { await extensions.dispose(); throw error; }
+    await this.open(config, extensions);
   }
 
   private async open(config: WorkspaceModelConfig, extensions: SessionRegistry): Promise<void> {
@@ -134,7 +132,7 @@ export class DurableChatSession implements ChatSession {
         await tx.appendEntry(conversation.id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are historical context. Do not resume or repeat its tools automatically; act only on new user requests or newly delivered background results; do not resume interrupted work.", timestamp: Date.now() }] });
       }, ctx);
       if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({ model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off" }, ctx);
-      // Registry/plugin configuration is rebuilt at startup; children share the current root selection.
+      // Built-in registry configuration is rebuilt at startup; children share the current root selection.
       const rootAgent = await conversation.agent(ctx);
       await harness.commit(async tx => {
         const ids = await subagentIds(tx);
@@ -329,7 +327,7 @@ export class DurableChatSession implements ChatSession {
   }
   private async closeNative() {
     await this.eventStream.stop();
-    // Listener errors are already reported by stream.closed; still release the store and plugin resources.
+    // Listener errors are already reported by stream.closed; release the native runtime.
     await this.delivery?.catch(() => {});
     this.unsubscribeBindings?.();
     await this.harness.close(ctx);
@@ -339,7 +337,7 @@ export class DurableChatSession implements ChatSession {
     this.disposed = true;
     this.closing = (async () => {
       await this.changeFinished?.catch(() => {});
-      await this.closeNative(); await this.extensions.dispose(); this.listeners.clear(); this.onDispose?.();
+      await this.closeNative(); this.listeners.clear(); this.onDispose?.();
     })();
     return this.closing;
   }
@@ -369,17 +367,12 @@ export class DurableChatSession implements ChatSession {
   async describe(): Promise<RuntimeDescription> {
     const agent = await this.conversation.agent(ctx);
     const resources = await loadWorkspaceResources(this.paths);
-    const pluginNames = new Set(this.extensions.plugins.map(plugin => plugin.name));
-    const owners = new Map(this.extensions.registry.snapshot().tools()
-      .filter(item => agent.extensions.some(extension => extension.name === item.extension.name))
-      .map(item => [item.tool.name, item.extension.name]));
     const tools = agent.tools.map(tool => ({ name: tool.name,
-      source: pluginNames.has(owners.get(tool.name) ?? "") ? "extension" as const : "builtin" as const,
       status: tool.name === "web_search" && !this.extensions.searchConfigured ? "unconfigured" as const : "available" as const }));
     return { runtime: "pi-durable", tools, ...(agent.model && { selection: { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } }),
       models: (await this.config.models.getAvailable()).map(model => ({ provider: model.provider, id: model.id, name: model.name,
         imageInput: model.input.includes("image"), contextWindow: model.contextWindow, thinkingLevels: getSupportedThinkingLevels(model) as ModelThinkingLevel[] })),
-      profiles: this.config.profiles, skills: resources.skills, plugins: this.extensions.plugins };
+      profiles: this.config.profiles, skills: resources.skills };
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
   async compact(): Promise<CompactionResult> {

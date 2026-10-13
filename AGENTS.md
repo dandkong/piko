@@ -21,7 +21,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、工作区资源和工具，仅移除嵌套委派；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
 - side chat 后续复用同一 Harness 的原生 conversation 与关系，交互、上下文共享和结论回传仍待设计。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
-- 用户技能采用 `.agents/skills/<name>/SKILL.md`，也可放在 `PIKO_HOME/skills`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。
+- 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。
 - 工作区只保留 AGENTS.md 与 MEMORY.md：AGENTS 管助手身份、表达和做事约定，MEMORY 管用户资料、环境事实与长期结论；应用内建 core 管运行规则与工具结果真实性。加载时标注角色和来源，角色不是权限隔离；细则见 [资源与工具](docs/features/workspace-and-main-chat.md#资源与工具)。
 - Durable 原生 JSONL 是会话内容的唯一来源；UI 从所选 conversation 的完整原始 entries 投影，不能用压缩后的模型上下文代替展示历史。Piko 管理配置、通道与传输；执行状态、提交去重和 inbox 由 Durable 管理，不建立 Run 或身份表。
@@ -34,7 +34,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具及内置 web_search/web_extract；文件/命令工具以后端进程的本机权限运行，默认工作目录为助手工作区。网络业务逻辑在 server/tools，SDK 注册在 server/runtime/web-tools.ts；搜索凭据由后端环境配置，不进入模型参数或客户端，见 [内置网络工具](docs/features/web-tools.md)。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
 - 显式指定 Piko 资源范围，避免自动继承个人 Pi CLI 的全局技能、扩展或祖先目录指导。
-- 应用/Agent 行为统一使用 PIKO_HOME/config/piko.json，模型目录与适配参数使用 models.json；不生成或读取 settings.json，不留双入口。重试与自动压缩直接使用 Durable 默认策略，不在产品配置暴露覆盖；API Key、Token 只从后端环境/私有 config/.env 读取，auth.json 不再是凭据来源，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，配置及插件代码修改后重启后端生效；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
+- 应用/Agent 行为统一使用 PIKO_HOME/config/piko.json，模型目录与适配参数使用 models.json；不生成或读取 settings.json，不留双入口。重试与自动压缩直接使用 Durable 默认策略，不在产品配置暴露覆盖；API Key、Token 只从后端环境/私有 config/.env 读取，auth.json 不再是凭据来源，不读取个人 Pi CLI profile。Durable Extension 只由 Piko 源码注册，不加载用户代码插件；配置修改后重启后端生效。配置与运行时说明见 [Durable 配置](docs/features/durable-runtime.md)。
 - Piko 配置通过 server/config.ts 统一加载并严格按字段分工：piko.json 的 agent 管模型预设和可选 stream，channels/tools 管通道与工具行为，models.json 管模型目录；env 管 HTTP/工作区部署参数与敏感凭据。不提供 env 覆盖 JSON 的双入口，放错位置或使用已移除的行为变量应报错。只有环境体系内部 config/.env < 进程环境；PIKO_HOME 仅从进程环境定位。模型与工具复用配置层，使用处不各自读取 PIKO_*。变更后重启，见 [应用配置](docs/features/application-config.md)。
 - 保留提交去重、停止、流快照、断线恢复语义；断开观察者不等于取消任务，重启后不自动重放不确定执行。
 - 工作区指导、技能索引、Pi 上下文持久化和 read、write、edit、bash 四个内建工具已启用；支持读取技能正文、创建技能文件和运行脚本，个人 CLI 的全局扩展仍不自动加载。

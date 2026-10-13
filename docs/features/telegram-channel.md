@@ -11,7 +11,7 @@ RN 提供完整产品体验，Telegram 接入适合私聊的功能，不要求�
 | 普通文本 | 运行中仍可发送，原生 steer all |
 | 回复 | 每条助手消息独立 Rich Markdown，条内流式编辑 |
 | 停止与状态 | /stop、/status；可停止 RN/TG 当前工作及手动压缩 |
-| 历史与资源 | /recent 最近 10 条可见消息，/skills、/plugins |
+| 历史与资源 | /recent 最近 10 条可见消息，/skills |
 | 模型与思考 | /models 供应商/模型按钮，/thinking 当前模型支持的强度 |
 | 压缩 | /compact，区分应用、跳过、取消和失败，聊天历史保留 |
 | 帮助 | /start、/help |

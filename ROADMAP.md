@@ -8,9 +8,9 @@
 - 助手消息支持 Markdown 与流式未闭合语法显示，代码块和表格支持横向滚动；用户消息保持原文。
 - Bun 托管 pi-durable 1.1.0 + pi-ai 1.1.0，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
 - 服务端唯一主会话，Durable 原生 JSONL 是唯一会话内容来源；UI 投影完整 conversation entries，Piko 不使用 SQLite 或 Run；原生 submission/inbox/live 管理去重和执行，重启撤销遗留工作并显示中断提示，流式片段不另行持久化。
-- 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建技能和执行脚本，全局扩展不自动加载。
-- 内置 web_search/web_extract 已接入；搜索保持 query/maxResults 参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单区分内置/用户扩展及配置状态，工作区技能/脚本不自动成为内置能力。[网络工具](docs/features/web-tools.md)。
-- 非敏感 JSON 模型/预设配置与环境凭据严格分离，思考强度、durable 插件及选择/压缩/取消 API 已接入；TG 增加模型/思考按钮菜单、压缩与详细状态，共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。RN 模型配置界面、图片读取尚未接入。
+- 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建工作区技能和执行脚本，不加载用户代码插件。
+- 内置 web_search/web_extract 已接入；搜索保持 query/maxResults 参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单报告内建工具与配置状态，工作区技能/脚本不注册新工具。[网络工具](docs/features/web-tools.md)。
+- 非敏感 JSON 模型/预设配置与环境凭据严格分离，思考强度及选择/压缩/取消 API 已接入；TG 增加模型/思考按钮菜单、压缩与详细状态，共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。RN 模型配置界面、图片读取尚未接入。
 - 应用配置按字段严格分工：piko.json 统一管理 agent 模型预设与可选连接选项、通道和工具行为，models.json 管模型目录；重试和自动压缩直接沿用 Durable 默认策略；HTTP/工作区部署参数和凭据仅环境/.env。旧 settings.json、auth.json 与行为环境变量均不读取；OAuth 刷新只写私有 .env。启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
@@ -69,7 +69,7 @@
 
 - 计划、待办和工作检查点优先用原生 `defineDoc` 管理，通过工具提交修改、section 注入模型上下文；按状态用途选择 history/fork 策略。执行详情和结论仍落在原生 conversation，不引入额外正文存储。
 - 规划模式、只读研究等通过 conversation 的实际工具选择实现；权限和文件范围由执行环境约束，cwd 或提示词不能充当沙箱。工具包装或同名覆盖按真实需求接入，优先复用内建工具。
-- 配置及插件文件当前仍重启生效，用户指导和技能索引每次请求刷新。原生 registry 支持同名替换，但正在运行的阶段保留原快照、后续阶段采用新代码；是否提供重载入口继续待定。
+- 模型与应用配置修改后重启生效，用户指导和技能索引每次请求刷新。Piko 内建 Durable Extension 随服务端代码部署；不提供用户插件目录或运行时热替换入口。
 
 参考：[输入与 inbox](https://github.com/earendil-works/pi/blob/main/packages/durable/README.md#busy-conversations)、[前台委派](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/22-subagent-foreground.ts)、[后台委派](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/23-subagent-background.ts)、[压缩](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/25-compaction.ts)、[规划模式](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/27-plan-mode.ts)、[重载与重启](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/31-reload-and-restart.ts)。示例用于核对原生能力，实施时仍对照锁定版本。
 

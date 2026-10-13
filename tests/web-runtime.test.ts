@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -66,9 +66,9 @@ test("built-in web tools execute through Durable, use backend env, persist resul
   await session.prompt("Research", { id: "web-integration", createdAt: 1 });
   expect(searches).toBe(1); expect(extracts).toBe(1);
   const description = await session.describe();
-  expect(description.tools).toContainEqual({ name: "web_search", source: "builtin", status: "available" });
-  expect(description.tools).toContainEqual({ name: "web_extract", source: "builtin", status: "available" });
-  expect(description.plugins).toEqual([]);
+  expect(description.tools).toContainEqual({ name: "web_search", status: "available" });
+  expect(description.tools).toContainEqual({ name: "web_extract", status: "available" });
+  expect(description).not.toHaveProperty("plugins");
   expect(JSON.stringify(description)).not.toContain(credential);
   const directory = join(f.paths.home, "state/durable");
   const log = await readFile(join(directory, "main.jsonl"), "utf8");
@@ -83,8 +83,8 @@ test("built-in web tools execute through Durable, use backend env, persist resul
 test("missing search credentials do not prevent startup or extraction and are visible only as safe status", async () => {
   searchEnvironment("");
   const f = await fixture(); const session = await f.createSession();
-  expect((await session.describe()).tools).toContainEqual({ name: "web_search", source: "builtin", status: "unconfigured" });
-  expect((await session.describe()).tools).toContainEqual({ name: "web_extract", source: "builtin", status: "available" });
+  expect((await session.describe()).tools).toContainEqual({ name: "web_search", status: "unconfigured" });
+  expect((await session.describe()).tools).toContainEqual({ name: "web_extract", status: "available" });
   let networkCalls = 0;
   const transport = mockFetch(async () => { networkCalls++; throw new Error("No network expected"); });
   cleanup(() => transport.mockRestore());
@@ -150,16 +150,15 @@ test("web tool enablement belongs only to JSON, is captured at startup and synch
   expect(restarted.messages.map(message => message.content)).toContain("Startup configuration remains active.");
 });
 
-test("workspace extensions remain distinguishable and cannot register a built-in web tool name", async () => {
+test("user extension files are ignored and cannot alter the built-in tool registry", async () => {
   const f = await fixture();
+  await mkdir(join(f.paths.home, "extensions"), { recursive: true });
   await writeFile(join(f.paths.home, "extensions/custom.ts"), `import { Type } from "typebox";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 export default defineExtension({name:"custom-extension",tools:[defineTool({name:"custom_tool",description:"Custom tool",parameters:Type.Object({}),execute:async()=>({content:[{type:"text",text:"custom"}]})})]});`);
   const session = await f.createSession();
-  expect((await session.describe()).tools).toContainEqual({ name: "custom_tool", source: "extension", status: "available" });
-  await session.dispose();
-  await writeFile(join(f.paths.home, "extensions/replace.ts"), `import { Type } from "typebox";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-export default defineExtension({name:"replacement",tools:[defineTool({name:"web_search",description:"Replacement",parameters:Type.Object({}),execute:async()=>({})})]});`);
-  await expect(f.createSession()).rejects.toThrow("reserved built-in tool web_search");
+  const description = await session.describe();
+  expect(description.tools.map(tool => tool.name)).not.toContain("custom_tool");
+  expect(description.tools.every(tool => !Object.hasOwn(tool, "source"))).toBe(true);
+  expect(description).not.toHaveProperty("plugins");
 });

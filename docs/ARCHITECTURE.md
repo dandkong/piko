@@ -1,6 +1,6 @@
 # Piko 架构约定
 
-当前 Agent 底层为 pi-durable 1.1.0，模型适配为 pi-ai 1.1.0。体验见 [PRODUCT](PRODUCT.md)，进度见 [路线图](../ROADMAP.md)，配置见 [Durable 配置与插件](features/durable-runtime.md)。
+当前 Agent 底层为 pi-durable 1.1.0，模型适配为 pi-ai 1.1.0。体验见 [PRODUCT](PRODUCT.md)，进度见 [路线图](../ROADMAP.md)，配置见 [Durable 配置与运行时](features/durable-runtime.md)。
 
 ## 当前结构
 
@@ -20,7 +20,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/chat/ | 文本校验、接纳与管理操作互斥、会话观察和内存重放 |
 | server/channels/telegram/ | 私聊身份、命令、轮询确认与回复呈现 |
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
-| server/runtime/ | Durable/pi-ai 适配、配置、插件、内置工具注册、资源与原生历史投影 |
+| server/runtime/ | Durable/pi-ai 适配、配置、内建扩展与工具注册、资源与原生历史投影 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
@@ -42,14 +42,12 @@ Telegram 私聊 → Bot API 适配器 ────┘
 │   ├── piko.json                 # agent 预设/连接选项、通道、工具行为
 │   ├── .env                      # 私有部署参数与凭据，0600
 │   └── models.json               # 非敏感供应商/模型配置与环境变量名绑定
-├── extensions/                  # durable 插件
-├── skills/                      # 用户公共技能
 ├── state/
 │   ├── backend.lock             # 单后端写进程
-│   ├── tmp/                     # 工具溢出、插件 bundle
+│   ├── tmp/                     # 工具溢出与临时文件
 │   └── durable/
 │       ├── main.jsonl           # 会话、entries、任务、submissions
-│       └── doc-*.jsonl          # 原生与插件文档
+│       └── doc-*.jsonl          # Durable 原生文档
 └── workspace/
     ├── AGENTS.md
     ├── MEMORY.md
@@ -61,21 +59,20 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。当前使用固定 state/durable，不迁移旧 SQLite 或 durable-sessions 布局，也不读取其聊天历史。清理旧数据须先停止后端，配置和工作区不随数据库清理删除。
 
-## 模型、资源与插件
+## 模型、资源与内建扩展
 
 pi-ai 内建供应商目录使用后端环境 API Key；OAuth 通过 Piko EnvironmentCredentialStore 从私有 .env 读取/刷新并原子持久化，不使用凭据 JSON。自定义 JSON 可指定 API、地址、模型能力、请求参数、headersEnv 变量名绑定和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
 
 Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 
-模型配置和插件在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
+模型配置在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
-- 技能优先级：工作区 `.agents/skills` > `PIKO_HOME/skills` > 应用 `server/resources/skills`。同名覆盖有诊断，非法 YAML 跳过。
+- 技能来源：工作区 `.agents/skills` 与应用 `server/resources/skills`；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。注入时标注来源和角色，职责与冲突处理见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core/AGENTS 各上限 8,000 字节，MEMORY 上限 4,000 字节，超量截断。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
-- 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
-- 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。
+- Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具和子 Agent。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
-- web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；启用开关只在 piko.json，后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据区分 builtin/extension 与配置状态，用户插件不能注册同名网络工具；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
+- web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；启用开关只在 piko.json，后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据报告内建工具与配置状态；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
 - 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.1.0 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。
 
 ## 原生状态与历史投影
@@ -109,7 +106,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | GET /api/chat/submission?requestId=… | 查询原生提交回执；不存在返回 404 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/health | 后端和模型可用状态 |
-| GET /api/runtime | 模型、思考、预设、技能与插件安全元数据 |
+| GET /api/runtime | 模型、思考、预设、技能与内建工具状态 |
 | POST /api/runtime/selection、compact、cancel | 模型选择、压缩和停止；选择/压缩要求空闲 |
 
 不通过客户端 ID 创建会话，不提供主会话删除、旧 /api/main 或按 Run 观察接口。

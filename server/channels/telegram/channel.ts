@@ -14,7 +14,6 @@ export const TELEGRAM_COMMANDS = [
   { command: "start", description: "Get started" }, { command: "help", description: "Show commands" },
   { command: "status", description: "View status" }, { command: "stop", description: "Stop the current reply" },
   { command: "recent", description: "View recent messages" }, { command: "skills", description: "Browse skills" },
-  { command: "plugins", description: "View plugins" },
   { command: "models", description: "Choose a model" }, { command: "thinking", description: "Set thinking level" },
   { command: "compact", description: "Compact context" },
 ];
@@ -116,7 +115,7 @@ export class TelegramChannel {
       if (this.runtime.describe) {
         try {
           const description = await this.runtime.describe();
-          text += `\n${selectionText(description)}\nSkills: ${description.skills.length}\nPlugins: ${description.plugins.length}`;
+          text += `\n${selectionText(description)}\nSkills: ${description.skills.length}`;
         } catch { text += "\nModel details unavailable."; }
       }
     } else if ((command === "models" || command === "thinking") && this.runtime.describe && this.runtime.configure) {
@@ -137,10 +136,9 @@ export class TelegramChannel {
     } else if (command === "recent") {
       const history = (await this.conversations.snapshot()).messages;
       text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";
-    } else if ((command === "skills" || command === "plugins") && this.runtime.describe) {
+    } else if (command === "skills" && this.runtime.describe) {
       const description = await this.runtime.describe();
-      text = command === "skills" ? description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available."
-        : description.plugins.map(item => `${item.name}${item.tools.length ? ` — ${item.tools.join(", ")}` : ""}`).join("\n") || "No plugins loaded.";
+      text = description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available.";
     } else text = "Unknown command. Use /help to see what's available.";
     await new TelegramReply(this.api, message.chatId, "plain").update(text, true);
   }

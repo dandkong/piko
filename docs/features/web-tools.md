@@ -27,16 +27,16 @@ BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
 
 启用开关只在 piko.json 的 tools.web_search.enabled / tools.web_extract.enabled，默认均为 true，不接受对应环境开关；禁用后从实际 Agent 工具表移除，有 Key 不会自动启用被关闭的工具。Key 只属环境配置，JSON 不接 apiKey。配置在启动捕获，修改需重启。
 
-没有 Key 时后端仍能启动、提取网页和使用其他工具；`web_search` 返回安全的未配置错误，系统 section 提醒模型不可声称搜索成功。`GET /api/runtime` 的 tools 字段列出工具名称、source（builtin/extension）及 status（available/unconfigured），不返回供应商或凭据。available 表示已注册且必要配置存在，不是联网健康检查。
+没有 Key 时后端仍能启动、提取网页和使用其他工具；`web_search` 返回安全的未配置错误，系统 section 提醒模型不可声称搜索成功。`GET /api/runtime` 的 tools 字段列出内建工具名称与 status（available/unconfigured），不返回供应商或凭据。available 表示已注册且必要配置存在，不是联网健康检查。
 
 ## 来源与代码边界
 
 - `server/tools/` 保存 HTTP、搜索与正文提取业务逻辑，不依赖 Durable SDK。
 - `server/runtime/web-tools.ts` 是 TypeBox/Durable 注册、取消和结果适配层；由宿主装入内置 `piko-web` extension。
-- `PIKO_HOME/extensions` 仍是用户安装的插件目录；内置网络工具不会计入 plugins 列表。用户插件不能注册同名 web_search/web_extract，避免将用户实现误报成产品内置能力。
-- 助手生成的工作区 `.agents/skills` 和脚本仍是工作区成果，不自动提升为内置工具。当前不根据作者身份自动识别插件是人写还是助手写，也没有审核/安装管理界面。
+- Piko 不加载用户代码插件；网络工具和其他 Durable Extension 均由 Piko 服务端源码内建注册。
+- 助手生成的工作区 `.agents/skills` 和脚本仍是工作区成果，不会注册新的运行时工具。
 
-来源分类与同名保护不是沙箱。插件、bash 与文件工具继续按服务账号权限执行，访问控制和外部接入必须遵守既有部署边界。
+Skill、bash 与文件工具继续按服务账号权限执行，访问控制和外部接入必须遵守既有部署边界。
 
 ## 请求与恢复边界
 
@@ -48,6 +48,6 @@ BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
 
 ## 验证
 
-自动化覆盖参数与默认值、输出格式/截断、Key 隔离、未配置、HTTP/JSON/网络失败、响应限额、取消和超时，以及 Durable 实际工具轮、环境变量启动快照、原生记录/重启、不确定执行停止、主/子 Agent 工具共享和插件来源/同名保护。测试使用 mock HTTP 与 faux 模型，不访问付费服务或真实用户会话。
+自动化覆盖参数与默认值、输出格式/截断、Key 隔离、未配置、HTTP/JSON/网络失败、响应限额、取消和超时，以及 Durable 实际工具轮、环境变量启动快照、原生记录/重启、不确定执行停止、主/子 Agent 工具共享和用户插件目录忽略。测试使用 mock HTTP 与 faux 模型，不访问付费服务或真实用户会话。
 
-参考：[Durable 配置与插件](durable-runtime.md)、[应用配置](application-config.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](linux-deployment.md)。
+参考：[Durable 配置与运行时](durable-runtime.md)、[应用配置](application-config.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](linux-deployment.md)。

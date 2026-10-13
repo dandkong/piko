@@ -4,5 +4,5 @@ import { join, resolve } from "node:path";
 export function runtimePaths(home: string) {
   const root = resolve(home);
   return { root, config: join(root, "config"), sessions: join(root, "state", "durable"),
-    tmp: join(root, "state", "tmp"), extensions: join(root, "extensions"), skills: join(root, "skills") };
+    tmp: join(root, "state", "tmp") };
 }

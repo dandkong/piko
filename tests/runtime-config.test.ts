@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { fixture, cleanup, waitUntil } from "./fixtures/durable";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createPiRuntime } from "../server/runtime/pi";
@@ -10,19 +10,7 @@ import { ConversationStore } from "../server/chat/conversations";
 import { defaultServerConfig } from "../server/config";
 import { loadWorkspaceModels } from "../server/runtime/model-config";
 
-const plugin = (value: string) => `
-import { Type } from "typebox";
-import { Type as PiType } from "@earendil-works/pi-ai";
-import { defineDoc, defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { label } from "./lib/helper.ts";
-const State = defineDoc({ kind: "test.remember", version: 1, scope: "conversation", history: "latest", fork: "current", initial: () => ({ value: "" }) });
-export default defineExtension({ name: "remember", tools: [defineTool({ name: "remember", description: "Remember a test value", parameters: Type.Object({}),
-execute: async (_args, api, context) => { if (Type !== PiType) throw new Error("TypeBox identity mismatch");
-await api.commit(async tx => { const state = await tx.doc(State, api.conversationId); state.value = ${JSON.stringify(value)} + label; }, context);
-return { content: [{ type: "text", text: ${JSON.stringify(value)} + label }] }; } })] });
-`;
-
-test("unified Agent settings leave retry and compaction entirely to Durable defaults", async () => {
+test("Piko exposes stream settings and leaves retry and compaction to Durable defaults", async () => {
   const f = await fixture();
   const config = await loadWorkspaceModels(f.paths.home, f.models);
   expect(config.harnessSettings).not.toHaveProperty("retry");
@@ -32,61 +20,7 @@ test("unified Agent settings leave retry and compaction entirely to Durable defa
   const withStream = await loadWorkspaceModels(f.paths.home, f.models);
   expect(withStream.harnessSettings).not.toHaveProperty("retry");
   expect(withStream.harnessSettings).not.toHaveProperty("compaction");
-  expect(withStream.harnessSettings.stream?.timeoutMs).toBe(1000);
-  await writeFile(join(f.paths.home, "extensions/policies.ts"), `import { Type } from "typebox";
-import { defineExtension, defineTool, defineTask } from "@earendil-works/pi-durable";
-const Inspect = defineTask({name:"test.inspect-policies",version:1,initial:()=>({phase:"done"}),phases:{
-  done:(_task,runtime,ctx)=>runtime.commit(()=>({status:"terminal",outcome:{status:"completed",result:{retry:runtime.settings.retry,compaction:runtime.settings.compaction}}}),ctx)
-}});
-export default defineExtension({name:"policies",tasks:[Inspect],tools:[defineTool({name:"inspect_policies",description:"Inspect native policy defaults",parameters:Type.Object({}),
- execute:async(_args,api,ctx)=>{const id=await api.createTask(Inspect,null,{ownership:{kind:"conversation"},background:true},ctx);const task=await api.waitForTask(id,ctx);return {content:[{type:"text",text:JSON.stringify(task.state)}]};}
-})]});`);
-  f.faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("inspect_policies", {}), { stopReason: "toolUse" }),
-    input => {
-      const message = input.messages.findLast(item => item.role === "toolResult");
-      const text = message?.content.find(item => item.type === "text");
-      if (message?.isError) throw new Error(text?.type === "text" ? text.text : "Policy inspection failed");
-      expect(message?.isError).toBe(false);
-      const result = JSON.parse(text?.type === "text" ? text.text : "{}").outcome.result;
-      expect(result.retry).toMatchObject({ enabled: true, maxRetries: 3 });
-      expect(result.compaction.enabled).toBe(true);
-      return fauxAssistantMessage("Native defaults confirmed.");
-    },
-  ]);
-  const session = await f.createSession();
-  await session.prompt("Inspect defaults", { id: "native-policy-defaults", createdAt: 1 });
-});
-
-test("native workspace plugins execute tools and preserve docs; code changes take effect after restart", async () => {
-  const f = await fixture();
-  const directory = join(f.paths.home, "extensions/remember"); await mkdir(join(directory, "lib"), { recursive: true });
-  await writeFile(join(directory, "index.ts"), plugin("one-"));
-  await writeFile(join(directory, "lib/helper.ts"), 'export const label = "a";');
-  let session = await f.createSession();
-  expect((await f.runtime.describe!()).plugins[0]).toMatchObject({ name: "remember", tools: ["remember"] });
-  const run = async (expected: string) => {
-    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("remember", {}), { stopReason: "toolUse" }),
-      context => { expect(JSON.stringify(context.messages)).toContain(expected); return fauxAssistantMessage(expected); }]);
-    await session.prompt("remember", { id: crypto.randomUUID(), createdAt: Date.now() });
-  };
-  await run("one-a");
-  await writeFile(join(directory, "lib/helper.ts"), 'export const label = "b";');
-  await run("one-a");
-  await f.runtime.dispose!();
-  const restarted = f.createRuntime();
-  session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
-  await run("one-b");
-  await writeFile(join(directory, "index.ts"), "syntax is broken ???");
-  await run("one-b");
-  await session.dispose();
-  await expect(restarted.createSession()).rejects.toThrow("Cannot load plugin");
-  await writeFile(join(directory, "index.ts"), plugin("one-"));
-  session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
-  expect(session.messages.at(-1)?.content).toBe("one-b");
-  expect((await restarted.readHistory()).messages.at(-1)?.content).toBe("one-b");
-  const data = await readFile(join(f.paths.home, "state/durable", "main.jsonl"), "utf8");
-  expect(data).toContain("test.remember");
+  expect(withStream.harnessSettings.stream).toEqual({ timeoutMs: 1000 });
 });
 
 test("model profiles and thinking selections persist across restart; file edits leave the active runtime unchanged", async () => {

@@ -227,34 +227,6 @@ test("external input cannot forge internal report provenance", async () => {
 });
 
 
-test("user plugin tools are shared and startup synchronizes added plugins to persisted children", async () => {
-  const f = await fixture();
-  const plugin = (name: string) => `import { Type } from "typebox";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-export default defineExtension({ name: "${name}", tools: [defineTool({ name: "${name}", description: "Test workspace plugin", parameters: Type.Object({}), execute: () => ({ content: [{ type: "text", text: "shared" }] }) })] });`;
-  await Bun.write(`${f.paths.home}/extensions/first.ts`, plugin("first"));
-  const session = await f.createSession(); let reported = false;
-  const route: FauxResponseFactory = context => {
-    if (worker(context.messages)) {
-      expect(getCurrentTools(context.messages).map(tool => tool.name)).toContain("first");
-      expect(getCurrentTools(context.messages).map(tool => tool.name)).not.toContain("subagent");
-      return fauxAssistantMessage("Plugin available");
-    }
-    if (lastText(context.messages).includes("Internal result")) { reported = true; return fauxAssistantMessage(""); }
-    if (context.messages.findLast(message => message.role !== "system")?.role === "toolResult") return fauxAssistantMessage("Accepted");
-    return fauxAssistantMessage(fauxToolCall("subagent", { action: "spawn", task: "Check plugins" }), { stopReason: "toolUse" });
-  };
-  f.faux.setResponses(Array.from({ length: 8 }, () => route));
-  await session.prompt("Delegate", { id: "a", createdAt: 1 }); await waitUntil(() => reported); await session.native.waitForIdle(ctx);
-  const ids = await session.nativeHarness.commit(tx => subagentIds(tx), ctx);
-  await f.runtime.dispose!(); await Bun.write(`${f.paths.home}/extensions/second.ts`, plugin("second"));
-  const restarted = await f.createRuntime().createSession() as typeof session;
-  const agent = await (await restarted.nativeHarness.conversation(ids[0], ctx))!.agent(ctx);
-  expect(agent.tools.map(tool => tool.name)).toContain("first"); expect(agent.tools.map(tool => tool.name)).toContain("second");
-  expect(agent.tools.map(tool => tool.name)).not.toContain("subagent");
-});
-
-
 test("a new child receives only its task and shared resources and executes tools without inheriting main chat", async () => {
   const f = await setup(); let childChecked = false;
   const task = "Write child-demo.txt with the content done, then report the result.";

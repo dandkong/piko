@@ -6,8 +6,6 @@ import type { WebFetch } from "../tools/http";
 import type { WebToolsConfig } from "../config";
 import { defaultPikoFile } from "../config/defaults";
 
-export const BUILTIN_WEB_TOOL_NAMES = ["web_search", "web_extract"] as const;
-
 /** Environment is resolved once by the host; credentials never enter tool schemas or details. */
 export function createWebTools(env: Record<string, string | undefined>, options: { fetch?: WebFetch; settings?: WebToolsConfig } = {}) {
   const apiKey = env.BRAVE_SEARCH_API_KEY?.trim() || undefined;

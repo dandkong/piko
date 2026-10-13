@@ -22,7 +22,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   const workspace = realpathSync(paths.workspace);
   const state = realpathSync(paths.state);
   if (isWithin(workspace, state)) throw new Error("Piko state must be outside the assistant workspace.");
-  for (const directory of ["config", "extensions", "skills", "state/durable", "state/tmp"]) {
+  for (const directory of ["config", "state/durable", "state/tmp"]) {
     const path = join(paths.home, directory);
     mkdirSync(path, { recursive: true });
     if (!isWithin(realpathSync(paths.home), realpathSync(path))) throw new Error(`Piko data directory escapes its root: ${directory}`);

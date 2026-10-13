@@ -4,10 +4,9 @@ export type RuntimeSelection = { profile: string } | ModelSelection | { thinking
 export type CompactionResult = { status: "compacted" } | { status: "cancelled" } | { status: "skipped"; reason: "no_summary" | "stale" };
 export type RuntimeDescription = {
   runtime: "pi-durable";
-  tools: { name: string; source: "builtin" | "extension"; status: "available" | "unconfigured" }[];
+  tools: { name: string; status: "available" | "unconfigured" }[];
   selection?: ModelSelection;
   models: { provider: string; id: string; name: string; imageInput: boolean; contextWindow?: number; thinkingLevels: ThinkingLevel[] }[];
   profiles: Record<string, ModelSelection>;
   skills: { name: string; description: string; path: string; disableModelInvocation: boolean }[];
-  plugins: { name: string; path: string; tools: string[] }[];
 };

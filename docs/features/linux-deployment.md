@@ -70,7 +70,7 @@ sudo systemctl status piko
 sudo journalctl -u piko -f
 ```
 
-修改配置或插件后用 `sudo systemctl restart piko`。异常退出自动重启；正常停止发送 SIGTERM，后端取消工作、关闭存储并释放锁。重启不自动重放不确定执行或补发 TG 回复。
+修改配置或部署新服务端代码后用 `sudo systemctl restart piko`。异常退出自动重启；正常停止发送 SIGTERM，后端取消工作、关闭存储并释放锁。重启不自动重放不确定执行或补发 TG 回复。
 
 更新前先等当前任务结束，停止服务再安装和构建，避免构建删除正在访问的资源：
 

@@ -1,6 +1,6 @@
-# Durable 配置与插件
+# Durable 配置与运行时
 
-状态：服务端已接入 pi-durable / pi-ai 1.1.0，配套 chord 同为 1.1.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。TG 已提供模型/思考强度按钮与压缩命令；RN 配置管理和插件管理界面尚未实现，可编辑 JSON 并调用控制 API。
+状态：服务端已接入 pi-durable / pi-ai 1.1.0，配套 chord 同为 1.1.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。TG 已提供模型/思考强度按钮与压缩命令；RN 配置管理界面尚未实现，可编辑 JSON 并调用控制 API。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
 1.1.0 的原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
 
@@ -21,7 +21,7 @@ $env:PIKO_HOME = Join-Path $env:USERPROFILE ".piko-durable-test"
 bun run dev
 ```
 
-首次启动补齐 config、extensions、skills、state 和 workspace，只创建缺失文件。未配置模型时仍能打开 API、查看主会话和配置元数据，发送消息会提示配置模型。旧状态不会自动迁移或删除。
+首次启动补齐 config、state 和 workspace，只创建缺失文件。未配置模型时仍能打开 API、查看主会话和配置元数据，发送消息会提示配置模型。旧状态不会自动迁移或删除。
 
 敏感凭据只放后端环境或私有 config/.env，JSON 不接受 API Key/Token，auth.json 已退出凭据读取。DeepSeek 示例：
 
@@ -129,7 +129,7 @@ Invoke-RestMethod http://127.0.0.1:8787/api/runtime/compact -Method Post
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime/cancel -Method Post
 ```
 
-selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。piko/models JSON、凭据环境和插件修改后重启后端生效。指导和技能在每次模型请求自动刷新。
+selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。piko/models JSON 与凭据环境修改后重启后端生效。指导和技能在每次模型请求自动刷新。
 
 ## 更新的生效时机
 
@@ -139,21 +139,19 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
-目前不提供 `/reload` 命令或 HTTP 接口。模型配置和插件代码修改后重启后端生效；是否接入运行时重载或插件热替换后续再讨论。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
+目前不提供 `/reload` 命令或 HTTP 接口。模型配置与凭据修改后重启后端生效；Piko 内建 Durable Extension 随服务端代码部署。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
 
 | 修改内容 | 当前生效方式 |
 | --- | --- |
 | 工作区 AGENTS.md、MEMORY.md | 每次模型请求前重新读取；同一轮调用工具后的下一次模型请求也会读取，无需重启 |
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
-| 工作区 .agents/skills、PIKO_HOME/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
+| 工作区 .agents/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
 | config/piko.json、models.json | 重启后端；默认预设不自动切换已有会话 |
 | config/.env 中的 OAuth 凭据 | 手工修改需重启；运行时 OAuth 刷新由串行原子写入发布新凭据 |
 | config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
-| PIKO_HOME/extensions 插件入口、本地辅助代码及外部依赖 | 重启后端时重新发现、编译并加载 |
-| 插件自行读取的提示词或配置文件 | 由插件决定：每次调用读取可直接生效；初始化时捕获则需重启 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
-| 工作区其他 md、JSONL 和插件持久化 doc | 普通文件按需读取，重启保留存储和 doc 既有状态 |
+| 工作区其他 md、JSONL 和 Durable 原生文档 | 普通文件按需读取，重启保留存储和文档状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
 通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 piko/models JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
@@ -173,61 +171,22 @@ description: Record decisions and next actions for an ongoing project.
 Read the project's existing notes, then append the new decision and next action.
 ```
 
-同名优先级：工作区 .agents/skills > PIKO_HOME/skills > 应用内建。不递归读取祖先指导、不加载个人 Pi CLI 资源。`disable-model-invocation: true` 的技能不注入模型索引；普通技能只注入名称/描述/文件路径，正文由 read 按需加载。聊天输入不会展开 CLI `/skill:` 命令。
+技能来源为工作区 `.agents/skills` 与应用内建；同名时工作区版本优先。`PIKO_HOME/skills` 不创建也不读取。不递归读取祖先指导、不加载个人 Pi CLI 资源。`disable-model-invocation: true` 的技能不注入模型索引；普通技能只注入名称/描述/文件路径，正文由 read 按需加载。聊天输入不会展开 CLI `/skill:` 命令。
 
 Piko 应用内建 core.md 提供运行规则；工作区只使用 AGENTS.md（如何表达和做事）与 MEMORY.md（长期事实与结论）。工作区指导与技能可由用户或助手修改，初始化不会覆盖。具体职责见 [资源与工具](workspace-and-main-chat.md#资源与工具)。
 
-## 原生插件
+## 内建 Durable Extension
 
-加载入口为 `PIKO_HOME/extensions/<name>.ts`（也支持 js/mjs）或 `<name>/index.ts`。default export 必须是 durable `defineExtension` 返回的对象；不接收旧 coding-agent 的 `(pi) => {...}` 扩展函数。
+Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；`/api/runtime` 只报告 Piko 内建工具及其配置状态。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
 
-例如保存为 extensions/project-state.ts：
-
-```typescript
-import { Type } from "typebox";
-import { defineDoc, defineExtension, defineTool } from "@earendil-works/pi-durable";
-
-const Notes = defineDoc<{ items: string[] }>({
-  kind: "piko.project-notes",
-  version: 1,
-  scope: "conversation",
-  history: "latest",
-  fork: "current",
-  initial: () => ({ items: [] }),
-});
-
-export default defineExtension({
-  name: "project-state",
-  tools: [defineTool({
-    name: "record_project_note",
-    description: "Save a project decision or next action in durable state.",
-    parameters: Type.Object({ text: Type.String() }),
-    execute: async ({ text }, api, context) => {
-      const count = await api.commit(async tx => {
-        const notes = await tx.doc(Notes, api.conversationId);
-        notes.items.push(text);
-        return notes.items.length;
-      }, context);
-      return { content: [{ type: "text", text: `Saved note ${count}.` }] };
-    },
-  })],
-});
-```
-
-宿主内置网络工具为 `piko-web` extension，不从用户插件目录发现，不出现在 plugins 清单。`GET /api/runtime` 的 tools 清单区分 builtin/extension 及配置状态；用户插件不能注册同名 `web_search`、`web_extract`。网络凭据、契约和限制见 [内置网络工具](web-tools.md)。
-
-重启后模型可使用这个工具，状态由会话 doc 日志持久化，重启后读取同一个 doc 会拿到已有值。文档落盘由 durable 管理，不需要自己创建第二份状态 JSON。工具定义不意味着 Piko 已有项目笔记产品界面。
-
-插件可定义 tools、sections、hooks、wraps、tasks；插件代码按本机权限执行，第三方依赖在插件目录安装。Bun 编译保留源文件 import.meta 路径，宿主 Pi/Chord/TypeBox 共用实例；启动时编译本地传递依赖，缓存放 state/tmp。重复/保留扩展名或非法入口会阻止运行时初始化。插件代码修改后重启生效。
-
-后台 task 定义可在插件使用；Piko 主聊天重启默认撤销遗留工作，不自动续跑。需要长期后台任务时须另行设计产品调度、恢复、投递和权限语义。旧 CLI 菜单、UI、命令和生命周期接口没有兼容层。
+Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。长期调度与结果回传需另行设计。
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。附件、RN 配置管理、工具轨迹、任务和插件管理 UI 尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。附件、RN 配置管理、工具轨迹和任务管理 UI 尚未接入。
 
-验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置校验、插件/doc 持久化与辅助文件修改后重启、历史压缩与重启去重；真机后台与真实长对话仍需使用验证。
+验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置校验、Durable 原生文档、内建工具、历史压缩与重启去重；真机后台与真实长对话仍需使用验证。
 
 ## 后台子 Agent
 
-主 Agent 的 subagent 工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、用户插件、指导和技能共用，只移除委派工具。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见 [后台子 Agent](background-subagents.md)。
+主 Agent 的 subagent 工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、内建扩展、指导和技能共用，只移除委派工具。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见 [后台子 Agent](background-subagents.md)。

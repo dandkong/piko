@@ -23,7 +23,7 @@ export async function loadWorkspaceResources(paths: WorkspacePaths, signal?: Abo
   }
   const byName = new Map<string, WorkspaceSkill>();
   let visited = 0;
-  for (const root of [join(paths.resources, "skills"), join(paths.home, "skills"), join(paths.workspace, ".agents", "skills")]) {
+  for (const root of [join(paths.resources, "skills"), join(paths.workspace, ".agents", "skills")]) {
     let canonical: string;
     try { canonical = await realpath(root); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") warn(root, "Cannot access skills directory"); continue; }

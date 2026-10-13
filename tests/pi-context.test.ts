@@ -44,7 +44,7 @@ test("history reads without credentials and fails closed for corrupt or missing 
   await expect(f.runtime.readHistory()).rejects.toThrow("main.jsonl is missing");
 });
 
-test("workspace guidance and user-first YAML skills refresh without ancestor/global resources", async () => {
+test("workspace guidance and workspace YAML skills refresh without ancestor or PIKO_HOME resources", async () => {
   const f = await fixture();
   await writeFile(join(f.root, "AGENTS.md"), "ANCESTOR_MUST_NOT_LOAD");
   await writeFile(join(f.paths.workspace, "AGENTS.md"), "workspace instructions");
@@ -53,11 +53,14 @@ test("workspace guidance and user-first YAML skills refresh without ancestor/glo
   await writeFile(join(skill, "SKILL.md"), "---\nname: piko-workspace\ndescription: User replacement\n---\nUser body\n");
   const global = join(f.root, ".agents/skills/foreign"); await mkdir(global, { recursive: true });
   await writeFile(join(global, "SKILL.md"), "---\nname: foreign\ndescription: Must not load\n---\nForeign body\n");
+  const homeSkill = join(f.paths.home, "skills/home-only"); await mkdir(homeSkill, { recursive: true });
+  await writeFile(join(homeSkill, "SKILL.md"), "---\nname: home-only\ndescription: Must not load\n---\nHome body\n");
   const bad = join(f.paths.workspace, ".agents/skills/bad"); await mkdir(bad);
   await writeFile(join(bad, "SKILL.md"), "---\nname: [invalid\n---\n");
   const resources = await loadWorkspaceResources(f.paths);
   expect(resources.skills.map(skill => skill.name)).toEqual(["piko-workspace"]);
   expect(resources.skills[0]?.description).toBe("User replacement");
+  expect(resources.skills.map(skill => skill.name)).not.toContain("home-only");
   expect(resources.diagnostics.length).toBeGreaterThan(0);
   expect(formatWorkspaceResources(resources)).toContain("workspace instructions");
   expect(formatWorkspaceResources(resources)).not.toContain("override instructions");

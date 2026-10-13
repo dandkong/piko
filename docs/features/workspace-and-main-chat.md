@@ -1,6 +1,6 @@
 # 工作区与主会话模型
 
-状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.1.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与插件见 [Durable 配置](durable-runtime.md)。
+状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.1.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与运行时见 [Durable 配置](durable-runtime.md)。
 
 ## 范围与初始化
 
@@ -13,9 +13,8 @@
 | config/piko.json、.env | 应用配置与可选覆盖 |
 | config/piko.json、models.json | 统一的非敏感 Agent/通道/工具行为，以及独立模型目录；不再生成 settings.json |
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
-| extensions/、skills/ | 用户插件与公共技能 |
 | state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
-| state/tmp/ | 工具溢出与可清理插件 bundle |
+| state/tmp/ | 工具溢出与可清理临时文件 |
 | 当前进程内存 | 流式消息、128 条会话 SSE 重放、TG 投递身份 |
 | workspace/ | AGENTS.md、MEMORY.md、技能与工作成果 |
 
@@ -59,7 +58,7 @@ RN 在前台持续观察两通道变化，原生快照加未确认的本地输�
 
 core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。初始化只补缺失的 AGENTS.md、MEMORY.md，模板升级不覆盖已有用户文件。其他旧指导文件不再初始化或加载，也不会自动删除或搬移其内容。自动整理、提取用户资料与记忆尚未实现。
 
-技能优先级为工作区 `.agents/skills` > PIKO_HOME/skills > 应用内建技能，同名覆盖有诊断。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI，插件为 durable 原生 Extension。
+技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
 read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。自动记忆提取/检索未实现。
 
@@ -81,4 +80,4 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；长期调度、投递 outbox、权限及 side chat 交互尚未实现；后台委派及已完成结果的回传恢复已接入。
 
-自动化覆盖初始化/路径、原生去重与重启、完整历史、分页与游标验证、隐藏记录、分页与快照合并/缺口恢复、压缩、残尾/损坏/缺失、中断撤回、插件/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。
+自动化覆盖初始化/路径、原生去重与重启、完整历史、分页与游标验证、隐藏记录、分页与快照合并/缺口恢复、压缩、残尾/损坏/缺失、中断撤回、内建工具/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。
