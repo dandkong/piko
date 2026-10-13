@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { fixture, cleanup, waitUntil } from "./fixtures/durable";
@@ -26,7 +24,7 @@ test("stop settles active input and withdraws unapplied steers without replay", 
  expect(await s.abort("stop-1")).toBe(true);expect((await s.submission("c"))?.status).toBe("done");
 });
 test("a failed provider clears queued steers before the next explicit input",async()=>{
- const f=await fixture();await writeFile(join(f.paths.home,"config/settings.json"),JSON.stringify({version:1,retry:{enabled:false}}));const s=await f.createSession();
+ const f=await fixture();const s=await f.createSession();
  const gate=Promise.withResolvers<void>();const entered=Promise.withResolvers<void>();cleanup(()=>gate.resolve());
  f.faux.setResponses([async()=>{entered.resolve();await gate.promise;return fauxAssistantMessage("",{stopReason:"error",errorMessage:"failed"});},fauxAssistantMessage("Next")]);
  await s.submit("Fail","a");await entered.promise;await s.submit("Never replay","b");gate.resolve();

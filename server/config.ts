@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { Type, type Static } from "typebox";
@@ -5,6 +6,7 @@ import { Compile } from "typebox/compile";
 import { workspacePaths, type WorkspacePaths } from "./domain/workspace";
 import { readConfigEnvironment, readJsonValue } from "./config/files";
 import { defaultPikoFile, defaultDeployment } from "./config/defaults";
+import { object, agentSchema } from "./config/schema";
 
 export type ServerConfig = { hostname: string; port: number; idleSessionMs: number; maxSessions: number; maxRequestBytes: number };
 export type TelegramConfig = { token: string; userId: string };
@@ -15,10 +17,11 @@ export type PikoConfig = {
   channels: { telegram: { enabled: false } | ({ enabled: true } & TelegramConfig) };
   warnings: readonly string[];
 };
-const object = <T extends Record<string, import("typebox").TSchema>>(fields: T) => Type.Object(fields, { additionalProperties: false });
 const text = Type.String({ minLength: 1 });
 const tool = object({ enabled: Type.Boolean() });
 const applicationSchema = object({
+  version: Type.Literal(1),
+  agent: agentSchema,
   channels: object({ telegram: object({ enabled: Type.Boolean(), userId: Type.Optional(text) }) }),
   tools: object({ web_search: tool, web_extract: tool }),
 });
@@ -44,6 +47,8 @@ function merge(base: unknown, override: unknown): unknown {
 
 /** JSON owns application behavior exclusively. Deployment and credentials are not accepted here. */
 export function readApplicationSettings(home: string): ApplicationSettings {
+  if (existsSync(join(home, "config", "settings.json")))
+    throw new Error("config/settings.json is no longer supported. Move model presets and stream options to piko.json.agent, remove retry/compaction overrides, and delete settings.json.");
   const path = join(home, "config", "piko.json");
   const file = readJsonValue(path, {});
   if (!record(file)) invalid("configuration", "a JSON object");
@@ -53,6 +58,9 @@ export function readApplicationSettings(home: string): ApplicationSettings {
     const field = error?.instancePath?.slice(1).replaceAll("/", ".") || "configuration";
     throw new Error(`Invalid configuration in piko.json at ${field}: JSON accepts only application behavior, not deployment parameters or credentials.`);
   }
+  const agent = candidate.agent;
+  if (agent.defaultProfile && !Object.hasOwn(agent.profiles, agent.defaultProfile))
+    throw new Error("Invalid configuration in piko.json at agent.defaultProfile: expected an existing agent.profiles entry.");
   return candidate;
 }
 

@@ -31,32 +31,32 @@ DEEPSEEK_API_KEY="填写你的 DeepSeek API Key"
 
 环境与 JSON 不提供同一字段的双入口；分工和旧部署调整见 [应用配置](application-config.md)。
 
-`config/settings.json` 存模型预设和运行参数：
+模型预设统一放在 config/piko.json 的 agent 下，不再生成/读取 settings.json：
 
 ```json
 {
   "version": 1,
-  "defaultProfile": "quick",
-  "profiles": {
-    "quick": {
-      "provider": "deepseek",
-      "model": "deepseek-flash",
-      "thinking": "off"
-    },
-    "careful": {
-      "provider": "deepseek",
-      "model": "deepseek-flash",
-      "thinking": "high"
+  "agent": {
+    "defaultProfile": "quick",
+    "profiles": {
+      "quick": {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "thinking": "off"
+      },
+      "careful": {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "thinking": "high"
+      }
     }
-  },
-  "compaction": { "enabled": true },
-  "retry": { "enabled": true, "maxRetries": 2 }
+  }
 }
 ```
 
 上述 ID 来自锁定的 pi-ai 1.1.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
 
-第一次创建原生会话使用 defaultProfile；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留。修改 defaultProfile 后若需切换当前会话，再调用 selection API。最初没有模型的会话在重启后可以启用新配置。
+第一次创建原生会话使用 agent.defaultProfile；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留。修改 defaultProfile 后若需切换当前会话，再调用 selection API。最初没有模型的会话在重启后可以启用新配置。
 
 通用思考值为 off/minimal/low/medium/high/xhigh/max；只接受所选模型实际支持的值，能力列表见 thinkingLevels。例如本版本 deepseek-flash 支持 off/low/high/max。Piko 不把所有思考值强行映射到每个供应商。
 
@@ -94,7 +94,7 @@ models.json 支持内建供应商覆盖和自定义模型，只存元数据与�
 }
 ```
 
-在后端环境或 .env 设置 CUSTOM_API_KEY，在 settings.profiles 选择 custom/对应模型。自定义供应商的变量名是规范化大写 provider ID 加 _API_KEY；模型地址、token 上限、reasoning 和 compat 要符合实际服务。
+在后端环境或 .env 设置 CUSTOM_API_KEY，在 piko.json 的 agent.profiles 选择 custom/对应模型。自定义供应商的变量名是规范化大写 provider ID 加 _API_KEY；模型地址、token 上限、reasoning 和 compat 要符合实际服务。
 
 - 自定义 API 支持 openai-completions、openai-responses、anthropic-messages。其他 pi-ai 内建供应商继续使用其原生适配器；不声称 JSON 能注册任意 API 实现。
 - 模型 maxTokens 是能力上限，request.maxTokens 是本次请求的默认输出预算；request.temperature 是采样默认值。模型级 request 可覆盖供应商级。
@@ -104,7 +104,7 @@ models.json 支持内建供应商覆盖和自定义模型，只存元数据与�
 - 已有 OAuth 凭据改为私有 .env 的 PIKO_OAUTH_<规范化供应商 ID> 序列化值，由 EnvironmentCredentialStore 配合 pi-ai 刷新、0600 原子写回并同步同一后端的存储读者，不写凭据 JSON。可变 OAuth 不接受进程环境 override，防止重启用到旧 refresh token；Piko 仍没有交互登录/授权页面。
 - JSON 使用严格校验，未知字段报错，不静默忽略。解析错误仅报告文件/字段，不把凭据值放进错误响应。
 
-settings 另支持 compaction（enabled/reserveTokens/keepRecentTokens/backgroundTokens）、retry（enabled/maxRetries/baseDelayMs/maxAgentDelayMs）、stream（transport/timeoutMs/maxRetries/maxRetryDelayMs/cacheRetention）。stream 是模型供应商连接选项，客户端聊天仍使用 Piko SSE。未设置的值使用 durable 默认行为。
+Piko 不再暴露 compaction/retry 配置，不在 Harness 启动时覆盖这两项；直接使用 Durable 默认策略。当前锁定版本默认启用自动压缩和重试（最多额外 3 次），不是删除功能。agent.stream 仍可选配 transport/timeoutMs/maxRetries/maxRetryDelayMs/cacheRetention；这是模型供应商连接选项，不是 Harness 生成重试策略，客户端聊天仍使用 Piko SSE。
 
 ## 控制 API
 
@@ -129,11 +129,11 @@ Invoke-RestMethod http://127.0.0.1:8787/api/runtime/compact -Method Post
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime/cancel -Method Post
 ```
 
-selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。models/settings JSON、凭据环境和插件修改后重启后端生效。指导和技能在每次模型请求自动刷新。
+selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。piko/models JSON、凭据环境和插件修改后重启后端生效。指导和技能在每次模型请求自动刷新。
 
 ## 更新的生效时机
 
-当前锁定 durable 1.1.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；`settings.compaction.enabled` 控制自动压缩，不关闭手动 compact。
+当前锁定 durable 1.1.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
 
 运行时及 HTTP 现在明确返回 `status: compacted | skipped | cancelled`；skipped 的 reason 为 no_summary 或 stale。只有摘要实际应用后才报告 compacted；未生成摘要、摘要过时无法应用、取消分别反馈，任务失败、丢失结果或其他应用错误报告失败。TG `/compact` 同步这些结果，可选模型详情读取失败不影响已确认的结果。后台自动压缩是否需要展示提醒仍待设计。
 
@@ -147,16 +147,16 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
 | 工作区 .agents/skills、PIKO_HOME/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
-| config/settings.json、models.json | 重启后端；默认预设不自动切换已有会话 |
+| config/piko.json、models.json | 重启后端；默认预设不自动切换已有会话 |
 | config/.env 中的 OAuth 凭据 | 手工修改需重启；运行时 OAuth 刷新由串行原子写入发布新凭据 |
-| config/.env、config/piko.json、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
+| config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | PIKO_HOME/extensions 插件入口、本地辅助代码及外部依赖 | 重启后端时重新发现、编译并加载 |
 | 插件自行读取的提示词或配置文件 | 由插件决定：每次调用读取可直接生效；初始化时捕获则需重启 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
 | 工作区其他 md、JSONL 和插件持久化 doc | 普通文件按需读取，重启保留存储和 doc 既有状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 models/settings JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 piko/models JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 

@@ -11,7 +11,7 @@
 | 存储 | 内容 |
 | --- | --- |
 | config/piko.json、.env | 应用配置与可选覆盖 |
-| config/piko.json、settings.json、models.json | 非敏感通道/工具行为、模型、预设与运行设置 |
+| config/piko.json、models.json | 统一的非敏感 Agent/通道/工具行为，以及独立模型目录；不再生成 settings.json |
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
 | extensions/、skills/ | 用户插件与公共技能 |
 | state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |

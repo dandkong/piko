@@ -1,5 +1,7 @@
 /** Only non-sensitive application behavior is written to piko.json. */
 export const defaultPikoFile = {
+  version: 1,
+  agent: { profiles: {} },
   channels: { telegram: { enabled: false } },
   tools: { web_search: { enabled: true }, web_extract: { enabled: true } },
 };

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
@@ -72,7 +72,6 @@ test("literal submissions, multiple turns and passive results survive restart wi
 test("provider failure surfaces, abort stops work, and next input still works", async () => {
   const f = await fixture(30);
   f.faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "provider failed" })]);
-  await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, retry: { enabled: false } }));
   const session = await f.createSession();
   await expect(session.prompt("fail", { id: crypto.randomUUID(), createdAt: 1 })).rejects.toThrow();
   const entered = Promise.withResolvers<void>(); const gate = Promise.withResolvers<void>();

@@ -38,7 +38,7 @@ RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码�
 ## 环境要求
 
 - Bun 1.4 或更新版本。
-- 在后端环境或私有 config/.env 设置供应商 API Key，在 config/settings.json 选择模型预设；自定义供应商的非敏感目录与参数写入 config/models.json。
+- 在后端环境或私有 config/.env 设置供应商 API Key，在 config/piko.json 的 agent 下选择模型预设；自定义供应商的非敏感目录与参数写入 config/models.json。
 - 与 Expo SDK 57 兼容的 Expo Go，或者相应的开发客户端。
 - Android Emulator 或 iOS Simulator。iOS Simulator 需要 macOS；Windows 上可使用 Android Emulator。
 
@@ -101,7 +101,7 @@ bun run android
 
 ### 配置与排错
 
-- 配置按字段独立分工：JSON 管应用/Agent 行为及非敏感工具设置，环境变量/.env 管部署参数及敏感凭据；同一字段不支持两边配置，放错位置报错。piko.json 管通道与工具开关，settings/models JSON 管模型和运行参数；修改后重启 API。见 [应用配置](docs/features/application-config.md)。
+- 配置按字段独立分工：JSON 管应用/Agent 行为及非敏感工具设置，环境变量/.env 管部署参数及敏感凭据；同一字段不支持两边配置，放错位置报错。piko.json 统一管理 agent 预设、通道与工具行为，models.json 管模型目录；不再生成/读取 settings.json，自动压缩与重试直接使用 Durable 默认策略；修改后重启 API。见 [应用配置](docs/features/application-config.md)。
 - `PIKO_HOST`、`PIKO_PORT` 配置 API 监听地址与端口（仅环境入口），默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
 - 后端 `BRAVE_SEARCH_API_KEY` 为内置 web_search 提供凭据；启用开关仅在 piko.json 的 tools.web_search.enabled，可由进程环境或私有 `PIKO_HOME/config/.env` 提供；修改后重启 API。凭据不进入工具参数、前端或发布包，缺失不阻止启动和网页提取。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
@@ -122,7 +122,7 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/config` 保存非敏感应用 piko.json、模型 settings.json/models.json，以及私有部署/凭据 .env；不再读取 auth.json，`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/config` 保存统一行为 piko.json、模型目录 models.json，以及私有部署/凭据 .env；不再读取 auth.json，`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
 
 工作区只保留两个指导与记忆文件：AGENTS.md 定义助手如何表达和做事，MEMORY.md 保存长期事实与结论；用户可手动编辑，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 

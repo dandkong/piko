@@ -11,7 +11,7 @@
 - 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建技能和执行脚本，全局扩展不自动加载。
 - 内置 web_search/web_extract 已接入；搜索保持 query/maxResults 参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单区分内置/用户扩展及配置状态，工作区技能/脚本不自动成为内置能力。[网络工具](docs/features/web-tools.md)。
 - 非敏感 JSON 模型/预设配置与环境凭据严格分离，思考强度、durable 插件及选择/压缩/取消 API 已接入；TG 增加模型/思考按钮菜单、压缩与详细状态，共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。RN 模型配置界面、图片读取尚未接入。
-- 应用配置按字段严格分工：piko.json 管通道行为与工具开关，settings/models JSON 管 Agent/模型参数；HTTP/工作区部署参数和凭据仅环境/.env。不提供 env 覆盖 JSON 的双入口，旧开关和错放凭据拒绝；OAuth 刷新只写私有 .env。启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
+- 应用配置按字段严格分工：piko.json 统一管理 agent 模型预设与可选连接选项、通道和工具行为，models.json 管模型目录；settings.json 已移除，重试和自动压缩直接沿用 Durable 默认策略；HTTP/工作区部署参数和凭据仅环境/.env。不提供 env 覆盖 JSON 的双入口，旧开关和错放凭据拒绝；OAuth 刷新只写私有 .env。启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
 - 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。

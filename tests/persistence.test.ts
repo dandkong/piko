@@ -16,7 +16,7 @@ import { ConversationStore } from "../server/chat/conversations";
 test("initialization preserves guidance and JSON configuration, bounds reads and rejects conflicting paths", async () => {
   const f = await fixture();
   for (const name of ["AGENTS.md", "MEMORY.md"]) await writeFile(join(f.paths.workspace, name), "mine".repeat(100));
-  await writeFile(join(f.paths.home, "config/settings.json"), '{"version":1,"retry":{"maxRetries":5}}');
+  await writeFile(join(f.paths.home, "config/piko.json"), '{"version":1,"agent":{"profiles":{"quick":{"provider":"faux","model":"fast","thinking":"off"}}}}');
   await writeFile(join(f.paths.home, "config/.env"), 'DEEPSEEK_API_KEY="private"\n');
   initializeWorkspace(f.paths);
   for (const name of ["AGENTS.md", "MEMORY.md"]) {
@@ -25,7 +25,8 @@ test("initialization preserves guidance and JSON configuration, bounds reads and
   }
   expect(existsSync(join(f.paths.workspace, "SOUL.md"))).toBe(false);
   expect(existsSync(join(f.paths.workspace, "USER.md"))).toBe(false);
-  expect(await readFile(join(f.paths.home, "config/settings.json"), "utf8")).toContain('"maxRetries":5');
+  expect(await readFile(join(f.paths.home, "config/piko.json"), "utf8")).toContain('"model":"fast"');
+  expect(existsSync(join(f.paths.home, "config/settings.json"))).toBe(false);
   expect(await readFile(join(f.paths.home, "config/.env"), "utf8")).toContain("private");
   expect(existsSync(join(f.paths.home, "config/auth.json"))).toBe(false);
   expect(existsSync(join(f.paths.workspace, ".agents/skills"))).toBe(true);

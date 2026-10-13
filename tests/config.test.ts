@@ -29,7 +29,9 @@ test("defaults have no read side effects and initialization writes only behavior
   expect(existsSync(f.config)).toBe(false);
   initializeWorkspace(f.load({ PIKO_PORT: "9191", PIKO_TELEGRAM_BOT_TOKEN: "must-not-persist" }).paths);
   const saved = readFileSync(join(f.config, "piko.json"), "utf8");
-  expect(JSON.parse(saved)).toEqual({ channels: { telegram: { enabled: false } }, tools: initial.tools });
+  expect(JSON.parse(saved)).toEqual({ version: 1, agent: { profiles: {} }, channels: { telegram: { enabled: false } }, tools: initial.tools });
+  expect(existsSync(join(f.config, "settings.json"))).toBe(false);
+  expect(saved).not.toContain('"retry"'); expect(saved).not.toContain('"compaction"');
   expect(saved).not.toContain("must-not-persist"); expect(saved).not.toContain("9191");
   expect(existsSync(join(f.config, "auth.json"))).toBe(false);
   f.file({ tools: { web_search: { enabled: false } } }); f.dotenv("PIKO_PORT=9393\n");
@@ -136,6 +138,32 @@ test("missing token and invalid authorized user disable only Telegram and redact
   expect(f.load().warnings[0]).toContain("PIKO_TELEGRAM_BOT_TOKEN");
   f.dotenv("PIKO_TELEGRAM_BOT_TOKEN=local-secret\n");
   expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "" }).channels.telegram).toEqual({ enabled: false });
+});
+
+test("piko.json owns versioned Agent profiles and rejects removed retry/compaction settings", () => {
+  const f = fixture();
+  f.file({ version: 1, agent: { defaultProfile: "quick", profiles: {
+    quick: { provider: "deepseek", model: "deepseek-flash", thinking: "off" },
+  } } });
+  expect(readApplicationSettings(f.home).agent).toEqual({ defaultProfile: "quick", profiles: {
+    quick: { provider: "deepseek", model: "deepseek-flash", thinking: "off" },
+  } });
+  f.file({ agent: { defaultProfile: "private-invalid-profile" } });
+  expect(() => f.load()).toThrow("agent.defaultProfile");
+  expect(() => f.load()).not.toThrow("private-invalid-profile");
+  for (const value of [
+    { version: 2 }, { defaultProfile: "quick" }, { profiles: {} },
+    { retry: { enabled: true } }, { compaction: { enabled: true } },
+    { agent: { retry: { enabled: true } } }, { agent: { compaction: { enabled: true } } },
+    { agent: { profiles: { quick: { provider: "deepseek", model: "deepseek-flash", thinking: "invalid" } } } },
+  ]) { f.file(value); expect(() => f.load()).toThrow("Invalid configuration"); }
+});
+
+test("settings.json is not generated, parsed, merged or used as a second profile source", () => {
+  const f = fixture(); f.file({ agent: { profiles: {} } });
+  writeFileSync(join(f.config, "settings.json"), '{"secret":"private-legacy-value"');
+  expect(() => f.load()).toThrow("settings.json is no longer supported");
+  expect(() => f.load()).not.toThrow("private-legacy-value");
 });
 
 test("shared dotenv supports quotes and escapes and does not mutate ambient or global environments", () => {

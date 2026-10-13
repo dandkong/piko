@@ -108,6 +108,7 @@ export class DurableChatSession implements ChatSession {
     try {
       harness = await Harness.open(storage, { models: config.models, registry: extensions.registry,
         env: ({ cwd }) => new WorkspaceExecutionEnv(cwd ?? this.paths.workspace, runtimePaths(this.paths.home).tmp),
+        // Retry and compaction are deliberately left to Durable's built-in defaults.
         settings: { ...config.harnessSettings, toolExecution: "sequential", steeringMode: "all" },
         onReport: error => console.error("Piko durable:", error),
       }, ctx);
@@ -260,7 +261,7 @@ export class DurableChatSession implements ChatSession {
       const existing = await this.submission(requestId);
       if (existing) return { submission: existing, duplicate: true };
       const agent = await this.conversation.agent(ctx);
-      if (!agent.model) throw new Error("No model is configured. Add backend environment credentials and a profile in PIKO_HOME/config/settings.json.");
+      if (!agent.model) throw new Error("No model is configured. Add backend environment credentials and a profile in PIKO_HOME/config/piko.json under agent.profiles.");
       await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
       await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; await registerInput(tx, requestId, source); }, ctx);
       const handle = await this.conversation.submit({ type: "input", content: text, requestId, whenBusy: "steer" }, ctx);

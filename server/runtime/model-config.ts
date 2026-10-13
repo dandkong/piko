@@ -25,10 +25,9 @@ import {
 import { runtimePaths } from "./config/paths.ts";
 import {
   object,
-  readWorkspaceSettings,
   type ModelProfile,
-  type WorkspaceSettings,
-} from "./config/settings.ts";
+} from "../config/schema.ts";
+import { readApplicationSettings } from "../config.ts";
 import { EnvironmentCredentialStore } from "./credentials.ts";
 
 const string = Type.String({ minLength: 1 });
@@ -144,10 +143,9 @@ type ModelConfig = Static<typeof overrideSchema>;
 
 export type WorkspaceModelConfig = {
   models: Models;
-  settings: WorkspaceSettings;
   profiles: Record<string, ModelProfile>;
   defaultModel?: ModelProfile;
-  harnessSettings: HarnessSettings;
+  harnessSettings: Pick<HarnessSettings, "stream">;
 };
 
 export async function loadWorkspaceModels(
@@ -156,7 +154,7 @@ export async function loadWorkspaceModels(
 ): Promise<WorkspaceModelConfig> {
   const paths = runtimePaths(home);
   const env = readConfigEnvironment(home);
-  const settings = readWorkspaceSettings(home);
+  const agent = readApplicationSettings(home).agent;
   const config = readJson(join(paths.config, "models.json"), modelsSchema, {
     providers: {},
   });
@@ -179,7 +177,7 @@ export async function loadWorkspaceModels(
         configureProvider(id, provider, models.getProvider(id), env),
       );
   }
-  const profiles = (settings.profiles ?? {}) as Record<string, ModelProfile>;
+  const profiles = agent.profiles as Record<string, ModelProfile>;
   for (const [name, profile] of Object.entries(profiles)) {
     const model = models.getModel(profile.provider, profile.model);
     if (!model)
@@ -191,19 +189,16 @@ export async function loadWorkspaceModels(
         `Profile ${name}: unsupported thinking level ${profile.thinking}`,
       );
   }
-  const defaultModel = settings.defaultProfile
-    ? profiles[settings.defaultProfile]
+  const defaultModel = agent.defaultProfile
+    ? profiles[agent.defaultProfile]
     : undefined;
   if (defaultModel) await requireAvailableModel(models, defaultModel);
   return {
     models,
-    settings,
     profiles,
     defaultModel,
     harnessSettings: {
-      compaction: settings.compaction,
-      retry: settings.retry,
-      stream: settings.stream as HarnessSettings["stream"],
+      stream: agent.stream as HarnessSettings["stream"],
     },
   };
 }

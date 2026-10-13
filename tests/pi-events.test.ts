@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type EntryRecord, type SnapshotEvent } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -83,9 +81,7 @@ test("a history read ahead of event delivery does not append the same partial af
 });
 
 test("native provider retry retains committed attempt messages and their native boundaries", async () => {
-  const f = await fixture(200);
-  await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1,
-    retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 }, stream: { maxRetries: 0 } }));
+  const f = await fixture(1000);
   const session = await f.createSession();
   const events: SessionEvent[] = []; session.subscribe(event => events.push(event));
   const failed = "Partial text from the failed provider attempt. ".repeat(12);

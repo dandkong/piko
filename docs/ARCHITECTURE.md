@@ -39,9 +39,8 @@ Telegram 私聊 → Bot API 适配器 ────┘
 ```text
 ~/.piko/
 ├── config/
-│   ├── piko.json                 # 通道行为、工具开关
+│   ├── piko.json                 # agent 预设/连接选项、通道、工具行为
 │   ├── .env                      # 私有部署参数与凭据，0600
-│   ├── settings.json             # 模型预设、运行设置
 │   └── models.json               # 非敏感供应商/模型配置与环境变量名绑定
 ├── extensions/                  # durable 插件
 ├── skills/                      # 用户公共技能
@@ -65,6 +64,8 @@ Telegram 私聊 → Bot API 适配器 ────┘
 ## 模型、资源与插件
 
 pi-ai 内建供应商目录使用后端环境 API Key；OAuth 通过 Piko EnvironmentCredentialStore 从私有 .env 读取/刷新并原子持久化，不使用凭据 JSON。自定义 JSON 可指定 API、地址、模型能力、请求参数、headersEnv 变量名绑定和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
+
+Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 
 模型配置和插件在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 

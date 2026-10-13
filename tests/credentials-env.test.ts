@@ -26,7 +26,7 @@ test("OAuth refresh writes only private dotenv, serializes updates and publishes
   const restarted = new EnvironmentCredentialStore(f.paths.home, env);
   expect(await restarted.read("test")).toEqual(credential("10"));
   expect(await restarted.list()).toEqual([{ providerId: "test", type: "oauth" }]);
-  for (const name of ["piko.json", "settings.json", "models.json"])
+  for (const name of ["piko.json", "models.json"])
     expect(await readFile(join(f.paths.home, "config", name), "utf8")).not.toContain("private-key");
   await store.delete("test"); expect(await peer.read("test")).toBeUndefined();
   expect(readConfigEnvironment(f.paths.home, {}).PIKO_OAUTH_TEST).toBeUndefined();

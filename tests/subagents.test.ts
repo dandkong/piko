@@ -193,7 +193,6 @@ test("stopping a child withdraws its queued report without removing ordinary use
 
 test("a failed child reports privately while another child and the main conversation remain usable", async () => {
   const f = await fixture();
-  await Bun.write(`${f.paths.home}/config/settings.json`, JSON.stringify({ version: 1, retry: { enabled: false } }));
   const session = await f.createSession(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(() => gate.resolve());
   let id = ""; let failures = 0;
   const route: FauxResponseFactory = async context => {

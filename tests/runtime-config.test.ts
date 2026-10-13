@@ -22,6 +22,42 @@ await api.commit(async tx => { const state = await tx.doc(State, api.conversatio
 return { content: [{ type: "text", text: ${JSON.stringify(value)} + label }] }; } })] });
 `;
 
+test("unified Agent settings leave retry and compaction entirely to Durable defaults", async () => {
+  const f = await fixture();
+  const config = await loadWorkspaceModels(f.paths.home, f.models);
+  expect(config.harnessSettings).not.toHaveProperty("retry");
+  expect(config.harnessSettings).not.toHaveProperty("compaction");
+  expect(config.harnessSettings.stream).toBeUndefined();
+  await writeFile(join(f.paths.home, "config/piko.json"), JSON.stringify({ agent: { stream: { timeoutMs: 1000 } } }));
+  const withStream = await loadWorkspaceModels(f.paths.home, f.models);
+  expect(withStream.harnessSettings).not.toHaveProperty("retry");
+  expect(withStream.harnessSettings).not.toHaveProperty("compaction");
+  expect(withStream.harnessSettings.stream?.timeoutMs).toBe(1000);
+  await writeFile(join(f.paths.home, "extensions/policies.ts"), `import { Type } from "typebox";
+import { defineExtension, defineTool, defineTask } from "@earendil-works/pi-durable";
+const Inspect = defineTask({name:"test.inspect-policies",version:1,initial:()=>({phase:"done"}),phases:{
+  done:(_task,runtime,ctx)=>runtime.commit(()=>({status:"terminal",outcome:{status:"completed",result:{retry:runtime.settings.retry,compaction:runtime.settings.compaction}}}),ctx)
+}});
+export default defineExtension({name:"policies",tasks:[Inspect],tools:[defineTool({name:"inspect_policies",description:"Inspect native policy defaults",parameters:Type.Object({}),
+ execute:async(_args,api,ctx)=>{const id=await api.createTask(Inspect,null,{ownership:{kind:"conversation"},background:true},ctx);const task=await api.waitForTask(id,ctx);return {content:[{type:"text",text:JSON.stringify(task.state)}]};}
+})]});`);
+  f.faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("inspect_policies", {}), { stopReason: "toolUse" }),
+    input => {
+      const message = input.messages.findLast(item => item.role === "toolResult");
+      const text = message?.content.find(item => item.type === "text");
+      if (message?.isError) throw new Error(text?.type === "text" ? text.text : "Policy inspection failed");
+      expect(message?.isError).toBe(false);
+      const result = JSON.parse(text?.type === "text" ? text.text : "{}").outcome.result;
+      expect(result.retry).toMatchObject({ enabled: true, maxRetries: 3 });
+      expect(result.compaction.enabled).toBe(true);
+      return fauxAssistantMessage("Native defaults confirmed.");
+    },
+  ]);
+  const session = await f.createSession();
+  await session.prompt("Inspect defaults", { id: "native-policy-defaults", createdAt: 1 });
+});
+
 test("native workspace plugins execute tools and preserve docs; code changes take effect after restart", async () => {
   const f = await fixture();
   const directory = join(f.paths.home, "extensions/remember"); await mkdir(join(directory, "lib"), { recursive: true });
@@ -54,10 +90,10 @@ test("native workspace plugins execute tools and preserve docs; code changes tak
 });
 
 test("model profiles and thinking selections persist across restart; file edits leave the active runtime unchanged", async () => {
-  const f = await fixture(); const settings = join(f.paths.home, "config/settings.json");
-  await writeFile(settings, JSON.stringify({ version: 1, defaultProfile: "quick", profiles: {
+  const f = await fixture(); const settings = join(f.paths.home, "config/piko.json");
+  await writeFile(settings, JSON.stringify({ version: 1, agent: { defaultProfile: "quick", profiles: {
     quick: { provider: "faux", model: "fast", thinking: "off" }, review: { provider: "faux", model: "reasoning", thinking: "high" },
-  } }));
+  } } }));
   const config = defaultServerConfig();
   const store = new ConversationStore(f.runtime);
   const app = createApp({ config, runtime: f.runtime, conversations: store });
@@ -97,9 +133,9 @@ test("JSON model behavior and environment-only credentials reach a real local Op
     compat: { supportsReasoningEffort: true, supportsStore: false, maxTokensField: "max_tokens" },
     models: [{ id: "test-model", contextWindow: 32000, maxTokens: 4096, reasoning: true, samplingParams: { top_p: 0.7 } }],
   } } }));
-  await writeFile(join(config, "settings.json"), JSON.stringify({ version: 1, defaultProfile: "main", profiles: {
+  await writeFile(join(config, "piko.json"), JSON.stringify({ version: 1, agent: { defaultProfile: "main", profiles: {
     main: { provider: "custom", model: "test-model", thinking: "high" },
-  } }));
+  } } }));
   const runtime = createPiRuntime(f.paths); cleanup(() => runtime.dispose!());
   const session = await runtime.createSession() as import("../server/runtime/pi").DurableChatSession;
   await session.prompt("local only", { id: crypto.randomUUID(), createdAt: 1 });
@@ -136,8 +172,8 @@ test("a model-free conversation can activate newly configured credentials and pr
   await runtime.createSession();
   expect((await runtime.describe!()).selection).toBeUndefined();
   models.setProvider(f.faux.provider);
-  await writeFile(join(f.paths.home, "config/settings.json"), JSON.stringify({ version: 1, defaultProfile: "main",
-    profiles: { main: { provider: "faux", model: "reasoning", thinking: "high" } } }));
+  await writeFile(join(f.paths.home, "config/piko.json"), JSON.stringify({ version: 1, agent: { defaultProfile: "main",
+    profiles: { main: { provider: "faux", model: "reasoning", thinking: "high" } } } }));
   await runtime.dispose!();
   const restarted = createPiRuntime(f.paths, { models }); cleanup(() => restarted.dispose!());
   const session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
