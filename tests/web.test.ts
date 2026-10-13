@@ -57,7 +57,7 @@ test("encoded traversal, hidden files and links outside the export cannot expose
   expect((await f.web(request("/%zz"))).status).toBe(400);
 });
 
-test("one listener serves Web, same-origin API and persistent SSE while rejecting other origins", async () => {
+test("one listener serves Web, API and persistent SSE with permissive CORS", async () => {
   const f = await site(); const store = new ConversationStore(f.runtime); cleanup(() => store.close());
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createApp({ config: defaultServerConfig(), runtime: f.runtime, conversations: store, web: f.web }) });
   cleanup(() => server.stop(true));
@@ -65,7 +65,9 @@ test("one listener serves Web, same-origin API and persistent SSE while rejectin
   expect(await (await fetch(base)).text()).toContain("<title>Piko</title>");
   const health = await fetch(`${base}/api/health`, { headers: { origin: base } });
   expect(health.status).toBe(200); expect((await health.json()).app).toBe("Piko");
-  expect((await fetch(`${base}/api/health`, { headers: { origin: "https://other.test" } })).status).toBe(403);
+  const crossOrigin = await fetch(`${base}/api/health`, { headers: { origin: "https://other.test" } });
+  expect(crossOrigin.status).toBe(200);
+  expect(crossOrigin.headers.get("Access-Control-Allow-Origin")).toBe("https://other.test");
   expect((await fetch(`${base}/api/missing`, { headers: { accept: "text/html" } })).status).toBe(404);
   const controller = new AbortController();
   const stream = await fetch(`${base}/api/chat/events`, { signal: controller.signal, headers: { origin: base } });

@@ -17,11 +17,11 @@ test("input acceptance is separate from an observer that remains open across idl
  const state=await(await f.app(new Request("http://local/api/chat"))).json();expect(state.messages.map((m:any)=>m.content)).toEqual(["Hello","First","Hello","Second"]);
  expect(f.faux.state.callCount).toBe(2);controller.abort();await reader.cancel();
 });
-test("request validation, CORS and native receipt lookup work without a SQL repository",async()=>{
+test("request validation, unfiltered Origin handling and native receipt lookup work without a SQL repository",async()=>{
  const f=await setup();
  expect((await f.app(new Request("http://local/api/chat",{method:"POST",body:"{"}))).status).toBe(400);
  expect((await f.app(new Request("http://local/api/chat",{method:"POST",body:JSON.stringify({message:"x"})}))).status).toBe(422);
- expect((await f.app(new Request("http://local/api/chat",{headers:{origin:"https://bad.invalid"}}))).status).toBe(403);
+ const crossOrigin=await f.app(new Request("http://local/api/chat",{headers:{origin:"https://bad.invalid"}}));expect(crossOrigin.status).toBe(200);expect(crossOrigin.headers.get("Access-Control-Allow-Origin")).toBe("https://bad.invalid");
  expect((await f.app(new Request("http://local/api/chat/events?after=-1"))).status).toBe(422);
  expect((await f.app(new Request("http://local/api/chat/submission?requestId=missing"))).status).toBe(404);
  expect((await f.app(new Request("http://local/api/main"))).status).toBe(404);

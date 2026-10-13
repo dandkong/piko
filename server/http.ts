@@ -5,6 +5,7 @@ export function json(body: unknown, status = 200): Response {
   });
 }
 
+/** Reflect CORS for browser clients; deployment access control belongs at the proxy/network boundary. */
 export function withCors(request: Request, response: Response): Response {
   const origin = request.headers.get("origin");
   if (!origin) return response;

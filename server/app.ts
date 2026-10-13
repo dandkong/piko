@@ -10,8 +10,6 @@ import type { WebHandler } from "./web";
 export function createApp({ config, runtime, conversations, web }: { config: ServerConfig; runtime: ChatRuntime; conversations: ConversationStore; web?: WebHandler }) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
-    const origin = request.headers.get("origin");
-    if (origin && origin !== url.origin && !config.allowedOrigins.has(origin)) return new Response("Origin not allowed.", { status: 403 });
     const reply = (response: Response) => withCors(request, response);
     if (request.method === "OPTIONS") return reply(new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Accept, Content-Type" } }));
     try {

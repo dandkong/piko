@@ -27,8 +27,7 @@ PIKO_HOME/config/
 {
   "http": {
     "host": "127.0.0.1",
-    "port": 8787,
-    "corsOrigins": ["http://localhost:8081"]
+    "port": 8787
   },
   "channels": {
     "telegram": {
@@ -62,16 +61,15 @@ PIKO_TELEGRAM_BOT_TOKEN="填写 BotFather 提供的 token"
 | `workspace.path` | `PIKO_WORKSPACE` | `PIKO_HOME/workspace`；绝对路径 |
 | `http.host` | `PIKO_HOST` | `127.0.0.1`；非空且不含空白 |
 | `http.port` | `PIKO_PORT` | `8787`；整数 1–65535 |
-| `http.corsOrigins` | `PIKO_CORS_ORIGINS` | 空列表；env 用逗号分隔，只接受 HTTP(S) Origin |
 | `channels.telegram.enabled` | `PIKO_TELEGRAM_ENABLED` | `false`；env 为 true/false，不区分大小写 |
 | `channels.telegram.userId` | `PIKO_TELEGRAM_USER_ID` | 启用时必须是正整数数字 ID，以字符串保存 |
 | `channels.telegram.botToken` | `PIKO_TELEGRAM_BOT_TOKEN` | 启用时必须有值；支持 `env:NAME` |
 
-数组覆盖整个列表，不自动合并。`PIKO_CORS_ORIGINS` 设为空字符串可以清空允许列表；布尔值 `false` 是明确覆盖，不按字符串是否非空判断。空端口、空工作区、空主机或启用通道的空凭据均视为错误。
+布尔值 `false` 是明确覆盖，不按字符串是否非空判断。空端口、空工作区、空主机或启用通道的空凭据均视为错误。
 
 `.env` 支持注释、可选 `export`、单/双引号，不执行 Shell、不展开命令或变量；Windows 路径建议用单引号。进程中未定义的变量不会抹掉本地值。该文件不注入 Expo 或全局进程环境。
 
-`bun run dev`、`dev:web`、`dev:android` 使用同一个配置入口检查 API 地址与端口，并在解析后的 CORS 列表上追加本机 Expo Origin，再传给 API 子进程；保留文件和环境中的其他 Origin。客户端 `EXPO_PUBLIC_PIKO_API_URL` 仍由 Expo 的环境配置提供，修改 API 地址或端口时须相应设置客户端地址。
+`bun run dev`、`dev:web`、`dev:android` 使用同一个配置入口检查 API 地址与端口。开发 Web 与 API 使用不同端口时，Piko 返回浏览器所需的 CORS 响应头，不要求维护 Origin 白名单。客户端 `EXPO_PUBLIC_PIKO_API_URL` 仍由 Expo 的环境配置提供，修改 API 地址或端口时须相应设置客户端地址。
 
 ## 错误、生效与边界
 
@@ -85,4 +83,4 @@ JSON 语法、核心字段类型、未知核心字段、HTTP 和路径配置错�
 
 ## 正式 Web 部署
 
-正式 `bun run start` 沿用同一 HTTP、工作区和 Telegram 配置，固定托管 apps/mobile/dist/web；Web 构建默认同源 /api，同源请求无需额外 CORS 配置，跨源仍需白名单。HTTPS 代理终止时按实际公网 Origin 填 http.corsOrigins；后端不从代理头推断可信来源。开发 Web 与原生端默认地址不变，EXPO_PUBLIC_PIKO_API_URL 是构建时的客户端覆盖，不属于运行时 piko.json。详细步骤见 [Linux 正式入口](linux-deployment.md)。
+正式 `bun run start` 沿用同一 HTTP、工作区和 Telegram 配置，固定托管 apps/mobile/dist/web；Web 构建默认同源 `/api`。Piko 不过滤 Origin，也不提供 Origin 白名单；CORS 响应头允许浏览器跨源请求。访问认证和安全策略由部署时的反向代理或网络边界负责，并应覆盖 API/SSE。开发 Web 与原生端默认地址不变，`EXPO_PUBLIC_PIKO_API_URL` 是构建时的客户端覆盖，不属于运行时 `piko.json`。详细步骤见 [Linux 正式入口](linux-deployment.md)。

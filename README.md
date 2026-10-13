@@ -68,7 +68,7 @@ bun run dev:web
 bun run dev:android
 ```
 
-`dev`、`dev:web` 和 `dev:android` 都会启动 API（默认 8787）和 Expo（8081），使用统一应用配置，自动为 API 配置本地 Web 的 CORS，并保留文件或 env 中的其他 Origin。API 就绪后才启动 Expo。按 `Ctrl+C` 关闭两个服务；任何一个服务退出时，另一个也会关闭。启动前检查端口，已占用时提示关闭之前的服务，不会终止其他进程。
+`dev`、`dev:web` 和 `dev:android` 都会启动 API（默认 8787）和 Expo（8081），使用统一应用配置。API 就绪后才启动 Expo。Piko 不过滤请求 Origin；浏览器跨源访问由 CORS 响应头支持，部署访问控制由反向代理或网络边界负责。按 `Ctrl+C` 关闭两个服务；任何一个服务退出时，另一个也会关闭。启动前检查端口，已占用时提示关闭之前的服务，不会终止其他进程。
 
 同时测试 Web 和 Android 时，运行 `bun run dev:web` 后在该终端按 `a`，共用一个 Expo 进程。
 
@@ -76,14 +76,13 @@ bun run dev:android
 
 ```powershell
 # 终端 1：API
-$env:PIKO_CORS_ORIGINS = "http://localhost:8081,http://127.0.0.1:8081"
 bun run dev:api
 
 # 终端 2：仅 Expo（按 w / a 选择平台）
 bun run dev:mobile
 ```
 
-默认 API 地址是 Android Emulator 的 `http://10.0.2.2:8787`，开发 Web 和 iOS Simulator 的 `http://127.0.0.1:8787`。Android Emulator 使用 Expo Go 时，保持 Expo 和 API 同时运行。独立启动 API 时需要手动配置 Web 的 `PIKO_CORS_ORIGINS`；使用其他 Web 地址或端口时，加入其准确的 Origin 并重启 API。
+默认 API 地址是 Android Emulator 的 `http://10.0.2.2:8787`，开发 Web 和 iOS Simulator 的 `http://127.0.0.1:8787`。Android Emulator 使用 Expo Go 时，保持 Expo 和 API 同时运行。独立启动 API 时，开发 Web 的跨源请求由 Piko 的 CORS 响应头支持，无需配置 Origin 白名单。
 
 ### Android 本机构建
 
@@ -102,7 +101,7 @@ bun run android
 ### 配置与排错
 
 - Piko 应用配置集中在 `PIKO_HOME/config/piko.json`，首次启动补齐默认文件。HTTP、工作区和通道配置统一加载；优先级为默认值 < 配置文件 < `config/.env` < 进程环境变量，修改后重启 API。字段、env 映射和示例见 [应用配置](docs/features/application-config.md)。
-- `PIKO_HOST`、`PIKO_PORT` 覆盖 API 监听地址与端口，默认 `127.0.0.1:8787`；`PIKO_CORS_ORIGINS` 覆盖允许的 Web Origin。自定义 API 地址或端口时同时设置客户端地址。
+- `PIKO_HOST`、`PIKO_PORT` 覆盖 API 监听地址与端口，默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
 - `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。

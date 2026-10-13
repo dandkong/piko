@@ -9,7 +9,6 @@ import { defaultPikoFile } from "./config/defaults";
 export type ServerConfig = {
   hostname: string;
   port: number;
-  allowedOrigins: ReadonlySet<string>;
   idleSessionMs: number;
   maxSessions: number;
   maxRequestBytes: number;
@@ -29,7 +28,6 @@ const configValidator = Compile(object({
   http: object({
     host: text,
     port: Type.Integer({ minimum: 1, maximum: 65535 }),
-    corsOrigins: Type.Array(text),
   }),
   workspace: object({ path: text }),
   // Optional channel errors are isolated so RN can still start.
@@ -46,7 +44,6 @@ export function defaultServerConfig(): ServerConfig {
   return {
     hostname: defaultPikoFile.http.host,
     port: defaultPikoFile.http.port,
-    allowedOrigins: new Set(),
     idleSessionMs: 30 * 60 * 1000,
     maxSessions: 32,
     maxRequestBytes: 64_000,
@@ -94,22 +91,10 @@ function environmentOverrides(env: Record<string, string | undefined>) {
     http: defined({
       host: env.PIKO_HOST,
       port: numberFromEnv(env.PIKO_PORT),
-      corsOrigins: env.PIKO_CORS_ORIGINS?.split(",").map(value => value.trim()).filter(Boolean),
     }),
     workspace: defined({ path: env.PIKO_WORKSPACE }),
     channels: telegram ? { telegram } : undefined,
   });
-}
-
-function origins(values: string[]): ReadonlySet<string> {
-  return new Set(values.map(value => {
-    try {
-      const url = new URL(value.trim());
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password
-        || url.pathname !== "/" || url.search || url.hash) throw new Error();
-      return url.origin;
-    } catch { return invalid("http.corsOrigins", "HTTP(S) origins without paths or credentials"); }
-  }));
 }
 
 function telegramConfig(
@@ -143,7 +128,6 @@ function validateConfig(candidate: unknown, root: string, env: Record<string, st
   if (!hostname || /\s/.test(hostname)) invalid("http.host", "a nonempty host without whitespace");
   const workspace = candidate.workspace.path;
   if (!isAbsolute(workspace)) invalid("workspace.path", "an absolute path");
-  const allowedOrigins = origins(candidate.http.corsOrigins);
   const warnings: string[] = [];
   let telegram: PikoConfig["channels"]["telegram"] = { enabled: false };
   try { telegram = telegramConfig(candidate.channels.telegram, env); }
@@ -152,7 +136,7 @@ function validateConfig(candidate: unknown, root: string, env: Record<string, st
   }
   return {
     paths: workspacePaths(root, workspace),
-    http: { ...defaultServerConfig(), hostname, port: candidate.http.port, allowedOrigins },
+    http: { ...defaultServerConfig(), hostname, port: candidate.http.port },
     channels: { telegram },
     warnings,
   };

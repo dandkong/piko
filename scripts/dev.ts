@@ -14,14 +14,7 @@ if (args.includes("--help") || args.includes("-h")) {
 const port = 8081;
 const piko = loadPikoConfig();
 const config = piko.http;
-const env = {
-  ...process.env,
-  PIKO_CORS_ORIGINS: [...new Set([
-    ...config.allowedOrigins,
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-  ])].join(","),
-};
+const env = { ...process.env };
 const children: ChildProcess[] = [];
 let stopping = false;
 

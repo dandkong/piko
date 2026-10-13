@@ -21,7 +21,7 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 ```json
 {
-  "http": { "host": "127.0.0.1", "port": 8787, "corsOrigins": [] },
+  "http": { "host": "127.0.0.1", "port": 8787 },
   "channels": {
     "telegram": {
       "enabled": true,
@@ -38,7 +38,7 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 正式 Web 默认使用同源 /api，同一构建可从 localhost、局域网或域名访问，无需写入服务器地址。开发 Web 仍默认使用 127.0.0.1:8787，Android/iOS 默认地址不变。EXPO_PUBLIC_PIKO_API_URL 可在构建前覆盖；构建后的服务环境不会改写网页地址，同源部署不要沿用开发时的该变量。
 
-静态服务只读取导出目录，拒绝隐藏文件、非法路径和越界链接。HTML 与无指纹文件要求重新验证，带内容指纹的资源可长期缓存。未知 API 与缺失脚本/图片返回 404，浏览器页面导航才使用 SPA fallback。同源请求直接允许，跨源继续通过 http.corsOrigins 配置。
+静态服务只读取导出目录，拒绝隐藏文件、非法路径和越界链接。HTML 与无指纹文件要求重新验证，带内容指纹的资源可长期缓存。未知 API 与缺失脚本/图片返回 404，浏览器页面导航才使用 SPA fallback。Piko 不过滤 Origin，跨源浏览器请求会获得 CORS 响应头；部署访问控制由反向代理或网络边界负责。
 
 ## systemd
 
@@ -79,7 +79,7 @@ sudo systemctl start piko
 
 默认监听 loopback，可通过 SSH 转发访问；局域网访问在 piko.json 设置 http.host=0.0.0.0。当前没有 Piko 登录验证，对外入口使用受保护的网络或带认证的反向代理，认证须覆盖网页与全部 API/SSE。
 
-代理转发整个站点到 Bun 的同一端口，保留 Host，不缓存 API，关闭 SSE 缓冲，读取超时长于 15 秒心跳。HTTPS 在代理终止时，http.corsOrigins 填实际 HTTPS Origin，例如 https://piko.example.com；后端不自动信任 X-Forwarded-* 来扩大允许来源。Web 继续同源访问，无需设置 EXPO_PUBLIC_PIKO_API_URL。
+代理转发整个站点到 Bun 的同一端口，保留 Host，不缓存 API，关闭 SSE 缓冲，读取超时长于 15 秒心跳。Web 通过同源 `/api` 访问，不需要配置 CORS Origin。当前 Piko 不做 Origin 白名单或身份认证；反向代理应统一校验网页、API 和 SSE，并限制后端端口不要绕过代理直连。Web 无需设置 `EXPO_PUBLIC_PIKO_API_URL`。
 
 ## 验证范围
 

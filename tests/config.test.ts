@@ -51,26 +51,22 @@ test("loading defaults has no filesystem side effects and initialization never p
 test("file, local environment and ambient overrides use one precedence for HTTP, workspace and Telegram", () => {
   const f = fixture();
   const workspace = join(f.home, "custom-workspace");
-  f.file({ http: { host: "0.0.0.0", port: 9001, corsOrigins: ["https://file.example"] },
+  f.file({ http: { host: "0.0.0.0", port: 9001 },
     workspace: { path: workspace }, channels: { telegram: { enabled: true, userId: "42", botToken: "env:TEST_BOT_TOKEN" } } });
-  f.dotenv("PIKO_PORT=9002\nPIKO_CORS_ORIGINS=https://local.example\nTEST_BOT_TOKEN=local-secret\n");
+  f.dotenv("PIKO_PORT=9002\nTEST_BOT_TOKEN=local-secret\n");
   const local = f.load();
   expect(local.http).toMatchObject({ hostname: "0.0.0.0", port: 9002 });
-  expect([...local.http.allowedOrigins]).toEqual(["https://local.example"]);
   expect(local.paths.workspace).toBe(workspace);
   expect(local.channels.telegram).toEqual({ enabled: true, userId: "42", token: "local-secret" });
   const ambientWorkspace = join(f.home, "ambient-workspace");
-  const ambient = f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "9003", PIKO_CORS_ORIGINS: "https://ambient.example,https://ambient.example",
+  const ambient = f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "9003",
     PIKO_WORKSPACE: ambientWorkspace, PIKO_TELEGRAM_USER_ID: "43", PIKO_TELEGRAM_BOT_TOKEN: "ambient-secret" });
   expect(ambient.http).toMatchObject({ hostname: "127.0.0.1", port: 9003 });
-  expect([...ambient.http.allowedOrigins]).toEqual(["https://ambient.example"]);
   expect(ambient.paths.workspace).toBe(ambientWorkspace);
   expect(ambient.channels.telegram).toEqual({ enabled: true, userId: "43", token: "ambient-secret" });
   expect(ambient.warnings).toEqual([]);
-  expect([...f.load({ PIKO_CORS_ORIGINS: "" }).http.allowedOrigins]).toEqual([]);
   f.dotenv("");
   expect(f.load().http.port).toBe(9001);
-  expect([...f.load().http.allowedOrigins]).toEqual(["https://file.example"]);
 });
 
 test("home is a bootstrap parameter and both home and workspace require absolute paths", () => {
@@ -85,23 +81,19 @@ test("home is a bootstrap parameter and both home and workspace require absolute
   expect(() => initializeWorkspace(f.load({ PIKO_WORKSPACE: f.home }).paths)).toThrow("outside");
 });
 
-test("HTTP parsing rejects invalid ports, hosts and CORS origins with safe field errors", () => {
+test("HTTP parsing rejects invalid ports and hosts with safe field errors", () => {
   const f = fixture();
   for (const value of ["", "NaN", "0", "65536", "12.5", "1e3", "0x123", "private-port-value"]) {
     expect(() => f.load({ PIKO_PORT: value })).toThrow("http.port");
   }
   expect(() => f.load({ PIKO_PORT: "private-port-value" })).not.toThrow("private-port-value");
   for (const host of ["", " \t", "localhost private-value"]) expect(() => f.load({ PIKO_HOST: host })).toThrow("http.host");
-  for (const origin of ["null", "*", "ftp://localhost", "https://user:private-value@example.com", "https://example.com/path", "https://example.com?token=private-value"]) {
-    expect(() => f.load({ PIKO_CORS_ORIGINS: origin })).toThrow("corsOrigins");
-  }
-  expect([...f.load({ PIKO_CORS_ORIGINS: "https://EXAMPLE.com/" }).http.allowedOrigins]).toEqual(["https://example.com"]);
 });
 
 test("malformed JSON, unknown core fields and invalid field types are rejected without exposing values", () => {
   const f = fixture();
   for (const value of [{ http: { port: "private-value" } }, { workspace: { path: 1 } }, { http: { post: 8787 } }, { unknown: "private-value" },
-    { http: null }, { workspace: [] }, { channels: "private-value" }, { http: { port: {} } }, { http: { corsOrigins: {} } }]) {
+    { http: null }, { workspace: [] }, { channels: "private-value" }, { http: { port: {} } }, { http: { corsOrigins: [] } }]) {
     f.file(value);
     expect(() => f.load()).toThrow("Invalid configuration");
     expect(() => f.load()).not.toThrow("private-value");
@@ -122,7 +114,6 @@ test("file and environment values share validation errors for HTTP, paths and Te
     [{ http: { port: 65536 } }, { PIKO_PORT: "65536" }],
     [{ http: { port: 12.5 } }, { PIKO_PORT: "12.5" }],
     [{ http: { host: "bad host" } }, { PIKO_HOST: "bad host" }],
-    [{ http: { corsOrigins: ["https://example.com/path"] } }, { PIKO_CORS_ORIGINS: "https://example.com/path" }],
     [{ workspace: { path: "relative" } }, { PIKO_WORKSPACE: "relative" }],
   ] as [unknown, Record<string, string>][]) {
     f.file(file);
@@ -145,13 +136,12 @@ test("file and environment values share validation errors for HTTP, paths and Te
 
 test("only final merged values are validated and a higher-priority override can repair a field", () => {
   const f = fixture();
-  f.file({ http: { port: "invalid-file-port", host: "bad host", corsOrigins: ["bad origin"] }, workspace: { path: 1 },
+  f.file({ http: { port: "invalid-file-port", host: "bad host" }, workspace: { path: 1 },
     channels: { telegram: { enabled: "invalid", userId: 42, botToken: 123 } } });
   f.dotenv("PIKO_PORT=invalid-local-port\nPIKO_TELEGRAM_ENABLED=invalid-local-flag\n");
-  const repaired = f.load({ PIKO_PORT: "9191", PIKO_HOST: "127.0.0.1", PIKO_CORS_ORIGINS: "", PIKO_WORKSPACE: join(f.home, "custom-workspace"),
+  const repaired = f.load({ PIKO_PORT: "9191", PIKO_HOST: "127.0.0.1", PIKO_WORKSPACE: join(f.home, "custom-workspace"),
     PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: "token" });
   expect(repaired.http).toMatchObject({ port: 9191, hostname: "127.0.0.1" });
-  expect([...repaired.http.allowedOrigins]).toEqual([]);
   expect(repaired.channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
   expect(repaired.warnings).toEqual([]);
   f.file({ http: { port: "invalid-file-port" } });

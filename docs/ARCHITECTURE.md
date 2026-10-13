@@ -14,7 +14,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | --- | --- |
 | apps/mobile/src/features/chat/ | 页面、输入、临时状态、会话 HTTP/SSE |
 | apps/mobile/src/components/、theme.ts | 通用布局、头像、导航和视觉 |
-| server/app.ts、http.ts | 路由、校验、响应与 CORS |
+| server/app.ts、http.ts | 路由、校验与 HTTP 响应 |
 | server/index.ts、config.ts | 配置、初始化、单进程锁、监听与退出 |
 | server/web.ts | 正式 Web 导出文件托管、路径边界、缓存与 SPA fallback |
 | server/chat/ | 文本校验、接纳与管理操作互斥、会话观察和内存重放 |
@@ -27,7 +27,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 页面 → Hook/API → HTTP/SSE；路由/通道 → 会话业务 → 运行时接口 → Pi 适配器。SDK 类型留在 server/runtime，Telegram SDK 留在通道目录。Durable 是唯一 Agent 运行时和持久化来源；Piko 没有 SQLite、Workspace/Thread 表或 Run 状态副本，不引入 pi-server / pi-client。
 
-正式 `bun run start` 由同一 Bun 监听提供 Web 静态文件、API/SSE 与可选 TG；静态根固定 apps/mobile/dist/web，缺少构建即拒绝启动。Web 默认同源 /api，同源 Origin 自动允许，跨源使用配置白名单，不自动信任代理头。开发继续使用 Expo，正式启动与 Linux 模板见 [部署说明](features/linux-deployment.md)。
+正式 `bun run start` 由同一 Bun 监听提供 Web 静态文件、API/SSE 与可选 TG；静态根固定 apps/mobile/dist/web，缺少构建即拒绝启动。Web 默认同源 `/api`；Piko 不过滤 Origin，访问认证与安全边界由反向代理或网络负责。开发继续使用 Expo，正式启动与 Linux 模板见 [部署说明](features/linux-deployment.md)。
 
 ## 工作区与状态
 
