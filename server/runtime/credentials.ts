@@ -18,9 +18,6 @@ export class EnvironmentCredentialStore implements CredentialStore {
   private values: Record<string, OAuthCredential> = {};
   constructor(home: string, env: Record<string, string | undefined>) {
     this.path = join(home, "config", ".env");
-    const legacy = optionalText(join(home, "config", "auth.json"));
-    if (legacy !== undefined && !/^\s*\{\s*\}\s*$/.test(legacy))
-      throw new Error("config/auth.json is no longer a credential source. Move credentials to backend environment variables or config/.env and remove auth.json.");
     for (const [name, value] of Object.entries(env)) {
       if (!name.startsWith(prefix) || !value) continue;
       if (process.env[name] !== undefined)

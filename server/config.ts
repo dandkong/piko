@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { Type, type Static } from "typebox";
@@ -47,8 +46,6 @@ function merge(base: unknown, override: unknown): unknown {
 
 /** JSON owns application behavior exclusively. Deployment and credentials are not accepted here. */
 export function readApplicationSettings(home: string): ApplicationSettings {
-  if (existsSync(join(home, "config", "settings.json")))
-    throw new Error("config/settings.json is no longer supported. Move model presets and stream options to piko.json.agent, remove retry/compaction overrides, and delete settings.json.");
   const path = join(home, "config", "piko.json");
   const file = readJsonValue(path, {});
   if (!record(file)) invalid("configuration", "a JSON object");

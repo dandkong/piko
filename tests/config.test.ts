@@ -71,12 +71,19 @@ test("deployment parameters and credentials in JSON are rejected even with valid
   }
 });
 
-test("behavior variables are rejected in both dotenv and process env, not treated as overrides or silently ignored", () => {
-  const f = fixture(); f.file({ channels: { telegram: { enabled: false } } });
+test("behavior variables in dotenv and process env do not override JSON settings", () => {
+  const f = fixture(); f.file({ channels: { telegram: { enabled: false } }, tools: {
+    web_search: { enabled: false }, web_extract: { enabled: false },
+  } });
   for (const name of ["PIKO_TELEGRAM_ENABLED", "PIKO_TELEGRAM_USER_ID", "PIKO_WEB_SEARCH_ENABLED", "PIKO_WEB_EXTRACT_ENABLED"]) {
-    expect(() => f.load({ [name]: "private-value" })).toThrow("only in config/piko.json");
-    expect(() => f.load({ [name]: "private-value" })).not.toThrow("private-value");
-    f.dotenv(`${name}=false\n`); expect(() => f.load()).toThrow(name); f.dotenv("");
+    const ambient = f.load({ [name]: "true" });
+    expect(ambient.channels.telegram).toEqual({ enabled: false });
+    expect(ambient.tools).toEqual({ web_search: { enabled: false }, web_extract: { enabled: false } });
+    f.dotenv(`${name}=true\n`);
+    const local = f.load();
+    expect(local.channels.telegram).toEqual({ enabled: false });
+    expect(local.tools).toEqual({ web_search: { enabled: false }, web_extract: { enabled: false } });
+    f.dotenv("");
   }
 });
 
@@ -159,11 +166,11 @@ test("piko.json owns versioned Agent profiles and rejects removed retry/compacti
   ]) { f.file(value); expect(() => f.load()).toThrow("Invalid configuration"); }
 });
 
-test("settings.json is not generated, parsed, merged or used as a second profile source", () => {
+test("settings.json is ignored and never used as a profile source", () => {
   const f = fixture(); f.file({ agent: { profiles: {} } });
   writeFileSync(join(f.config, "settings.json"), '{"secret":"private-legacy-value"');
-  expect(() => f.load()).toThrow("settings.json is no longer supported");
-  expect(() => f.load()).not.toThrow("private-legacy-value");
+  expect(f.load().warnings).toEqual([]);
+  expect(readApplicationSettings(f.home).agent).toEqual({ profiles: {} });
 });
 
 test("shared dotenv supports quotes and escapes and does not mutate ambient or global environments", () => {

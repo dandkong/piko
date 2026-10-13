@@ -77,15 +77,5 @@ export function readConfigEnvironment(
   }
   for (const [name, value] of Object.entries(ambient))
     if (value !== undefined) local[name] = value;
-  const jsonOnly = {
-    PIKO_TELEGRAM_ENABLED: "channels.telegram.enabled",
-    PIKO_TELEGRAM_USER_ID: "channels.telegram.userId",
-    PIKO_WEB_SEARCH_ENABLED: "tools.web_search.enabled",
-    PIKO_WEB_EXTRACT_ENABLED: "tools.web_extract.enabled",
-  };
-  for (const [name, field] of Object.entries(jsonOnly)) {
-    if (local[name] !== undefined)
-      throw new Error(`${name} is not an environment setting. Configure ${field} only in config/piko.json.`);
-  }
   return local;
 }

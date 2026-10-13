@@ -81,10 +81,10 @@ PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 ## 放错位置就报错
 
 - piko.json 中的 http、workspace、botToken、工具 apiKey 均拒绝；不支持字面值，也不支持 `env:NAME` 作为绕过入口。正确的环境值不能覆盖并掩盖这些非法 JSON。
-- 环境中的 PIKO_TELEGRAM_ENABLED、PIKO_TELEGRAM_USER_ID、PIKO_WEB_SEARCH_ENABLED、PIKO_WEB_EXTRACT_ENABLED 拒绝，提示对应 JSON 字段；不默默忽略旧变量。
+- 行为开关和授权用户只从 piko.json 读取；同名环境变量不会覆盖 JSON，也不会参与配置。
 - models.json 中的 apiKey 和 header 值字段 headers 不再接受；改用环境 API Key 与只含名称的 headersEnv。
-- settings.json 不是配置来源，不生成、不解析或合并；存在该旧文件时拒绝启动并提示把模型预设/stream 移到 piko.json.agent，删除 retry/compaction 覆盖，再删除旧文件。根级或 agent 下的 retry/compaction 均拒绝，不保留兼容双入口。
-- 非空 auth.json 不再是凭据来源，会提示先移出凭据；没有 fallback，不允许它与环境两边同时配置。初始化不创建该文件，不自动删除用户旧文件。
+- settings.json 和 auth.json 都不是配置来源，不生成也不读取；即使文件存在也会忽略。模型预设只从 piko.json.agent 读取，凭据只从环境或私有 .env 读取。
+- 根级或 agent 下的 retry/compaction 不属于 Piko 配置；Durable 使用自己的默认策略。
 
 JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误只报告文件、字段或变量名称，不打印其值。结构合法但已启用的 TG 缺 Token 或 userId 无效时，仅禁用 TG 并给出警告，RN 和其他工具继续可用。关闭 TG 时不校验其凭据。
 
@@ -92,6 +92,6 @@ JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误
 
 配置在后端启动/创建 Harness 时读取，修改后重启；不会重读并替换进行中的模型请求。指导和技能的刷新规则不同，见 [生效时机](durable-runtime.md#更新的生效时机)。已有主会话的 cwd 不能随便换路径，恢复原路径或使用新 PIKO_HOME；state 固定在 home/state，必须在工作区之外。
 
-升级现有部署时，先把监听地址/端口/路径从 JSON 移到环境，把启用开关/允许用户从环境移到 JSON，再把 auth.json 的模型 API Key 移入环境并删除旧凭据文件；同时把旧 settings.json 的 defaultProfile/profiles/stream 放入 piko.json.agent，删除旧压缩/重试覆盖与 settings.json；不要直接用旧格式重启。停止后备份整个私有目录，备份仍含敏感资料，不提交或公开。
+部署时按当前文件格式配置 piko.json、models.json 与私有 .env。旧 settings.json 和 auth.json 不参与启动；需要旧配置内容时，手动将有效值写入当前格式。停止后备份整个私有目录，备份仍含敏感资料，不提交或公开。
 
 凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见 [Linux 部署](linux-deployment.md)。

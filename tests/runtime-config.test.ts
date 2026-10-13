@@ -158,12 +158,13 @@ test("JSON model behavior and environment-only credentials reach a real local Op
   expect(log).not.toContain("only-local-test-key"); expect(log).not.toContain("edited-test-key");
 });
 
-test("legacy credential JSON is rejected rather than falling back or overriding environment credentials", async () => {
+test("auth.json is ignored and environment credentials remain the only credential source", async () => {
   const f = await fixture();
   await writeFile(join(f.paths.home, "config/auth.json"), JSON.stringify({ deepseek: { type: "api_key", key: "private-old-key" } }));
   await writeFile(join(f.paths.home, "config/.env"), "DEEPSEEK_API_KEY=private-new-key\n");
-  await expect(loadWorkspaceModels(f.paths.home)).rejects.toThrow("auth.json is no longer a credential source");
-  await expect(loadWorkspaceModels(f.paths.home)).rejects.not.toThrow("private-old-key");
+  const config = await loadWorkspaceModels(f.paths.home);
+  expect(config.models.getProvider("deepseek")).toBeDefined();
+  expect(JSON.stringify(config.profiles)).not.toContain("private-old-key");
 });
 
 test("a model-free conversation can activate newly configured credentials and profile after restart", async () => {

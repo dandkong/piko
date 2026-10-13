@@ -72,7 +72,7 @@ RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时�
 
 ## 配置与生命周期
 
-Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口，不支持 PIKO_TELEGRAM_ENABLED / PIKO_TELEGRAM_USER_ID，也不在 JSON 接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效只停用 TG；JSON 结构/放错位置错误则拒绝启动。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
+Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口；行为配置只从 JSON 读取，同名环境变量会被忽略，JSON 不接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效只停用 TG；JSON 结构/放错位置错误则拒绝启动。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
 
 piko.json：
 
