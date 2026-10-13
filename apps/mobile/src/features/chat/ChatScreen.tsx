@@ -123,7 +123,8 @@ export function ChatScreen() {
             onContentSizeChange={(_, height) => {
               listMetrics.current.contentHeight = height;
               if (messages.length > 0 && followLatest.current && !historyAnchor.current) {
-                scrollToLatest(positionedLatest.current);
+                const animate = positionedLatest.current && !loading && (submitting || busy);
+                scrollToLatest(animate);
                 positionedLatest.current = true;
               }
             }}
