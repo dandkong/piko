@@ -1,4 +1,4 @@
-import { MAX_MESSAGE_LENGTH, isRequestId, type HealthResponse } from "../shared/chat";
+import { CHAT_PAGE_SIZE, MAX_MESSAGE_LENGTH, isHistoryCursor, isRequestId, type HealthResponse } from "../shared/chat";
 import type { ServerConfig } from "./config";
 import type { ChatRuntime } from "./runtime/types";
 import type { ConversationStore } from "./chat/conversations";
@@ -18,7 +18,12 @@ export function createApp({ config, runtime, conversations, web }: { config: Ser
         if (response) return reply(response);
       }
       if (request.method === "GET" && url.pathname === "/api/health") return reply(json({ ok: true, app: "Piko", runtime: "Pi", modelReady: await runtime.isModelReady(), activeSessions: conversations.size } satisfies HealthResponse));
-      if (request.method === "GET" && url.pathname === "/api/chat") return reply(json(await conversations.snapshot()));
+      if (request.method === "GET" && url.pathname === "/api/chat") return reply(json(await conversations.snapshot({ limit: CHAT_PAGE_SIZE })));
+      if (request.method === "GET" && url.pathname === "/api/chat/history") {
+        const before = url.searchParams.get("before") ?? undefined;
+        if (before !== undefined && !isHistoryCursor(before)) return reply(json({ error: "Invalid history cursor." }, 422));
+        return reply(json(await conversations.history(before)));
+      }
       if (request.method === "GET" && url.pathname === "/api/chat/events") {
         const after = Number(url.searchParams.get("after") ?? 0);
         if (!Number.isSafeInteger(after) || after < 0) return reply(json({ error: "Invalid event cursor." }, 422));

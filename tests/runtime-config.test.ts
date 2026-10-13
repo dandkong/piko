@@ -8,7 +8,7 @@ import { createPiRuntime } from "../server/runtime/pi";
 import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
 import { defaultServerConfig } from "../server/config";
-import { FileCredentialStore } from "../server/runtime/credentials";
+import { loadWorkspaceModels } from "../server/runtime/model-config";
 
 const plugin = (value: string) => `
 import { Type } from "typebox";
@@ -80,7 +80,7 @@ test("model profiles and thinking selections persist across restart; file edits 
   await f.runtime.dispose!();
 });
 
-test("JSON model and auth configuration reaches a real local OpenAI-compatible request without personal credentials", async () => {
+test("JSON model behavior and environment-only credentials reach a real local OpenAI-compatible request", async () => {
   const f = await fixture(); const requests: { headers: Headers; body: Record<string, unknown> }[] = [];
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const body = await request.json() as Record<string, unknown>; requests.push({ headers: request.headers, body });
@@ -90,16 +90,15 @@ test("JSON model and auth configuration reaches a real local OpenAI-compatible r
       { headers: { "content-type": "text/event-stream" } });
   } }); cleanup(() => server.stop(true));
   const config = join(f.paths.home, "config");
-  await writeFile(join(config, ".env"), "PIKO_CONFIG_TEST_HEADER=shared-local-env-value\n");
-  await writeFile(join(config, "models.json"), JSON.stringify({ providers: { local: {
+  await writeFile(join(config, ".env"), "PIKO_CONFIG_TEST_HEADER=shared-local-env-value\nCUSTOM_API_KEY=only-local-test-key\n");
+  await writeFile(join(config, "models.json"), JSON.stringify({ providers: { custom: {
     api: "openai-completions", baseUrl: `http://127.0.0.1:${server.port}/v1`, request: { temperature: 0.2, maxTokens: 128 },
-    headers: { "x-piko-config-test": "env:PIKO_CONFIG_TEST_HEADER" },
+    headersEnv: { "x-piko-config-test": "PIKO_CONFIG_TEST_HEADER" },
     compat: { supportsReasoningEffort: true, supportsStore: false, maxTokensField: "max_tokens" },
     models: [{ id: "test-model", contextWindow: 32000, maxTokens: 4096, reasoning: true, samplingParams: { top_p: 0.7 } }],
   } } }));
-  await writeFile(join(config, "auth.json"), JSON.stringify({ local: { type: "api_key", key: "only-local-test-key" } }));
   await writeFile(join(config, "settings.json"), JSON.stringify({ version: 1, defaultProfile: "main", profiles: {
-    main: { provider: "local", model: "test-model", thinking: "high" },
+    main: { provider: "custom", model: "test-model", thinking: "high" },
   } }));
   const runtime = createPiRuntime(f.paths); cleanup(() => runtime.dispose!());
   const session = await runtime.createSession() as import("../server/runtime/pi").DurableChatSession;
@@ -109,19 +108,26 @@ test("JSON model and auth configuration reaches a real local OpenAI-compatible r
   expect(requests[0]?.body).toMatchObject({ model: "test-model", temperature: 0.2, max_tokens: 128, top_p: 0.7, reasoning_effort: "high" });
   expect(JSON.stringify(await runtime.describe!())).not.toContain("only-local-test-key");
   expect(session.messages.at(-1)?.content).toBe("local answer");
+  await writeFile(join(config, ".env"), "PIKO_CONFIG_TEST_HEADER=edited-header\nCUSTOM_API_KEY=edited-test-key\n");
+  await session.prompt("Still startup credentials", { id: crypto.randomUUID(), createdAt: 2 });
+  expect(requests[1]?.headers.get("authorization")).toBe("Bearer only-local-test-key");
+  expect(requests[1]?.headers.get("x-piko-config-test")).toBe("shared-local-env-value");
+  await runtime.dispose!();
+  const restarted = createPiRuntime(f.paths); cleanup(() => restarted.dispose!());
+  const next = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
+  await next.prompt("Updated after restart", { id: crypto.randomUUID(), createdAt: 3 });
+  expect(requests[2]?.headers.get("authorization")).toBe("Bearer edited-test-key");
+  expect(requests[2]?.headers.get("x-piko-config-test")).toBe("edited-header");
+  const log = await readFile(join(f.paths.home, "state/durable/main.jsonl"), "utf8");
+  expect(log).not.toContain("only-local-test-key"); expect(log).not.toContain("edited-test-key");
 });
 
-test("credential writes serialize and invalid file edits do not replace the active store", async () => {
-  const f = await fixture(); const path = join(f.paths.home, "config/auth.json");
-  const store = new FileCredentialStore(path);
-  await store.modify("test", async () => ({ type: "api_key", key: "0" }));
-  await Promise.all(Array.from({ length: 10 }, () => store.modify("test", async current => {
-    await Bun.sleep(1); return { type: "api_key", key: String(Number(current?.type === "api_key" ? current.key : "0") + 1) };
-  })));
-  expect(await store.read("test")).toEqual({ type: "api_key", key: "10" });
-  await writeFile(path, "invalid");
-  expect(() => new FileCredentialStore(path)).toThrow("Invalid JSON");
-  expect(await store.read("test")).toEqual({ type: "api_key", key: "10" });
+test("legacy credential JSON is rejected rather than falling back or overriding environment credentials", async () => {
+  const f = await fixture();
+  await writeFile(join(f.paths.home, "config/auth.json"), JSON.stringify({ deepseek: { type: "api_key", key: "private-old-key" } }));
+  await writeFile(join(f.paths.home, "config/.env"), "DEEPSEEK_API_KEY=private-new-key\n");
+  await expect(loadWorkspaceModels(f.paths.home)).rejects.toThrow("auth.json is no longer a credential source");
+  await expect(loadWorkspaceModels(f.paths.home)).rejects.not.toThrow("private-old-key");
 });
 
 test("a model-free conversation can activate newly configured credentials and profile after restart", async () => {

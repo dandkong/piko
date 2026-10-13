@@ -2,218 +2,148 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { loadPikoConfig } from "../server/config";
+import { loadPikoConfig, readApplicationSettings } from "../server/config";
 import { readConfigEnvironment } from "../server/config/files";
 import { initializeWorkspace } from "../server/domain/workspace";
 
 const roots: string[] = [];
-afterEach(() => {
-  for (const root of roots.splice(0)) {
-    if (!resolve(root).startsWith(resolve(tmpdir()) + sep)) throw new Error("Unexpected test directory");
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+afterEach(() => { for (const root of roots.splice(0)) {
+  if (!resolve(root).startsWith(resolve(tmpdir()) + sep)) throw new Error("Unexpected test directory");
+  rmSync(root, { recursive: true, force: true });
+} });
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "piko-config-test-"));
-  roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "piko-config-test-")); roots.push(home);
   const config = join(home, "config");
-  const file = (value: unknown) => {
-    mkdirSync(config, { recursive: true });
-    writeFileSync(join(config, "piko.json"), JSON.stringify(value));
-  };
-  const dotenv = (value: string) => {
-    mkdirSync(config, { recursive: true });
-    writeFileSync(join(config, ".env"), value);
-  };
+  const file = (value: unknown) => { mkdirSync(config, { recursive: true }); writeFileSync(join(config, "piko.json"), JSON.stringify(value)); };
+  const dotenv = (value: string) => { mkdirSync(config, { recursive: true }); writeFileSync(join(config, ".env"), value); };
   const load = (env: Record<string, string | undefined> = {}) => loadPikoConfig({ ...env, PIKO_HOME: home });
   return { home, config, file, dotenv, load };
 }
 
-test("loading defaults has no filesystem side effects and initialization never persists environment overrides", () => {
-  const f = fixture();
-  expect(f.load().http).toMatchObject({ hostname: "127.0.0.1", port: 8787 });
-  expect(f.load().channels.telegram).toEqual({ enabled: false });
-  expect(f.load().paths.workspace).toBe(join(f.home, "workspace"));
+test("defaults have no read side effects and initialization writes only behavior JSON, never deployment or credentials", () => {
+  const f = fixture(); const initial = f.load();
+  expect(initial.http).toMatchObject({ hostname: "127.0.0.1", port: 8787 });
+  expect(initial.channels.telegram).toEqual({ enabled: false });
+  expect(initial.paths.workspace).toBe(join(f.home, "workspace"));
+  expect(initial.tools).toEqual({ web_search: { enabled: true }, web_extract: { enabled: true } });
   expect(existsSync(f.config)).toBe(false);
   initializeWorkspace(f.load({ PIKO_PORT: "9191", PIKO_TELEGRAM_BOT_TOKEN: "must-not-persist" }).paths);
   const saved = readFileSync(join(f.config, "piko.json"), "utf8");
-  expect(JSON.parse(saved)).toMatchObject({ http: { port: 8787 }, channels: { telegram: { enabled: false } } });
-  expect(saved).not.toContain("must-not-persist");
-  expect(saved).not.toContain("9191");
-  f.file({ http: { port: 9292 }, channels: { telegram: { enabled: false } } });
-  f.dotenv("PIKO_PORT=9393\n");
+  expect(JSON.parse(saved)).toEqual({ channels: { telegram: { enabled: false } }, tools: initial.tools });
+  expect(saved).not.toContain("must-not-persist"); expect(saved).not.toContain("9191");
+  expect(existsSync(join(f.config, "auth.json"))).toBe(false);
+  f.file({ tools: { web_search: { enabled: false } } }); f.dotenv("PIKO_PORT=9393\n");
   const authored = readFileSync(join(f.config, "piko.json"), "utf8");
   initializeWorkspace(f.load().paths);
   expect(readFileSync(join(f.config, "piko.json"), "utf8")).toBe(authored);
   expect(readFileSync(join(f.config, ".env"), "utf8")).toBe("PIKO_PORT=9393\n");
 });
 
-test("file, local environment and ambient overrides use one precedence for HTTP, workspace and Telegram", () => {
-  const f = fixture();
-  const workspace = join(f.home, "custom-workspace");
-  f.file({ http: { host: "0.0.0.0", port: 9001 },
-    workspace: { path: workspace }, channels: { telegram: { enabled: true, userId: "42", botToken: "env:TEST_BOT_TOKEN" } } });
-  f.dotenv("PIKO_PORT=9002\nTEST_BOT_TOKEN=local-secret\n");
+test("JSON behavior and env deployment/credentials have disjoint ownership, with ambient precedence only inside env", () => {
+  const f = fixture(); const workspace = join(f.home, "custom-workspace");
+  f.file({ channels: { telegram: { enabled: true, userId: "42" } }, tools: { web_extract: { enabled: false } } });
+  f.dotenv(`PIKO_HOST=0.0.0.0\nPIKO_PORT=9002\nPIKO_WORKSPACE=${workspace}\nPIKO_TELEGRAM_BOT_TOKEN=local-secret\n`);
   const local = f.load();
-  expect(local.http).toMatchObject({ hostname: "0.0.0.0", port: 9002 });
-  expect(local.paths.workspace).toBe(workspace);
+  expect(local.http).toMatchObject({ hostname: "0.0.0.0", port: 9002 }); expect(local.paths.workspace).toBe(workspace);
   expect(local.channels.telegram).toEqual({ enabled: true, userId: "42", token: "local-secret" });
+  expect(local.tools.web_extract.enabled).toBe(false);
   const ambientWorkspace = join(f.home, "ambient-workspace");
-  const ambient = f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "9003",
-    PIKO_WORKSPACE: ambientWorkspace, PIKO_TELEGRAM_USER_ID: "43", PIKO_TELEGRAM_BOT_TOKEN: "ambient-secret" });
-  expect(ambient.http).toMatchObject({ hostname: "127.0.0.1", port: 9003 });
-  expect(ambient.paths.workspace).toBe(ambientWorkspace);
-  expect(ambient.channels.telegram).toEqual({ enabled: true, userId: "43", token: "ambient-secret" });
-  expect(ambient.warnings).toEqual([]);
-  f.dotenv("");
-  expect(f.load().http.port).toBe(9001);
+  const ambient = f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "9003", PIKO_WORKSPACE: ambientWorkspace, PIKO_TELEGRAM_BOT_TOKEN: "ambient-secret" });
+  expect(ambient.http).toMatchObject({ hostname: "127.0.0.1", port: 9003 }); expect(ambient.paths.workspace).toBe(ambientWorkspace);
+  expect(ambient.channels.telegram).toEqual({ enabled: true, userId: "42", token: "ambient-secret" });
+  expect(ambient.tools).toEqual(local.tools); expect(ambient.warnings).toEqual([]);
+  f.dotenv(""); expect(f.load().http.port).toBe(8787);
 });
 
-test("home is a bootstrap parameter and both home and workspace require absolute paths", () => {
+test("deployment parameters and credentials in JSON are rejected even with valid environment values", () => {
   const f = fixture();
-  f.dotenv(`PIKO_HOME=${join(f.home, "ignored")}\n`);
+  for (const value of [
+    { http: { host: "private-host", port: 9191 } }, { workspace: { path: f.home } }, { PIKO_HOME: f.home },
+    { channels: { telegram: { enabled: false, botToken: "private-token" } } },
+    { channels: { telegram: { enabled: true, botToken: "env:PIKO_TELEGRAM_BOT_TOKEN" } } },
+    { tools: { web_search: { apiKey: "private-key" } } }, { tools: { web_search: { apiKey: "env:BRAVE_SEARCH_API_KEY" } } },
+  ]) {
+    f.file(value);
+    const run = () => f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "8787", PIKO_WORKSPACE: join(f.home, "workspace"), PIKO_TELEGRAM_BOT_TOKEN: "valid-token" });
+    expect(run).toThrow("JSON accepts only application behavior"); expect(run).not.toThrow("private-token"); expect(run).not.toThrow("private-key");
+  }
+});
+
+test("behavior variables are rejected in both dotenv and process env, not treated as overrides or silently ignored", () => {
+  const f = fixture(); f.file({ channels: { telegram: { enabled: false } } });
+  for (const name of ["PIKO_TELEGRAM_ENABLED", "PIKO_TELEGRAM_USER_ID", "PIKO_WEB_SEARCH_ENABLED", "PIKO_WEB_EXTRACT_ENABLED"]) {
+    expect(() => f.load({ [name]: "private-value" })).toThrow("only in config/piko.json");
+    expect(() => f.load({ [name]: "private-value" })).not.toThrow("private-value");
+    f.dotenv(`${name}=false\n`); expect(() => f.load()).toThrow(name); f.dotenv("");
+  }
+});
+
+test("home is process bootstrap and deployment paths require absolute values", () => {
+  const f = fixture(); f.dotenv(`PIKO_HOME=${join(f.home, "ignored")}\n`);
   expect(f.load().paths.home).toBe(f.home);
   expect(() => loadPikoConfig({ PIKO_HOME: "relative" })).toThrow("PIKO_HOME");
-  f.file({ workspace: { path: "relative" } });
-  expect(() => f.load()).toThrow("workspace.path");
-  f.file({});
-  expect(() => f.load({ PIKO_WORKSPACE: "relative" })).toThrow("workspace.path");
+  expect(() => f.load({ PIKO_WORKSPACE: "relative" })).toThrow("PIKO_WORKSPACE");
   expect(() => initializeWorkspace(f.load({ PIKO_WORKSPACE: f.home }).paths)).toThrow("outside");
 });
 
-test("HTTP parsing rejects invalid ports and hosts with safe field errors", () => {
+test("environment HTTP parsing rejects invalid ports and hosts without exposing values", () => {
   const f = fixture();
-  for (const value of ["", "NaN", "0", "65536", "12.5", "1e3", "0x123", "private-port-value"]) {
-    expect(() => f.load({ PIKO_PORT: value })).toThrow("http.port");
-  }
+  for (const value of ["", "NaN", "0", "65536", "12.5", "1e3", "0x123", "private-port-value"])
+    expect(() => f.load({ PIKO_PORT: value })).toThrow("PIKO_PORT");
   expect(() => f.load({ PIKO_PORT: "private-port-value" })).not.toThrow("private-port-value");
-  for (const host of ["", " \t", "localhost private-value"]) expect(() => f.load({ PIKO_HOST: host })).toThrow("http.host");
+  for (const host of ["", " \t", "localhost private-value"]) expect(() => f.load({ PIKO_HOST: host })).toThrow("PIKO_HOST");
 });
 
-test("malformed JSON, unknown core fields and invalid field types are rejected without exposing values", () => {
+test("invalid JSON and behavior schemas are rejected before runtime without exposing supplied values", () => {
   const f = fixture();
-  for (const value of [{ http: { port: "private-value" } }, { workspace: { path: 1 } }, { http: { post: 8787 } }, { unknown: "private-value" },
-    { http: null }, { workspace: [] }, { channels: "private-value" }, { http: { port: {} } }, { http: { corsOrigins: [] } }]) {
-    f.file(value);
-    expect(() => f.load()).toThrow("Invalid configuration");
-    expect(() => f.load()).not.toThrow("private-value");
+  for (const value of [{ unknown: "private-value" }, { channels: "private-value" }, { channels: null },
+    { channels: { telegram: { enabled: "private-value" } } }, { tools: { web_search: { enabled: "private-value" } } },
+    { tools: { web_extract: { secret: "private-value" } } }, { tools: [] }]) {
+    f.file(value); expect(() => f.load()).toThrow("Invalid configuration"); expect(() => f.load()).not.toThrow("private-value");
   }
   writeFileSync(join(f.config, "piko.json"), '{"secret":"private-json-value"');
-  expect(() => f.load()).toThrow("Invalid JSON");
-  expect(() => f.load()).not.toThrow("private-json-value");
+  expect(() => f.load()).toThrow("Invalid JSON"); expect(() => f.load()).not.toThrow("private-json-value");
+  for (const value of [null, [], "private-value"]) { f.file(value); expect(() => f.load()).toThrow("JSON object"); }
 });
 
-test("file and environment values share validation errors for HTTP, paths and Telegram", () => {
-  const f = fixture();
-  const errorMessage = (run: () => unknown) => {
-    try { run(); } catch (error) { return (error as Error).message; }
-    throw new Error("Expected configuration rejection");
-  };
-  for (const [file, env] of [
-    [{ http: { port: 0 } }, { PIKO_PORT: "0" }],
-    [{ http: { port: 65536 } }, { PIKO_PORT: "65536" }],
-    [{ http: { port: 12.5 } }, { PIKO_PORT: "12.5" }],
-    [{ http: { host: "bad host" } }, { PIKO_HOST: "bad host" }],
-    [{ workspace: { path: "relative" } }, { PIKO_WORKSPACE: "relative" }],
-  ] as [unknown, Record<string, string>][]) {
-    f.file(file);
-    const fileError = errorMessage(() => f.load());
-    f.file({});
-    expect(errorMessage(() => f.load(env))).toBe(fileError);
-  }
-  for (const [telegram, env] of [
-    [{ enabled: "yes" }, { PIKO_TELEGRAM_ENABLED: "yes" }],
-    [{ enabled: true, userId: "@name", botToken: "token" }, { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "@name", PIKO_TELEGRAM_BOT_TOKEN: "token" }],
-    [{ enabled: true, userId: "42", botToken: " " }, { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: " " }],
-  ] as [unknown, Record<string, string>][]) {
-    f.file({ channels: { telegram } });
-    const fileWarnings = f.load().warnings;
-    expect(fileWarnings).toHaveLength(1);
-    f.file({});
-    expect(f.load(env).warnings).toEqual(fileWarnings);
-  }
+test("JSON partial settings inherit behavior defaults but environment cannot repair invalid JSON", () => {
+  const f = fixture(); f.file({ tools: { web_search: { enabled: false } } });
+  expect(readApplicationSettings(f.home).tools).toEqual({ web_search: { enabled: false }, web_extract: { enabled: true } });
+  f.file({ tools: { web_search: { enabled: "invalid" } } });
+  expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("tools.web_search.enabled");
+  f.file({ http: { port: "invalid" } }); expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("http");
 });
 
-test("only final merged values are validated and a higher-priority override can repair a field", () => {
+test("Telegram enablement and authorized user are JSON-only and disabling skips credential validation", () => {
   const f = fixture();
-  f.file({ http: { port: "invalid-file-port", host: "bad host" }, workspace: { path: 1 },
-    channels: { telegram: { enabled: "invalid", userId: 42, botToken: 123 } } });
-  f.dotenv("PIKO_PORT=invalid-local-port\nPIKO_TELEGRAM_ENABLED=invalid-local-flag\n");
-  const repaired = f.load({ PIKO_PORT: "9191", PIKO_HOST: "127.0.0.1", PIKO_WORKSPACE: join(f.home, "custom-workspace"),
-    PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: "token" });
-  expect(repaired.http).toMatchObject({ port: 9191, hostname: "127.0.0.1" });
-  expect(repaired.channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
-  expect(repaired.warnings).toEqual([]);
-  f.file({ http: { port: "invalid-file-port" } });
-  f.dotenv("PIKO_PORT=9292\n");
-  expect(f.load().http.port).toBe(9292);
-  f.file({ http: { port: 8787, typo: "private-value" } });
-  expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("http.typo");
-});
-
-test("undefined overrides retain defaults and malformed sections while JSON roots must be objects", () => {
-  const f = fixture();
-  f.file({ http: { port: 9191 }, channels: { telegram: { enabled: true, userId: "42", botToken: "token" } } });
-  const config = f.load({ PIKO_PORT: undefined, PIKO_TELEGRAM_ENABLED: undefined });
-  expect(config.http.port).toBe(9191);
-  expect(config.channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
-  f.file({ channels: null });
-  expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("channels");
-  for (const value of [null, [], "private-value"]) {
-    f.file(value);
-    expect(() => f.load({ PIKO_PORT: "9191" })).toThrow("JSON object");
-  }
-});
-
-test("Telegram requires explicit enablement and disabling skips credential resolution", () => {
-  const f = fixture();
-  expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "token", PIKO_TELEGRAM_USER_ID: "42" }).channels.telegram).toEqual({ enabled: false });
-  f.file({ channels: { telegram: { enabled: false, botToken: "env:MISSING_TEST_BOT_TOKEN" } } });
+  expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "token" }).channels.telegram).toEqual({ enabled: false });
+  f.file({ channels: { telegram: { enabled: false, userId: "invalid-user" } } });
   expect(f.load().warnings).toEqual([]);
-  f.file({ channels: { telegram: { enabled: true, botToken: "env:MISSING_TEST_BOT_TOKEN" } } });
-  expect(f.load({ PIKO_TELEGRAM_ENABLED: "false" }).warnings).toEqual([]);
-  expect(f.load({ PIKO_TELEGRAM_ENABLED: "false" }).channels.telegram).toEqual({ enabled: false });
-  expect(f.load({ PIKO_TELEGRAM_ENABLED: "TRUE", PIKO_TELEGRAM_USER_ID: "42", PIKO_TELEGRAM_BOT_TOKEN: "token" }).channels.telegram)
-    .toEqual({ enabled: true, token: "token", userId: "42" });
+  f.file({ channels: { telegram: { enabled: true, userId: "42" } } });
+  expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "token" }).channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
 });
 
-test("invalid enabled Telegram settings disable only that channel and redact credential values", () => {
+test("missing token and invalid authorized user disable only Telegram and redact private input", () => {
   const f = fixture();
-  for (const env of [
-    { PIKO_TELEGRAM_ENABLED: "yes" },
-    { PIKO_TELEGRAM_ENABLED: "true" },
-    { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_BOT_TOKEN: "private-token-value", PIKO_TELEGRAM_USER_ID: "@private-user" },
-    { PIKO_TELEGRAM_ENABLED: "true", PIKO_TELEGRAM_BOT_TOKEN: "private-token-value", PIKO_TELEGRAM_USER_ID: "9007199254740992" },
-  ]) {
-    const result = f.load(env);
-    expect(result.http.port).toBe(8787);
-    expect(result.channels.telegram).toEqual({ enabled: false });
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("RN remains available");
-    expect(result.warnings[0]).not.toContain("private-token-value");
-    expect(result.warnings[0]).not.toContain("@private-user");
+  for (const userId of [undefined, "@private-user", "9007199254740992"]) {
+    f.file({ channels: { telegram: { enabled: true, ...(userId && { userId }) } } });
+    const result = f.load({ PIKO_TELEGRAM_BOT_TOKEN: "private-token-value" });
+    expect(result.http.port).toBe(8787); expect(result.channels.telegram).toEqual({ enabled: false });
+    expect(result.warnings).toHaveLength(1); expect(result.warnings[0]).toContain("RN remains available");
+    expect(result.warnings[0]).not.toContain("private-token-value"); expect(result.warnings[0]).not.toContain("@private-user");
   }
-  f.file({ channels: { telegram: { enabled: true, userId: "42", botToken: 123 } } });
-  expect(f.load().warnings[0]).toContain("botToken");
-  f.file({ channels: { telegram: { enabled: true, userId: "42", botToken: "env:MISSING_TEST_BOT_TOKEN" } } });
-  expect(f.load().warnings[0]).toContain("Missing environment variable MISSING_TEST_BOT_TOKEN");
-  f.file({ channels: { telegram: { enabled: true, userId: "42", botToken: "token", typo: "private-value" } } });
-  expect(f.load().warnings).toHaveLength(1);
-  expect(f.load().warnings[0]).not.toContain("private-value");
-  f.file({ channels: { telegram: { enabled: {} } } });
-  expect(f.load().warnings[0]).toContain("channels.telegram.enabled");
+  f.file({ channels: { telegram: { enabled: true, userId: "42" } } });
+  expect(f.load().warnings[0]).toContain("PIKO_TELEGRAM_BOT_TOKEN");
+  f.dotenv("PIKO_TELEGRAM_BOT_TOKEN=local-secret\n");
+  expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "" }).channels.telegram).toEqual({ enabled: false });
 });
 
-test("shared dotenv parsing supports quoted values and ambient precedence without global mutation", () => {
-  const f = fixture();
-  f.dotenv("# comment\nexport PIKO_PORT='9000'\nPIKO_CONFIG_TEST_SECRET=\"local value\" # comment\nOTHER=value # comment\n");
-  const ambient = { PIKO_CONFIG_TEST_SECRET: "ambient value", OTHER: undefined };
-  const before = process.env.PIKO_CONFIG_TEST_SECRET;
+test("shared dotenv supports quotes and escapes and does not mutate ambient or global environments", () => {
+  const f = fixture(); f.dotenv('# comment\nexport PIKO_PORT=\'9000\'\nPIKO_CONFIG_TEST_SECRET="local value" # comment\nOTHER=value # comment\n');
+  const ambient = { PIKO_CONFIG_TEST_SECRET: "ambient value", OTHER: undefined }; const before = process.env.PIKO_CONFIG_TEST_SECRET;
   expect(readConfigEnvironment(f.home, ambient)).toMatchObject({ PIKO_PORT: "9000", PIKO_CONFIG_TEST_SECRET: "ambient value", OTHER: "value" });
-  f.load();
-  expect(process.env.PIKO_CONFIG_TEST_SECRET).toBe(before);
-  expect(ambient).toEqual({ PIKO_CONFIG_TEST_SECRET: "ambient value", OTHER: undefined });
-  f.dotenv("INVALID LINE containing private-value\n");
-  expect(() => f.load()).toThrow("line 1");
-  expect(() => f.load()).not.toThrow("private-value");
+  f.load(); expect(process.env.PIKO_CONFIG_TEST_SECRET).toBe(before); expect(ambient).toEqual({ PIKO_CONFIG_TEST_SECRET: "ambient value", OTHER: undefined });
+  const literal = 'quoted " slash \\ literal \\n newline\n';
+  f.dotenv(`ESCAPED=${JSON.stringify(literal)}\n`); expect(readConfigEnvironment(f.home, {}).ESCAPED).toBe(literal);
+  f.dotenv("INVALID LINE containing private-value\n"); expect(() => f.load()).toThrow("line 1"); expect(() => f.load()).not.toThrow("private-value");
 });

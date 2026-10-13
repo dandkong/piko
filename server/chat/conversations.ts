@@ -1,4 +1,4 @@
-import type { ConversationResponse, StreamEvent } from "../../shared/chat";
+import { CHAT_PAGE_SIZE, type ConversationResponse, type StreamEvent } from "../../shared/chat";
 import type { BackgroundReply, InputSource, ChatRuntime, ChatSession } from "../runtime/types";
 import { normalizeMessage } from "./input";
 export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
@@ -59,14 +59,15 @@ export class ConversationStore {
         for (const message of messages) this.publish(message);
         if (this.dirty) {
           this.dirty = false;
-          const conversation = await (await this.get()).snapshot();
+          const conversation = await (await this.get()).snapshot({ limit: CHAT_PAGE_SIZE });
           this.publish({ type: "snapshot", conversation });
         }
       }
     })().catch(error => this.publish({ type: "error", message: error instanceof Error ? error.message : "Could not read conversation." })).finally(() => { this.pump = undefined; });
     return this.pump;
   }
-  async snapshot(): Promise<ConversationResponse> { return (await this.get()).snapshot(); }
+  async snapshot(options?: { limit: number }): Promise<ConversationResponse> { return (await this.get()).snapshot(options); }
+  async history(before?: string) { return (await this.get()).history(before, CHAT_PAGE_SIZE); }
   async submit(message: string, requestId: string, source?: InputSource) {
     message = normalizeMessage(message);
     return this.serial(async () => {

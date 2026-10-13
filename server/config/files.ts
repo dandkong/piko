@@ -12,7 +12,7 @@ export function optionalText(path: string): string | undefined {
   }
 }
 
-/** Parse without validating so application sources can be merged first. */
+/** Parse without validating so JSON application defaults can be filled first. */
 export function readJsonValue(path: string, fallback: unknown): unknown {
   const text = optionalText(path);
   if (text === undefined) return fallback;
@@ -68,10 +68,8 @@ export function readConfigEnvironment(
         );
       value = value.slice(1, end);
       if (quote === '"')
-        value = value
-          .replace(/\\n/g, "\n")
-          .replace(/\\r/g, "\r")
-          .replace(/\\"/g, '"');
+        value = value.replace(/\\([\\nr"])/g, (_match, escaped: string) =>
+          escaped === "n" ? "\n" : escaped === "r" ? "\r" : escaped);
     } else {
       value = value.replace(/\s+#.*$/, "").trimEnd();
     }
@@ -79,22 +77,15 @@ export function readConfigEnvironment(
   }
   for (const [name, value] of Object.entries(ambient))
     if (value !== undefined) local[name] = value;
+  const jsonOnly = {
+    PIKO_TELEGRAM_ENABLED: "channels.telegram.enabled",
+    PIKO_TELEGRAM_USER_ID: "channels.telegram.userId",
+    PIKO_WEB_SEARCH_ENABLED: "tools.web_search.enabled",
+    PIKO_WEB_EXTRACT_ENABLED: "tools.web_extract.enabled",
+  };
+  for (const [name, field] of Object.entries(jsonOnly)) {
+    if (local[name] !== undefined)
+      throw new Error(`${name} is not an environment setting. Configure ${field} only in config/piko.json.`);
+  }
   return local;
-}
-
-export function resolveConfigValue(
-  value: string,
-  env: Record<string, string | undefined>,
-  location: string,
-): string {
-  if (!value.startsWith("env:")) return value;
-  const name = value.slice(4);
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
-    throw new Error(`Invalid environment reference in ${location}`);
-  const resolved = env[name];
-  if (!resolved)
-    throw new Error(
-      `Missing environment variable ${name}, referenced by ${location}`,
-    );
-  return resolved;
 }

@@ -2,6 +2,7 @@ import type { ConversationStore } from "../../chat/conversations";
 import { isFormatError, type TelegramTransport } from "./api";
 import remend from "remend";
 import { applyMessageEvent, type MessageEvent } from "../../../shared/messages";
+import { CHAT_PAGE_SIZE } from "../../../shared/chat";
 
 export const TELEGRAM_RICH_LIMIT = 30_000;
 export const TELEGRAM_PLAIN_LIMIT = 4000;
@@ -103,7 +104,7 @@ export class TelegramMessageOutput {
 export async function deliverConversation(store: ConversationStore, api: TelegramTransport, chatId: string,
   signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS, awaitStart = false, finished: () => Promise<boolean> = async () => true): Promise<void> {
   const output = new TelegramMessageOutput(api, chatId);
-  let conversation = await store.snapshot(); let dirty = true;
+  let conversation = await store.snapshot({ limit: CHAT_PAGE_SIZE }); let dirty = true;
   let started = !awaitStart || conversation.busy || conversation.messages.some(message => message.role === "assistant" && !known.has(message.id));
   const startDeadline = Date.now() + 30000;
   const unsubscribe = await store.observe(event => {
@@ -133,7 +134,7 @@ export async function deliverConversation(store: ConversationStore, api: Telegra
           await new Promise(resolve => setTimeout(resolve, intervalMs)); continue;
         }
         // The native receipt can settle before the coalesced feed publishes its final message.
-        const current = await store.snapshot();
+        const current = await store.snapshot({ limit: CHAT_PAGE_SIZE });
         const sameMessages = current.messages.length === snapshot.messages.length && current.messages.every((message, index) =>
           message.id === snapshot.messages[index].id && message.content === snapshot.messages[index].content);
         if (current.busy || !sameMessages || current.latest?.status !== snapshot.latest?.status) { conversation = current; dirty = true; continue; }

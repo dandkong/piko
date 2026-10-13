@@ -1,133 +1,98 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { Type } from "typebox";
-import type {
-  AuthOperationOptions,
-  Credential,
-  CredentialStore,
-} from "@earendil-works/pi-ai";
-import { readJson } from "../config/files.ts";
-import { object } from "./config/settings.ts";
+import { Compile } from "typebox/compile";
+import type { AuthOperationOptions, Credential, CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
+import { optionalText } from "../config/files";
 
-const credentialSchema = Type.Union([
-  object({
-    type: Type.Literal("api_key"),
-    key: Type.Optional(Type.String({ minLength: 1 })),
-    env: Type.Optional(Type.Record(Type.String(), Type.String())),
-  }),
-  Type.Object({
-    type: Type.Literal("oauth"),
-    refresh: Type.String(),
-    access: Type.String(),
-    expires: Type.Number({ minimum: 0 }),
-  }),
-]);
-const credentialsSchema = Type.Record(Type.String(), credentialSchema);
+const prefix = "PIKO_OAUTH_";
+const validator = Compile(Type.Object({ type: Type.Literal("oauth"), refresh: Type.String(), access: Type.String(), expires: Type.Number({ minimum: 0 }) }));
 const writers = new Map<string, Promise<unknown>>();
-const readers = new Map<string, Set<WeakRef<FileCredentialStore>>>();
+const readers = new Map<string, Set<WeakRef<EnvironmentCredentialStore>>>();
+const nameFor = (provider: string) => prefix + provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
 
-/** One backend owns the data directory; serialize its credential file writes. */
-export class FileCredentialStore implements CredentialStore {
+/** API keys are resolved by provider env auth. Only mutable OAuth state needs a CredentialStore. */
+export class EnvironmentCredentialStore implements CredentialStore {
   readonly path: string;
-  private values: Record<string, Credential>;
-  constructor(path: string) {
-    this.path = resolve(path);
-    this.values = this.snapshot(); // Validate without altering an existing runtime's credentials.
+  private values: Record<string, OAuthCredential> = {};
+  constructor(home: string, env: Record<string, string | undefined>) {
+    this.path = join(home, "config", ".env");
+    const legacy = optionalText(join(home, "config", "auth.json"));
+    if (legacy !== undefined && !/^\s*\{\s*\}\s*$/.test(legacy))
+      throw new Error("config/auth.json is no longer a credential source. Move credentials to backend environment variables or config/.env and remove auth.json.");
+    for (const [name, value] of Object.entries(env)) {
+      if (!name.startsWith(prefix) || !value) continue;
+      if (process.env[name] !== undefined)
+        throw new Error(`${name} is mutable OAuth state. Configure it only in config/.env so refreshed credentials survive restart without a stale process override.`);
+      let candidate: unknown;
+      try { candidate = JSON.parse(value); } catch { throw new Error(`Invalid OAuth environment credential ${name}`); }
+      if (!validator.Check(candidate)) throw new Error(`Invalid OAuth environment credential ${name}`);
+      this.values[name] = candidate as OAuthCredential;
+    }
     const references = readers.get(this.path) ?? new Set();
-    references.add(new WeakRef(this));
-    readers.set(this.path, references);
-  }
-  private snapshot(): Record<string, Credential> {
-    return readJson(this.path, credentialsSchema, {}) as Record<
-      string,
-      Credential
-    >;
+    references.add(new WeakRef(this)); readers.set(this.path, references);
   }
   async read(provider: string, options?: AuthOperationOptions) {
     options?.signal?.throwIfAborted();
-    return Object.hasOwn(this.values, provider)
-      ? structuredClone(this.values[provider])
-      : undefined;
+    return structuredClone(this.values[nameFor(provider)]);
   }
   async list(options?: AuthOperationOptions) {
     options?.signal?.throwIfAborted();
-    return Object.entries(this.values).map(([providerId, value]) => ({
-      providerId,
-      type: value.type,
-    }));
+    return Object.keys(this.values).map(name => ({ providerId: name.slice(prefix.length).toLowerCase().replaceAll("_", "-"), type: "oauth" as const }));
   }
-  private publish(values: Record<string, Credential>): void {
+  private publish(name: string, value: OAuthCredential | undefined) {
     const references = readers.get(this.path);
     for (const reference of references ?? []) {
       const store = reference.deref();
-      if (store) store.values = structuredClone(values);
-      else references?.delete(reference);
+      if (!store) { references?.delete(reference); continue; }
+      if (value) store.values[name] = structuredClone(value);
+      else delete store.values[name];
     }
   }
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
-    const pending = (writers.get(this.path) ?? Promise.resolve())
-      .catch(() => {})
-      .then(operation);
+    const pending = (writers.get(this.path) ?? Promise.resolve()).catch(() => {}).then(operation);
     writers.set(this.path, pending);
-    void pending
-      .finally(() => {
-        if (writers.get(this.path) === pending) writers.delete(this.path);
-      })
-      .catch(() => {});
+    void pending.finally(() => { if (writers.get(this.path) === pending) writers.delete(this.path); }).catch(() => {});
     return pending;
   }
-  private async save(values: Record<string, Credential>) {
-    await mkdir(dirname(this.path), { recursive: true });
+  private async save(name: string, value: OAuthCredential | undefined) {
+    // Preserve unrelated credentials, deployment settings and comments; replace all duplicate assignments.
+    const lines = (optionalText(this.path) ?? "").split(/\r?\n/)
+      .filter(line => line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1] !== name);
+    while (lines.at(-1) === "") lines.pop();
+    if (value) lines.push(`${name}=${JSON.stringify(JSON.stringify(value))}`);
+    const directory = dirname(this.path);
+    await mkdir(directory, { recursive: true });
     const temporary = `${this.path}.${randomUUID()}.tmp`;
     try {
       const file = await open(temporary, "wx", 0o600);
-      try {
-        await file.writeFile(`${JSON.stringify(values, null, 2)}\n`);
-        await file.sync();
-      } finally {
-        await file.close();
-      }
+      try { await file.writeFile(lines.join("\n") + "\n"); await file.sync(); }
+      finally { await file.close(); }
       await rename(temporary, this.path);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    } finally { await rm(temporary, { force: true }); }
   }
-  modify(
-    provider: string,
-    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
-    options?: AuthOperationOptions,
-  ) {
+  modify(provider: string, fn: (current: Credential | undefined) => Promise<Credential | undefined>, options?: AuthOperationOptions) {
     return this.serialize(async () => {
       options?.signal?.throwIfAborted();
-      const values = this.snapshot();
-      const current = Object.hasOwn(values, provider)
-        ? values[provider]
-        : undefined;
+      const name = nameFor(provider);
+      const current = this.values[name];
       const next = await fn(structuredClone(current));
       options?.signal?.throwIfAborted();
       if (next !== undefined) {
-        Object.defineProperty(values, provider, {
-          value: next,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-        await this.save(values);
+        if (!validator.Check(next)) throw new Error("CredentialStore accepts only OAuth updates; API keys belong in backend environment variables.");
+        await this.save(name, next);
+        this.publish(name, next);
       }
-      this.publish(values);
-      return next ?? current;
+      return next ?? structuredClone(current);
     });
   }
   delete(provider: string, options?: AuthOperationOptions) {
     return this.serialize(async () => {
       options?.signal?.throwIfAborted();
-      const values = this.snapshot();
-      if (Object.hasOwn(values, provider)) {
-        delete values[provider];
-        await this.save(values);
-      }
-      this.publish(values);
+      const name = nameFor(provider);
+      await this.save(name, undefined);
+      this.publish(name, undefined);
     });
   }
 }

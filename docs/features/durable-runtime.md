@@ -23,16 +23,13 @@ bun run dev
 
 首次启动补齐 config、extensions、skills、state 和 workspace，只创建缺失文件。未配置模型时仍能打开 API、查看主会话和配置元数据，发送消息会提示配置模型。旧状态不会自动迁移或删除。
 
-`config/auth.json` 存凭据，以 provider ID 为键。DeepSeek 示例：
+敏感凭据只放后端环境或私有 config/.env，JSON 不接受 API Key/Token，auth.json 已退出凭据读取。DeepSeek 示例：
 
-```json
-{
-  "deepseek": {
-    "type": "api_key",
-    "key": "填写你的 DeepSeek API Key"
-  }
-}
+```dotenv
+DEEPSEEK_API_KEY="填写你的 DeepSeek API Key"
 ```
+
+环境与 JSON 不提供同一字段的双入口；分工和旧部署调整见 [应用配置](application-config.md)。
 
 `config/settings.json` 存模型预设和运行参数：
 
@@ -67,12 +64,12 @@ bun run dev
 
 ## 自定义供应商与参数
 
-models.json 支持内建供应商覆盖和自定义模型。API Key 可以放 auth.json，模型元数据和请求默认值放 models.json：
+models.json 支持内建供应商覆盖和自定义模型，只存元数据与非敏感请求默认值。API Key 只能从环境解析；自定义供应商示例：
 
 ```json
 {
   "providers": {
-    "my-provider": {
+    "custom": {
       "api": "openai-completions",
       "baseUrl": "https://your-endpoint.example/v1",
       "request": { "temperature": 0.2, "maxTokens": 4096 },
@@ -97,14 +94,14 @@ models.json 支持内建供应商覆盖和自定义模型。API Key 可以放 au
 }
 ```
 
-再在 auth.json 增加 my-provider 凭据，在 settings.profiles 选择该 provider/model。地址、token 上限、reasoning 和 compat 要符合实际服务。
+在后端环境或 .env 设置 CUSTOM_API_KEY，在 settings.profiles 选择 custom/对应模型。自定义供应商的变量名是规范化大写 provider ID 加 _API_KEY；模型地址、token 上限、reasoning 和 compat 要符合实际服务。
 
 - 自定义 API 支持 openai-completions、openai-responses、anthropic-messages。其他 pi-ai 内建供应商继续使用其原生适配器；不声称 JSON 能注册任意 API 实现。
 - 模型 maxTokens 是能力上限，request.maxTokens 是本次请求的默认输出预算；request.temperature 是采样默认值。模型级 request 可覆盖供应商级。
-- 支持 name、api、baseUrl、reasoning、input、cost、contextWindow、maxTokens、thinkingLevelMap、samplingParams、headers、compat 和 request；modelOverrides 按 ID 覆盖内建模型。
-- 供应商可设置 apiKey（字面值或 `env:VARIABLE`）、headers、keyless。keyless 用于无鉴权本机服务；不能同时设置 apiKey。
-- 可选 `config/.env` 由应用和模型配置共用，进程环境优先，不修改进程全局环境；HTTP/工作区/Telegram 的映射见 [应用配置](application-config.md)。Expo 的客户端环境仍独立设置；应用和模型配置修改后重启后端生效。
-- auth.json 支持 pi-ai 原生 api_key / oauth credential，现有 OAuth 凭据的刷新由 pi-ai 与原子文件存储完成；Piko 尚无交互登录/授权页面。
+- 支持 name、api、baseUrl、reasoning、input、cost、contextWindow、maxTokens、thinkingLevelMap、samplingParams、headersEnv、compat 和 request；modelOverrides 按 ID 覆盖内建模型。
+- JSON 不支持 apiKey 或 header 值字段 headers。headersEnv 只存变量名称，例如 `{"Authorization":"CUSTOM_AUTH_HEADER"}`；实际完整 header 值只放环境，不支持字面值或 env: 前缀的混合解析。keyless 仍是 JSON 中的非敏感行为，用于无鉴权本机服务。
+- 可选 config/.env 与进程环境只管理部署/敏感字段，进程值优先；JSON 行为没有环境覆盖入口，不修改进程全局环境。Expo 的客户端环境独立设置；改动后重启生效。
+- 已有 OAuth 凭据改为私有 .env 的 PIKO_OAUTH_<规范化供应商 ID> 序列化值，由 EnvironmentCredentialStore 配合 pi-ai 刷新、0600 原子写回并同步同一后端的存储读者，不写凭据 JSON。可变 OAuth 不接受进程环境 override，防止重启用到旧 refresh token；Piko 仍没有交互登录/授权页面。
 - JSON 使用严格校验，未知字段报错，不静默忽略。解析错误仅报告文件/字段，不把凭据值放进错误响应。
 
 settings 另支持 compaction（enabled/reserveTokens/keepRecentTokens/backgroundTokens）、retry（enabled/maxRetries/baseDelayMs/maxAgentDelayMs）、stream（transport/timeoutMs/maxRetries/maxRetryDelayMs/cacheRetention）。stream 是模型供应商连接选项，客户端聊天仍使用 Piko SSE。未设置的值使用 durable 默认行为。
@@ -132,7 +129,7 @@ Invoke-RestMethod http://127.0.0.1:8787/api/runtime/compact -Method Post
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime/cancel -Method Post
 ```
 
-selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。models/auth/settings 和插件修改后重启后端生效。指导和技能在每次模型请求自动刷新。
+selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。models/settings JSON、凭据环境和插件修改后重启后端生效。指导和技能在每次模型请求自动刷新。
 
 ## 更新的生效时机
 
@@ -150,7 +147,8 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
 | 工作区 .agents/skills、PIKO_HOME/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
-| config/settings.json、models.json、手工修改 auth.json | 重启后端；默认预设不自动切换已有会话；运行时自身 OAuth 更新会发布新凭据 |
+| config/settings.json、models.json | 重启后端；默认预设不自动切换已有会话 |
+| config/.env 中的 OAuth 凭据 | 手工修改需重启；运行时 OAuth 刷新由串行原子写入发布新凭据 |
 | config/.env、config/piko.json、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | PIKO_HOME/extensions 插件入口、本地辅助代码及外部依赖 | 重启后端时重新发现、编译并加载 |
 | 插件自行读取的提示词或配置文件 | 由插件决定：每次调用读取可直接生效；初始化时捕获则需重启 |
@@ -158,7 +156,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | 工作区其他 md、JSONL 和插件持久化 doc | 普通文件按需读取，重启保留存储和 doc 既有状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 models/settings/auth 文件后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 models/settings JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -19,12 +19,26 @@ import { ChatComposer } from "./ChatComposer";
 import { AssistantMessage } from "./AssistantMessage";
 import { styles } from "./styles";
 import { useChat } from "./useChat";
+import { captureHistoryAnchor, restoreHistoryAnchor, type WebHistoryAnchor } from "./history-scroll";
 
 export function ChatScreen() {
-  const { ready, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry } = useChat();
+  const { ready, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
+    hasOlder, loadingOlder, olderError, loadOlder } = useChat();
   const listRef = useRef<FlatList<Message>>(null);
   const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
   const followLatest = useRef(true);
+  const lastOffset = useRef(0);
+  const historyAnchor = useRef<WebHistoryAnchor | undefined>(undefined);
+  const webScroller = () => {
+    if (Platform.OS !== "web" || typeof HTMLElement === "undefined") return;
+    const node = listRef.current?.getNativeScrollRef();
+    return node instanceof HTMLElement ? node : undefined;
+  };
+  const fetchOlder = () => void loadOlder(() => {
+    followLatest.current = false;
+    const node = webScroller();
+    if (node) historyAnchor.current = captureHistoryAnchor(node, headerHeight);
+  });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
   const { width } = useWindowDimensions();
@@ -40,11 +54,26 @@ export function ChatScreen() {
     }
   }, [busy]);
 
+  const oldestId = messages[0]?.id;
+  useLayoutEffect(() => {
+    const anchor = historyAnchor.current;
+    const node = webScroller();
+    if (!anchor || !node) return;
+    return restoreHistoryAnchor(node, anchor, () => {
+      const index = messages.findIndex(message => `chat-message-${message.id}` === anchor.id);
+      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewOffset: anchor.top - node.getBoundingClientRect().top });
+    }, () => {
+      historyAnchor.current = undefined;
+      lastOffset.current = node.scrollTop;
+    });
+  }, [oldestId]);
+
   const renderMessage = ({ item }: ListRenderItemInfo<Message>) => {
     const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
     if (!item.content.trim() && !waitingForText) return null;
     return (
       <View
+        testID={`chat-message-${item.id}`}
         accessibilityLabel={waitingForText ? "Piko is working" : undefined}
         style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
       >
@@ -74,20 +103,39 @@ export function ChatScreen() {
             contentContainerStyle={[styles.messageList, { paddingTop: headerHeight + 12 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            maintainVisibleContentPosition={Platform.OS !== "web" ? { minIndexForVisible: 0 } : undefined}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              if (historyAnchor.current) listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
+            }}
             onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+              if (historyAnchor.current) return;
+              const movingUp = contentOffset.y < lastOffset.current - 1;
+              lastOffset.current = contentOffset.y;
+              if (movingUp && contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
               const nearEnd = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
-              followLatest.current = nearEnd;
-              setAwayFromLatest(messages.length > 0 && !nearEnd);
+              // Initial measurement/auto-scroll may be below the final content height.
+              // Only an upward scroll leaves follow mode; downward layout updates do not.
+              if (nearEnd || movingUp) followLatest.current = nearEnd;
+              setAwayFromLatest(messages.length > 0 && !nearEnd && !followLatest.current);
             }}
             scrollEventThrottle={100}
             onContentSizeChange={(_, height) => {
               listMetrics.current.contentHeight = height;
-              if (messages.length > 0 && followLatest.current) scrollToLatest(false);
+              if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
             }}
             onLayout={({ nativeEvent: { layout } }) => {
               listMetrics.current.viewportHeight = layout.height;
-              if (messages.length > 0 && followLatest.current) scrollToLatest(false);
+              if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
             }}
+            ListHeaderComponent={hasOlder ? (
+              <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
+                {loadingOlder ? <ActivityIndicator accessibilityLabel="Loading earlier messages" color={colors.blueDark} size="small" /> : (
+                  <Pressable accessibilityRole="button" onPress={fetchOlder}>
+                    <Text style={styles.muted}>{olderError ? "Couldn't load history. Tap to retry" : "Load earlier messages"}</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : null}
             ListEmptyComponent={loading ? (
               <View style={styles.centerState}>
                 <ActivityIndicator color={colors.blueDark} />

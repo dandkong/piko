@@ -6,12 +6,13 @@
 
 一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。Side chat 的交互、记忆提取、后台调度、工具进度和产物管理尚未实现；未来会话复用同一个 Harness。
 
-默认 PIKO_HOME 为 ~/.piko，workspace.path 或 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
+默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
 | 存储 | 内容 |
 | --- | --- |
 | config/piko.json、.env | 应用配置与可选覆盖 |
-| config/settings.json、models.json、auth.json | 模型、预设、凭据与运行设置 |
+| config/piko.json、settings.json、models.json | 非敏感通道/工具行为、模型、预设与运行设置 |
+| config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
 | extensions/、skills/ | 用户插件与公共技能 |
 | state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
 | state/tmp/ | 工具溢出与可清理插件 bundle |
@@ -22,7 +23,11 @@
 
 ## 展示与上下文
 
-一次原生 commit 内读取完整原始 entries、提交绑定与状态，再正序投影用户/助手文字；保留 reset、上下文编辑和压缩前历史。气泡 ID 为 pi-<entry ID>，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；display=true 的 piko.result 可形成被动回复。
+展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 为 pi-<entry ID>，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；display=true 的 piko.result 可形成被动回复。
+
+Web/RN 的首次快照与后续 SSE 快照只传最近 50 条可见已保存消息，另附当前流式消息与未应用输入。`GET /api/chat/history?before=<entry ID>` 向前读取至多 50 条，`nextBefore` 表示还可向前翻页；游标基于不可变 entry ID，新增消息不会移动旧页边界。每页与状态在原生 commit 线上读取；提交绑定从原生 submission 初始化并随 commit 更新，不新建正文或永久索引。
+
+客户端向上滚到顶部附近自动加载更早消息，可手动点击加载或失败重试；加载时保留阅读位置。最近快照覆盖所含范围及临时输入，不清掉已经翻出的更早记录。失联期间若增长超过最近窗口、与客户端记录无交集，则重置到最新页，避免掩盖中间缺口；旧请求的分页响应不混入新窗口。客户端仅加载访问过的页，但目前不会自动淘汰已加载页；服务端运行时仍保留完整原生历史用于事件恢复，启动与运行时内存不因此变为常量。
 
 每条用户消息从原生 submission.entry 获取 requestId，不额外写 piko.input。助手消息独立展示，不累计整轮回答、不强行配对。当前流式消息采用临时 ID，保存后原位替换；原生 inbox 里的未应用输入临时显示，撤回后消失。模型上下文和压缩由 Durable 处理，UI 不读取压缩后的 context 代替历史。
 
@@ -32,7 +37,7 @@ POST /api/chat 接收 {requestId,message}，返回原生提交回执。RN 新请
 
 普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
 
-GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。事件携带 epoch/sequence，最多 128 条内存重放；失效时发送完整 snapshot，重启不伪造旧事件。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
+GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。事件携带 epoch/sequence，最多 128 条内存重放；失效时发送最近一页的 authoritative snapshot，重启不伪造旧事件。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
 
 POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
 
@@ -76,4 +81,4 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；长期调度、投递 outbox、权限及 side chat 交互尚未实现；后台委派及已完成结果的回传恢复已接入。
 
-自动化覆盖初始化/路径、原生去重与重启、完整历史、压缩、残尾/损坏/缺失、中断撤回、插件/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。
+自动化覆盖初始化/路径、原生去重与重启、完整历史、分页与游标验证、隐藏记录、分页与快照合并/缺口恢复、压缩、残尾/损坏/缺失、中断撤回、插件/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。

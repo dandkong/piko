@@ -2,7 +2,7 @@ import type { Cursor, EntryRecord, Session, Storage, ConversationId, Tx } from "
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
-import type { Message } from "../../shared/chat";
+import { CHAT_PAGE_SIZE, type HistoryPage, type Message } from "../../shared/chat";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -47,6 +47,34 @@ export async function readPiHistory(session: Session, storage: Storage) {
     for (const [entry, requestId] of inputs) if (await internalInput(tx, requestId)) hidden.add(entry);
     return projectPiHistory(entries, inputs, hidden);
   }, context);
+}
+
+/** Read only enough raw entries to fill a visible page plus one lookahead message.
+ * Bounds use immutable entry IDs, so new writes cannot shift an older-page cursor.
+ * Bindings are an in-memory projection of native submissions, never a second store.
+ */
+export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<number, string>, before?: string, limit = CHAT_PAGE_SIZE) {
+  const entries: EntryRecord[] = [];
+  const messages: Message[] = [];
+  let cursor: Cursor | undefined;
+  do {
+    const page = await tx.scanEntries({ conversationId: ROOT_CONVERSATION_ID, order: "descending",
+      ...(before && { maxEntryId: (Number(before) - 1) as EntryRecord["id"] }) }, 100, cursor);
+    for (const entry of page.items) {
+      entries.push(entry);
+      if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && entry.kind !== "piko.result") continue;
+      const requestId = inputs.get(entry.id);
+      if (requestId && await internalInput(tx, requestId)) continue;
+      const projected = projectPiHistory([entry], requestId ? new Map([[entry.id, requestId]]) : undefined).messages;
+      messages.push(...projected.reverse());
+      if (messages.length > limit) break;
+    }
+    cursor = page.next;
+  } while (cursor && messages.length <= limit);
+  const selected = messages.slice(0, limit).reverse();
+  const result: HistoryPage = { messages: selected,
+    ...(messages.length > limit && { nextBefore: selected[0]!.id.slice(3) }) };
+  return { ...result, entries };
 }
 
 export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>(), hidden = new Set<number>()) {

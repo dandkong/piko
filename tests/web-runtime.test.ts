@@ -124,6 +124,32 @@ test("stopping a network call aborts its HTTP request without failing the next u
   expect(session.messages.at(-1)?.content).toBe("Next input works.");
 });
 
+test("web tool enablement belongs only to JSON, is captured at startup and synchronizes persisted agents after restart", async () => {
+  searchEnvironment("fake-configured-key");
+  const f = await fixture(); const path = join(f.paths.home, "config/piko.json");
+  await writeFile(path, JSON.stringify({ tools: { web_search: { enabled: false }, web_extract: { enabled: true } } }));
+  const session = await f.createSession();
+  expect((await session.describe()).tools.some(tool => tool.name === "web_search")).toBe(false);
+  expect((await session.describe()).tools.some(tool => tool.name === "web_extract")).toBe(true);
+  await writeFile(path, JSON.stringify({ tools: { web_search: { enabled: true }, web_extract: { enabled: false } } }));
+  f.faux.setResponses([input => {
+    expect(getCurrentTools(input.messages).map(tool => tool.name)).not.toContain("web_search");
+    expect(getCurrentTools(input.messages).map(tool => tool.name)).toContain("web_extract");
+    return fauxAssistantMessage("Startup configuration remains active.");
+  }]);
+  await session.prompt("Check tools", { id: "before-tool-settings-restart", createdAt: 1 });
+  await session.dispose(); const restarted = await f.createSession();
+  expect((await restarted.describe()).tools.some(tool => tool.name === "web_search")).toBe(true);
+  expect((await restarted.describe()).tools.some(tool => tool.name === "web_extract")).toBe(false);
+  f.faux.setResponses([input => {
+    expect(getCurrentTools(input.messages).map(tool => tool.name)).toContain("web_search");
+    expect(getCurrentTools(input.messages).map(tool => tool.name)).not.toContain("web_extract");
+    return fauxAssistantMessage("Restart installed the new configuration.");
+  }]);
+  await restarted.prompt("Check tools again", { id: "after-tool-settings-restart", createdAt: 2 });
+  expect(restarted.messages.map(message => message.content)).toContain("Startup configuration remains active.");
+});
+
 test("workspace extensions remain distinguishable and cannot register a built-in web tool name", async () => {
   const f = await fixture();
   await writeFile(join(f.paths.home, "extensions/custom.ts"), `import { Type } from "typebox";

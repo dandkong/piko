@@ -38,7 +38,7 @@ RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码�
 ## 环境要求
 
 - Bun 1.4 或更新版本。
-- 在 Piko 的 `config/auth.json` 填写供应商凭据，在 `config/settings.json` 选择模型预设；自定义供应商写入 `config/models.json`。
+- 在后端环境或私有 config/.env 设置供应商 API Key，在 config/settings.json 选择模型预设；自定义供应商的非敏感目录与参数写入 config/models.json。
 - 与 Expo SDK 57 兼容的 Expo Go，或者相应的开发客户端。
 - Android Emulator 或 iOS Simulator。iOS Simulator 需要 macOS；Windows 上可使用 Android Emulator。
 
@@ -101,9 +101,9 @@ bun run android
 
 ### 配置与排错
 
-- Piko 应用配置集中在 `PIKO_HOME/config/piko.json`，首次启动补齐默认文件。HTTP、工作区和通道配置统一加载；优先级为默认值 < 配置文件 < `config/.env` < 进程环境变量，修改后重启 API。字段、env 映射和示例见 [应用配置](docs/features/application-config.md)。
-- `PIKO_HOST`、`PIKO_PORT` 覆盖 API 监听地址与端口，默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
-- 后端 `BRAVE_SEARCH_API_KEY` 启用内置 `web_search`，可由进程环境或私有 `PIKO_HOME/config/.env` 提供；修改后重启 API。凭据不进入工具参数、前端或发布包，缺失不阻止启动和网页提取。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
+- 配置按字段独立分工：JSON 管应用/Agent 行为及非敏感工具设置，环境变量/.env 管部署参数及敏感凭据；同一字段不支持两边配置，放错位置报错。piko.json 管通道与工具开关，settings/models JSON 管模型和运行参数；修改后重启 API。见 [应用配置](docs/features/application-config.md)。
+- `PIKO_HOST`、`PIKO_PORT` 配置 API 监听地址与端口（仅环境入口），默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
+- 后端 `BRAVE_SEARCH_API_KEY` 为内置 web_search 提供凭据；启用开关仅在 piko.json 的 tools.web_search.enabled，可由进程环境或私有 `PIKO_HOME/config/.env` 提供；修改后重启 API。凭据不进入工具参数、前端或发布包，缺失不阻止启动和网页提取。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
 - `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。
@@ -122,7 +122,7 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/config` 保存应用 `piko.json`、可选 `.env` 和独立的模型 `settings.json`、`models.json`、`auth.json`；`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/config` 保存非敏感应用 piko.json、模型 settings.json/models.json，以及私有部署/凭据 .env；不再读取 auth.json，`extensions` 保存原生 durable 插件，`skills` 保存用户公共技能。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存运行时或插件文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
 
 工作区只保留两个指导与记忆文件：AGENTS.md 定义助手如何表达和做事，MEMORY.md 保存长期事实与结论；用户可手动编辑，每次模型请求前重新加载有限长度的内容。技能来自应用内建、`PIKO_HOME/skills` 和工作区 `.agents/skills`，同名工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
@@ -134,16 +134,20 @@ bun run dev
 
 ### Telegram 私聊
 
-可选启动通道，使用同一个后端和主会话。可在 `piko.json` 启用 Telegram 并配置身份/token，也可用 env 显式启用：
+可选启动通道，使用同一个后端和主会话。仅在 piko.json 配置启用与允许访问的用户：
+
+```json
+{"channels":{"telegram":{"enabled":true,"userId":"自己的数字用户 ID"}}}
+```
+
+Token 只放后端环境或私有 .env：
 
 ```powershell
-$env:PIKO_TELEGRAM_ENABLED = "true"
-$env:PIKO_TELEGRAM_BOT_TOKEN = "<BotFather 提供的 token>"
-$env:PIKO_TELEGRAM_USER_ID = "<自己的数字用户 ID>"
+$env:PIKO_TELEGRAM_BOT_TOKEN = "<轮换后、未暴露的 Bot Token>"
 bun run dev:api
 ```
 
-默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。`PIKO_HOME/config/.env` 可保存这些参数。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
+默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。不支持 PIKO_TELEGRAM_ENABLED / PIKO_TELEGRAM_USER_ID 的环境入口，且 JSON 不接受 botToken。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
 
 支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`、`/plugins`；`/models` 与 `/thinking` 使用按钮选择，`/compact` 压缩上下文并区分实际应用、跳过、取消和失败。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能/插件数量。TG 发起的消息和回复会出现在 RN；纯 RN 执行默认不推送 TG，可用 `/recent` 查询。两端运行中均可补充输入，使用原生 steer all 在下一个接纳边界一起加入当前工作；停止取消当前 conversation 执行及未应用输入。用户输入与助手回复各自展示，TG 按助手消息更新，补充输入不重发旧回复。RN 前台持续观察会话 SSE，输入提交与消息流分开。
 

@@ -1,6 +1,10 @@
 export type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: number; requestId?: string };
 export type SubmissionReceipt = { id: string; requestId?: string; status: "queued" | "placed" | "done" | "unanswered"; error?: string };
-export type ConversationResponse = { messages: Message[]; busy: boolean; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string> };
+export const CHAT_PAGE_SIZE = 50;
+export type HistoryPage = { messages: Message[]; nextBefore?: string };
+/** A snapshot's history window is authoritative; older pages remain client-side. */
+export type ConversationResponse = { messages: Message[]; history?: { nextBefore?: string }; busy: boolean; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string> };
+export function isHistoryCursor(value: string): boolean { return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)); }
 export type StreamEvent = (
   | { type: "message"; message: Message; final: boolean; previousId?: string }
   | { type: "refresh" }

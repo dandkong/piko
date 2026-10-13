@@ -11,6 +11,7 @@
 - 动效使用 Reanimated 和匹配 Expo SDK 的 Worklets，Babel preset 自动配置插件。`TypingIndicator.tsx` 提供等待动效，启用减少动效时保持静止，卸载后停止循环。
 - 当前非 Chat 导航、菜单、通知和附件保持禁用；不展示不可用的功能页面。
 - Android / iOS 生成工程已忽略，原生设置通过 app.json 和配置插件保存。新增原生依赖后重建应用，不能只依赖热更新。
+- 历史默认最近 50 条，向上滚到顶部附近加载更早记录；失败可点击列表顶端重试。分页合并与断线窗口恢复在 shared/history.ts，原生列表保位使用 maintainVisibleContentPosition，Web 使用可见消息 DOM 锚点补齐 RN Web 未实现的保位行为。
 - 输入、滚动和布局的已确认行为见 [产品约定](../../docs/PRODUCT.md)。原生键盘与后台切换需设备验证。
 - OpenMuse UI 与素材授权见 [第三方说明](../../THIRD_PARTY_NOTICES.md)。
 

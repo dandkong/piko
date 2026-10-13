@@ -34,16 +34,15 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置和资源，仅移除嵌套委派；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md)。
 
-默认目录在后端机器 `~/.piko`，独立于源码。`server/config.ts` 按默认值 < config/piko.json < config/.env < 进程环境合并、转换、校验后注入；PIKO_HOME 仅由进程环境定位。模型文件独立，不继承个人 Pi CLI。详细字段见 [应用配置](features/application-config.md)。
+默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 
 ```text
 ~/.piko/
 ├── config/
-│   ├── piko.json                 # HTTP、工作区、通道
-│   ├── .env                      # 可选覆盖
+│   ├── piko.json                 # 通道行为、工具开关
+│   ├── .env                      # 私有部署参数与凭据，0600
 │   ├── settings.json             # 模型预设、运行设置
-│   ├── models.json               # 供应商与模型
-│   └── auth.json                 # 模型凭据
+│   └── models.json               # 非敏感供应商/模型配置与环境变量名绑定
 ├── extensions/                  # durable 插件
 ├── skills/                      # 用户公共技能
 ├── state/
@@ -65,7 +64,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 模型、资源与插件
 
-pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可指定 API、地址、模型能力、请求参数、headers 和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
+pi-ai 内建供应商目录使用后端环境 API Key；OAuth 通过 Piko EnvironmentCredentialStore 从私有 .env 读取/刷新并原子持久化，不使用凭据 JSON。自定义 JSON 可指定 API、地址、模型能力、请求参数、headersEnv 变量名绑定和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
 
 模型配置和插件在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
@@ -75,7 +74,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 - 插件从 `PIKO_HOME/extensions/*.ts|js|mjs` 或子目录 `index.ts|js|mjs` 加载，default export 为 durable Extension。支持 tools、sections、hooks、wraps、tasks，以及插件工具内使用原生持久化 doc。
 - 插件使用 Bun 临时 bundle 刷新传递依赖，与宿主共享 Pi/Chord/TypeBox；外部依赖从插件目录解析。插件属于可信本机代码；不适配旧 CLI 扩展 UI/lifecycle API。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
-- web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据区分 builtin/extension 与配置状态，用户插件不能注册同名网络工具；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
+- web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；启用开关只在 piko.json，后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据区分 builtin/extension 与配置状态，用户插件不能注册同名网络工具；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
 - 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.1.0 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。
 
 ## 原生状态与历史投影
@@ -94,7 +93,7 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
 
-历史在同一次原生 commit 内分页读取完整 entries、submission 绑定和状态，按 entry ID 投影；不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 为 pi-<entry ID>，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。display=true 的 piko.result 可投影为被动回复，产品投递入口尚未实现。
+历史在原生 commit 线上按不可变 entry ID 游标读取原始 entries 并投影；最近快照和向前分页每页至多 50 条可见已保存消息，提交绑定从原生 submission 初始化并随 commit 更新。不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 为 pi-<entry ID>，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。display=true 的 piko.result 可投影为被动回复，产品投递入口尚未实现。
 
 生成中使用临时消息身份，保存后原位替换为原生身份。快照包含已保存历史、当前未提交文字和原生 inbox 中待应用输入；临时投影不落盘。输入与助手消息各自展示，不分组、不强行配对，压缩和 reset 不删除原始展示历史。
 
@@ -102,7 +101,8 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 | 接口 | 行为 |
 | --- | --- |
-| GET /api/chat | 共享主会话完整消息和 busy、latest、interruption 状态 |
+| GET /api/chat | 共享主会话最近 50 条已保存消息、流式/排队消息、向前游标和 busy、latest、interruption 状态 |
+| GET /api/chat/history?before=… | 根据 entry ID 向前加载至多 50 条可见历史，返回 nextBefore |
 | POST /api/chat | {requestId,message}，返回 {submission,duplicate}；不返回 SSE |
 | GET /api/chat/events?epoch=…&after=N | 独立、持续的会话 SSE，空闲时保持连接 |
 | GET /api/chat/submission?requestId=… | 查询原生提交回执；不存在返回 404 |
@@ -117,9 +117,9 @@ pi-ai 内建供应商目录配合 Piko FileCredentialStore；自定义 JSON 可�
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
-原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，不再双写 SQL 或另发 Piko 执行终态。watchEvents 将消息、条目和执行变化转换为普通跨端事件；SDK 事件不直接进入 UI。消息更新最多 50ms 合并，状态变化发送完整 snapshot；积压时从原始 entries 校正。工具、思考和自动压缩的展示尚未接入。
+原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，不再双写 SQL 或另发 Piko 执行终态。watchEvents 将消息、条目和执行变化转换为普通跨端事件；SDK 事件不直接进入 UI。消息更新最多 50ms 合并，状态变化发送最近一页 snapshot；积压时从原始 entries 校正。工具、思考和自动压缩的展示尚未接入。
 
-SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标直接发送新 snapshot，客户端接受新 epoch。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察完整会话，不重发输入。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
+SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标直接发送新 snapshot，客户端接受新 epoch。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察最近窗口，不重发输入；客户端保留已经加载的连续历史，无交集时回到最新页避免掩盖缺口。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
 
 ## 恢复、退出与备份
 
@@ -127,7 +127,7 @@ SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标�
 
 启用调度前撤回遗留输入并用原生 abortTask 取消不确定执行；保留已经完成回答的 Reporter report 阶段，随后 resume 回传结果，不重放主/子模型或工具执行。有遗留生成或输入时，将中断提示存入 piko.recovery 并添加隐藏上下文说明，不触发模型；已保存历史继续展示。尚未保存的流式文字不承诺恢复，不回滚外部工具副作用。
 
-退出停止接纳和 polling，取消主会话当前非 background 工作、有界收尾 TG 投递，关闭订阅、Harness/storage 并释放锁。备份前停止 API，复制整个 PIKO_HOME 和单独指定的工作区；main 与 doc 日志成套保存，恢复保留工作区绝对路径。当前 UI 全量历史读取，增量加载按规模再开发。
+退出停止接纳和 polling，取消主会话当前非 background 工作、有界收尾 TG 投递，关闭订阅、Harness/storage 并释放锁。备份前停止 API，复制整个 PIKO_HOME 和单独指定的工作区；main 与 doc 日志成套保存，恢复保留工作区绝对路径。UI 默认最近一页，向上滚动加载更早历史；运行时仍保留完整原生 entries 用于恢复，分页不使启动/运行时内存变为常量。
 
 ## Telegram 通道
 

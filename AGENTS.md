@@ -34,8 +34,8 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具及内置 web_search/web_extract；文件/命令工具以后端进程的本机权限运行，默认工作目录为助手工作区。网络业务逻辑在 server/tools，SDK 注册在 server/runtime/web-tools.ts；搜索凭据由后端环境配置，不进入模型参数或客户端，见 [内置网络工具](docs/features/web-tools.md)。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
 - 显式指定 Piko 资源范围，避免自动继承个人 Pi CLI 的全局技能、扩展或祖先目录指导。
-- 模型和凭据使用 `PIKO_HOME/config/{settings,models,auth}.json`，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，配置及插件代码修改后重启后端生效；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
-- Piko 应用配置通过 `server/config.ts` 统一加载 HTTP、工作区与通道；env 只做字段映射与类型转换，默认值 < `config/piko.json` < `config/.env` < 进程环境，合并后共用一套校验，使用处不自行读取 `PIKO_*`。`PIKO_HOME` 仅从进程环境定位目录；模型保持独立文件并复用通用 env 读取，应用配置修改后重启。见 [应用配置](docs/features/application-config.md)。
+- 非敏感模型/运行参数使用 `PIKO_HOME/config/{settings,models}.json`；API Key、Token 只从后端环境/私有 config/.env 读取，auth.json 不再是凭据来源，不读取个人 Pi CLI profile。插件从 `PIKO_HOME/extensions` 加载 durable Extension，配置及插件代码修改后重启后端生效；运行中不切换配置。配置及插件用法见 [Durable 配置](docs/features/durable-runtime.md)。
+- Piko 配置通过 server/config.ts 统一加载并严格按字段分工：piko.json 管通道 enabled/userId 和非敏感工具开关；settings/models JSON 管 Agent 运行参数与模型目录；env 管 HTTP/工作区部署参数与敏感凭据。不提供 env 覆盖 JSON 的双入口，放错位置或使用已移除的行为变量应报错。只有环境体系内部 config/.env < 进程环境；PIKO_HOME 仅从进程环境定位。模型与工具复用配置层，使用处不各自读取 PIKO_*。变更后重启，见 [应用配置](docs/features/application-config.md)。
 - 保留提交去重、停止、流快照、断线恢复语义；断开观察者不等于取消任务，重启后不自动重放不确定执行。
 - 工作区指导、技能索引、Pi 上下文持久化和 read、write、edit、bash 四个内建工具已启用；支持读取技能正文、创建技能文件和运行脚本，个人 CLI 的全局扩展仍不自动加载。
 - 不建立第二套消息正文或永久流事件存储。Piko 不使用 SQLite；一个 PIKO_HOME 固定 state/durable 与一个 Harness/root，必要的停止去重与中断提示复用原生 doc；流式文字与 SSE 重放缓存在内存中，重启后不承诺恢复尚未由 Pi 保存的片段。

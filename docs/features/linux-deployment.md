@@ -17,22 +17,30 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 访问 http://127.0.0.1:8787。缺少 apps/mobile/dist/web/index.html 时启动会报错，先完成构建。`bun run start:api` 仅启动 API 与可选 TG；开发仍使用 dev / dev:web / dev:api。
 
-首次运行补齐配置与模板，默认 TG 关闭。停止进程，编辑 PIKO_HOME/config/piko.json 和模型 settings.json、models.json、auth.json 后再启动。示例 piko.json：
+首次运行补齐配置与模板，默认 TG 关闭。停止进程，编辑行为 piko.json、模型 settings.json/models.json，以及只含部署参数/敏感凭据的私有 .env 后再启动；不再使用 auth.json。示例 piko.json：
 
 ```json
 {
-  "http": { "host": "127.0.0.1", "port": 8787 },
   "channels": {
     "telegram": {
       "enabled": true,
-      "userId": "填写自己的数字用户 ID",
-      "botToken": "填写 BotFather 提供的 token"
+      "userId": "填写自己的数字用户 ID"
     }
   }
 }
 ```
 
-配置见 [应用配置](application-config.md) 与 [Durable 配置](durable-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。TG 停用或失败不阻止网页/API，命令与限制见 [通道说明](telegram-channel.md)。
+部署参数与凭据只放 PIKO_HOME/config/.env 或进程环境，例如：
+
+```dotenv
+PIKO_HOST=127.0.0.1
+PIKO_PORT=8787
+PIKO_TELEGRAM_BOT_TOKEN="填写轮换后、未暴露的 token"
+DEEPSEEK_API_KEY="填写模型 API Key"
+BRAVE_SEARCH_API_KEY="填写搜索 API Key"
+```
+
+.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见 [应用配置](application-config.md) 与 [Durable 配置](durable-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。TG 停用或失败不阻止网页/API，命令与限制见 [通道说明](telegram-channel.md)。
 
 ## Web 与 API 地址
 
@@ -79,7 +87,7 @@ sudo systemctl start piko
 
 ## 访问与反向代理
 
-默认监听 loopback，可通过 SSH 转发访问；局域网访问在 piko.json 设置 http.host=0.0.0.0。当前没有 Piko 登录验证，对外入口使用受保护的网络或带认证的反向代理，认证须覆盖网页与全部 API/SSE。
+默认监听 loopback，可通过 SSH 转发访问；局域网访问在后端环境/.env 设置 PIKO_HOST=0.0.0.0（不在 JSON）。当前没有 Piko 登录验证，对外入口使用受保护的网络或带认证的反向代理，认证须覆盖网页与全部 API/SSE。
 
 代理转发整个站点到 Bun 的同一端口，保留 Host，不缓存 API，关闭 SSE 缓冲，读取超时长于 15 秒心跳。Web 通过同源 `/api` 访问，不需要配置 CORS Origin。当前 Piko 不做 Origin 白名单或身份认证；反向代理应统一校验网页、API 和 SSE，并限制后端端口不要绕过代理直连。Web 无需设置 `EXPO_PUBLIC_PIKO_API_URL`。
 

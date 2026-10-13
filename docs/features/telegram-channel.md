@@ -66,18 +66,24 @@ TG 投递观察独立于输入提交，每条原生助手消息对应一个投�
 
 ## RN 如何发现另一通道的变化
 
-RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时也接收 TG 变化，删除原先 3 秒轮询和按 Run 切换观察。snapshot 提供完整历史和状态，message 更新当前气泡；epoch/sequence 用于重连，缓存失效或后端重启直接接收新 snapshot。
+RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时也接收 TG 变化，删除原先 3 秒轮询和按 Run 切换观察。snapshot 提供最近一页历史、向前游标和状态，message 更新当前气泡；epoch/sequence 用于重连，缓存失效或后端重启直接接收新 snapshot。
 
 后台和卸载只退订，前台重新观察；不会重投任务。网络不确定的 POST 重试同一 requestId，明确拒绝释放乐观输入、恢复草稿。较新事件到达后丢弃过期 HTTP 刷新，不覆盖当前回复。键盘、滚动、布局保持原有交互。这仍是前台同步，系统通知和后台唤醒尚未实现。
 
 ## 配置与生命周期
 
-Telegram 配置由统一应用配置入口加载，使用 `PIKO_HOME/config/piko.json` 的 `channels.telegram`，也可由 `config/.env` 或进程环境覆盖。默认关闭，显式设置 `enabled: true` 或 `PIKO_TELEGRAM_ENABLED=true` 后启用；仅设置 token 不启用。启用时必须有 token 与有效数字用户 ID，配置错误仅停用 TG，RN 仍可运行。字段与优先级见 [应用配置](application-config.md)。凭据不放入助手工作区、RN bundle、共享响应或日志；不复用模型 `auth.json` 的供应商凭据格式。
+Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口，不支持 PIKO_TELEGRAM_ENABLED / PIKO_TELEGRAM_USER_ID，也不在 JSON 接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效只停用 TG；JSON 结构/放错位置错误则拒绝启动。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
+
+piko.json：
+
+```json
+{"channels":{"telegram":{"enabled":true,"userId":"自己的数字用户 ID"}}}
+```
+
+后端凭据：
 
 ```powershell
-$env:PIKO_TELEGRAM_ENABLED = "true"
 $env:PIKO_TELEGRAM_BOT_TOKEN = "<BotFather 提供的 token>"
-$env:PIKO_TELEGRAM_USER_ID = "<自己的数字用户 ID>"
 bun run dev:api
 ```
 

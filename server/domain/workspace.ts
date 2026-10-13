@@ -30,7 +30,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   for (const [name, value] of Object.entries({
     "piko.json": defaultPikoFile,
     "settings.json": { version: 1, profiles: {}, retry: { enabled: true, maxRetries: 2 } },
-    "models.json": { providers: {} }, "auth.json": {},
+    "models.json": { providers: {} },
   })) {
     try { writeFileSync(join(paths.home, "config", name), JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }

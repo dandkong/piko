@@ -1,5 +1,8 @@
-/** Written only when piko.json is missing; environment overrides are never persisted. */
+/** Only non-sensitive application behavior is written to piko.json. */
 export const defaultPikoFile = {
-  http: { host: "127.0.0.1", port: 8787 },
   channels: { telegram: { enabled: false } },
+  tools: { web_search: { enabled: true }, web_extract: { enabled: true } },
 };
+
+/** Deployment defaults are never serialized into application JSON. */
+export const defaultDeployment = { host: "127.0.0.1", port: 8787 };

@@ -20,7 +20,6 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import type { HarnessSettings } from "@earendil-works/pi-durable";
 import {
   readJson,
-  resolveConfigValue,
   readConfigEnvironment,
 } from "../config/files.ts";
 import { runtimePaths } from "./config/paths.ts";
@@ -30,7 +29,7 @@ import {
   type ModelProfile,
   type WorkspaceSettings,
 } from "./config/settings.ts";
-import { FileCredentialStore } from "./credentials.ts";
+import { EnvironmentCredentialStore } from "./credentials.ts";
 
 const string = Type.String({ minLength: 1 });
 const positive = Type.Integer({ minimum: 1 });
@@ -40,7 +39,7 @@ const rates = object({
   cacheRead: Type.Number({ minimum: 0 }),
   cacheWrite: Type.Number({ minimum: 0 }),
 });
-const headers = Type.Record(Type.String(), string);
+const headerEnvironment = Type.Record(Type.String(), Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" }));
 const thinkingMap = object(
   Object.fromEntries(
     ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
@@ -120,7 +119,7 @@ const modelFields = {
   contextWindow: Type.Optional(positive),
   maxTokens: Type.Optional(positive),
   samplingParams: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-  headers: Type.Optional(headers),
+  headersEnv: Type.Optional(headerEnvironment),
   compat: Type.Optional(compat),
   request: Type.Optional(request),
 };
@@ -130,9 +129,8 @@ const providerSchema = object({
   name: Type.Optional(string),
   baseUrl: Type.Optional(string),
   api: Type.Optional(string),
-  apiKey: Type.Optional(string),
   keyless: Type.Optional(Type.Boolean()),
-  headers: Type.Optional(headers),
+  headersEnv: Type.Optional(headerEnvironment),
   compat: Type.Optional(compat),
   request: Type.Optional(request),
   models: Type.Optional(Type.Array(modelSchema)),
@@ -165,7 +163,7 @@ export async function loadWorkspaceModels(
   const builtins = injected
     ? undefined
     : builtinModels({
-        credentials: new FileCredentialStore(join(paths.config, "auth.json")),
+        credentials: new EnvironmentCredentialStore(home, env),
         authContext: {
           env: async (name) => env[name],
           fileExists: async (path) =>
@@ -219,7 +217,7 @@ export async function requireAvailableModel(
   );
   if (!model)
     throw new Error(
-      `Model ${profile.provider}/${profile.model} is unavailable. Check its credentials in PIKO_HOME/config.`,
+      `Model ${profile.provider}/${profile.model} is unavailable. Check backend credential environment variables or config/.env.`,
     );
   return model;
 }
@@ -231,18 +229,13 @@ function configureProvider(
   env: Record<string, string | undefined>,
 ): Provider {
   const location = `models.json providers.${id}`;
-  if (config.keyless && config.apiKey)
-    throw new Error(
-      `${location}: keyless and apiKey cannot both be configured`,
-    );
-  const resolveHeaders = (values?: Record<string, string>) =>
-    values &&
-    Object.fromEntries(
-      Object.entries(values).map(([key, value]) => [
-        key,
-        resolveConfigValue(value, env, `${location}.headers.${key}`),
-      ]),
-    );
+  const resolveHeaders = (values?: Record<string, string>) => values && Object.fromEntries(
+    Object.entries(values).map(([key, name]) => {
+      const value = env[name];
+      if (!value) throw new Error(`Missing environment variable ${name}, referenced by ${location}.headersEnv`);
+      return [key, value];
+    }),
+  );
   const catalog = new Map(
     (builtin?.getModels() ?? []).map((model) => [model.id, model]),
   );
@@ -252,7 +245,7 @@ function configureProvider(
     original: Model<Api> | undefined,
     value: ModelConfig,
   ): Model<Api> => {
-    const { request: requestOptions, ...fields } = value;
+    const { request: requestOptions, headersEnv, ...fields } = value;
     const api = fields.api ?? config.api ?? original?.api;
     const baseUrl = fields.baseUrl ?? config.baseUrl ?? original?.baseUrl;
     const contextWindow = fields.contextWindow ?? original?.contextWindow;
@@ -291,8 +284,8 @@ function configureProvider(
       maxTokens,
       headers: {
         ...original?.headers,
-        ...resolveHeaders(config.headers),
-        ...resolveHeaders(fields.headers),
+        ...resolveHeaders(config.headersEnv),
+        ...resolveHeaders(headersEnv),
       },
       compat: { ...original?.compat, ...config.compat, ...fields.compat },
       thinkingLevelMap: {
@@ -335,32 +328,14 @@ function configureProvider(
     ? {
         apiKey: { name: "Local endpoint", resolve: async () => ({ auth: {} }) },
       }
-    : config.apiKey
-      ? {
-          apiKey: {
-            name: `${id} API key`,
-            resolve: async () => ({
-              auth: {
-                apiKey: resolveConfigValue(
-                  config.apiKey!,
-                  env,
-                  `${location}.apiKey`,
-                ),
-              },
-            }),
-          },
-        }
-      : (builtin?.auth ?? {
-          apiKey: envApiKeyAuth(`${id} API key`, [
-            `${id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`,
-          ]),
-        });
-  // Resolve explicit references before swapping an existing runtime.
-  if (config.apiKey)
-    resolveConfigValue(config.apiKey, env, `${location}.apiKey`);
+    : (builtin?.auth ?? {
+        apiKey: envApiKeyAuth(`${id} API key`, [
+          `${id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`,
+        ]),
+      });
   const configuredHeaders = {
     ...builtin?.headers,
-    ...resolveHeaders(config.headers),
+    ...resolveHeaders(config.headersEnv),
   };
   let base: Provider;
   if (

@@ -1,86 +1,89 @@
-# Piko 应用配置
+# 应用配置：JSON 与环境的独立职责
 
-状态：已实现统一加载、env 映射和校验；HTTP、工作区、Telegram 与开发启动脚本已迁移。应用配置仅在启动时加载，修改后重启 API。模型配置保留独立文件，修改后同样重启 API。
+状态：已实现启动校验和严格分工。JSON 管应用行为、Agent 运行参数及非敏感工具设置；环境变量 / `.env` 管部署启动参数和凭据。**同一字段不同时支持两种配置来源，不用环境变量覆盖 JSON。**当前不提供配置管理 UI 或热重载。
 
-## 文件与加载入口
+## 文件与职责
 
-后端默认使用 `~/.piko`，也可通过进程环境变量 `PIKO_HOME` 指定绝对路径。它用于找到配置目录，不从 `piko.json` 或该目录中的 `.env` 读取，以免配置定位形成循环。
+后端默认使用 `~/.piko`。进程变量 `PIKO_HOME` 可指定绝对路径，用于发现自己的配置目录；不从 JSON 或该目录 `.env` 定位自己。
 
 ```text
 PIKO_HOME/config/
-  piko.json       # HTTP、工作区、通道
-  .env            # 可选，本地环境变量与密钥
-  settings.json   # 模型预设与 durable 运行参数
-  models.json     # 模型定义与供应商配置
-  auth.json       # 模型凭据
+  piko.json       # 通道行为与工具开关，不含监听地址、路径或凭据
+  settings.json   # 模型预设、思考、压缩、重试与流参数
+  models.json     # 模型目录、能力、非敏感请求参数与环境变量名绑定
+  .env            # 可选：部署参数、API Key、Token；权限 0600
 ```
 
-`server/config.ts` 的 `loadPikoConfig` 是应用配置入口，返回类型明确的 `PikoConfig`。先读取原始 JSON，再将 env 映射、转换成配置字段，与默认值按优先级合并，最后统一校验和解析凭据引用。env 映射不另设端口范围、路径或身份校验规则；文件与 env 的最终值共用同一套规则和字段级错误。调用处只接收解析好的配置，不自行读取 `PIKO_*`。通用 JSON、`.env` 和 `env:NAME` 引用处理在 `server/config/files.ts`，模型加载器复用这些函数，不依赖应用配置内容。
+首次初始化只创建缺失 JSON 与工作区模板，不把生效的环境值写回 JSON，不创建 auth.json，不覆盖已有文件。模型配置详见 [Durable 配置](durable-runtime.md)。
 
-读取配置不写文件、不修改 `process.env`。首次初始化只创建缺失的 `piko.json`，默认监听 `127.0.0.1:8787`、Telegram 关闭；已有配置和 `.env` 不覆盖，不把环境变量、密钥或本机路径写入默认配置。内部会话上限、空闲时间等实现参数仍留在代码中。
+## JSON：行为和非敏感设置
 
-## 配置示例
-
-编辑 `PIKO_HOME/config/piko.json`：
+`piko.json` 可省略字段，按应用默认行为补齐；使用严格 schema，未知字段和错误类型拒绝启动。
 
 ```json
 {
-  "http": {
-    "host": "127.0.0.1",
-    "port": 8787
-  },
   "channels": {
     "telegram": {
-      "enabled": true,
-      "userId": "123456789",
-      "botToken": "填写 BotFather 提供的 token"
+      "enabled": false,
+      "userId": "填写自己的数字用户 ID"
     }
+  },
+  "tools": {
+    "web_search": { "enabled": true },
+    "web_extract": { "enabled": true }
   }
 }
 ```
 
-可选的 `workspace.path` 指定工作区绝对路径，省略时为 `PIKO_HOME/workspace`。state 固定在 `PIKO_HOME/state`，不能落进助手工作区。
+- Telegram 默认关闭；enabled 和允许访问的 userId 仅由 JSON 管理。有 Token 不自动启用通道。
+- 两个网络工具默认启用。关闭时从主/子 Agent 的实际工具表移除；即使有搜索 Key，也不会反向启用被关闭的工具。正常运行时工具清单不列出已禁用工具。
+- settings.json 中的 profiles/defaultProfile、compaction、retry、stream 仅属于 JSON；没有对应环境覆盖入口。当前选择另保存在 Durable Agent 文档中，默认预设不覆盖已有选择。
+- models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值；API Key 字段不在 JSON schema 中。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
 
-日常可以将 Telegram 身份和 token 全部填在 `piko.json`，无需 `.env`。如果需要环境变量覆盖，也可在同一目录的 `.env` 保存 Bot token；普通应用参数和模型引用变量也可放在这里：
+## 环境：部署和凭据
+
+进程环境或私有 `config/.env`：
 
 ```dotenv
-PIKO_TELEGRAM_BOT_TOKEN="填写 BotFather 提供的 token"
+PIKO_HOST=127.0.0.1
+PIKO_PORT=8787
+# 可选：工作区绝对路径；默认 PIKO_HOME/workspace
+# PIKO_WORKSPACE=/absolute/assistant-workspace
+DEEPSEEK_API_KEY="填写自己的模型 API Key"
+BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
+PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 ```
 
-`botToken` 支持字面值或 `env:NAME`（例如 `env:PIKO_TELEGRAM_BOT_TOKEN`），引用在合并本地与进程环境后解析。Telegram 默认关闭，只有显式设 `enabled: true` 或 `PIKO_TELEGRAM_ENABLED=true` 才启用；仅有 token 不启用通道。关闭时无需提供或解析凭据。
+| 环境变量 | 职责 / 默认值 |
+| --- | --- |
+| PIKO_HOME | 数据目录，默认 ~/.piko；仅进程 bootstrap，绝对路径 |
+| PIKO_WORKSPACE | 工作区部署路径，默认 PIKO_HOME/workspace；绝对路径 |
+| PIKO_HOST | 后端监听地址，默认 127.0.0.1 |
+| PIKO_PORT | 后端监听端口，默认 8787；整数 1–65535 |
+| PIKO_TELEGRAM_BOT_TOKEN | Telegram 敏感凭据；仅 JSON enabled=true 时需要 |
+| BRAVE_SEARCH_API_KEY | 内置搜索凭据；缺失不阻止启动，工具反馈未配置 |
+| DEEPSEEK_API_KEY 等 | 内建供应商按 pi-ai 约定的环境名称解析 |
+| CUSTOM_API_KEY 等 | 自定义供应商为 provider ID 转大写并将非字母数字换成下划线，再加 _API_KEY |
+| headersEnv 引用的变量 | HTTP header 值，仅在后端解析，不进入工具 schema |
+| PIKO_OAUTH_<规范化供应商 ID> | 已有 OAuth 凭据的序列化值；仅放私有 .env，刷新后原子写回；详见 Durable 配置 |
 
-## 覆盖规则
+只有环境体系内部存在 `config/.env < 进程环境` 的优先级：未设置保留本地值，显式空值覆盖本地值。此规则不影响 JSON 行为。可使用引号、export 前缀与行尾注释；读取不修改全局 process.env，不把后端值注入 Expo。可变 OAuth 凭据不允许陈旧的进程 override，以保证刷新后重启仍使用新值。
 
-应用字段优先级：**代码默认值 < piko.json < config/.env < 进程环境变量**。映射是显式的，不把任意环境变量转换成应用字段。
+后续新增 API Key、Token、加密密钥同样只接环境读取；当前尚无需要用户配置的加密密钥或加密存储功能。
 
-只校验合并后的最终字段，因此有效的高优先级值可以覆盖低优先级中的无效字段，例如 `PIKO_PORT=8787` 可以覆盖文件里的无效端口；env 的转换失败保留为无效值，交给统一校验处理。未设置的 env 不生成覆盖，数组整体替换，未知字段保留到校验阶段报错。JSON 语法错误和非对象根节点仍直接拒绝。
+## 放错位置就报错
 
-| 字段 | 环境变量 | 默认值 / 校验 |
-| --- | --- | --- |
-| 根目录定位 | `PIKO_HOME` | `~/.piko`；仅进程环境，要求绝对路径 |
-| `workspace.path` | `PIKO_WORKSPACE` | `PIKO_HOME/workspace`；绝对路径 |
-| `http.host` | `PIKO_HOST` | `127.0.0.1`；非空且不含空白 |
-| `http.port` | `PIKO_PORT` | `8787`；整数 1–65535 |
-| `channels.telegram.enabled` | `PIKO_TELEGRAM_ENABLED` | `false`；env 为 true/false，不区分大小写 |
-| `channels.telegram.userId` | `PIKO_TELEGRAM_USER_ID` | 启用时必须是正整数数字 ID，以字符串保存 |
-| `channels.telegram.botToken` | `PIKO_TELEGRAM_BOT_TOKEN` | 启用时必须有值；支持 `env:NAME` |
+- piko.json 中的 http、workspace、botToken、工具 apiKey 均拒绝；不支持字面值，也不支持 `env:NAME` 作为绕过入口。正确的环境值不能覆盖并掩盖这些非法 JSON。
+- 环境中的 PIKO_TELEGRAM_ENABLED、PIKO_TELEGRAM_USER_ID、PIKO_WEB_SEARCH_ENABLED、PIKO_WEB_EXTRACT_ENABLED 拒绝，提示对应 JSON 字段；不默默忽略旧变量。
+- models.json 中的 apiKey 和 header 值字段 headers 不再接受；改用环境 API Key 与只含名称的 headersEnv。
+- 非空 auth.json 不再是凭据来源，会提示先移出凭据；没有 fallback，不允许它与环境两边同时配置。初始化不创建该文件，不自动删除用户旧文件。
 
-布尔值 `false` 是明确覆盖，不按字符串是否非空判断。空端口、空工作区、空主机或启用通道的空凭据均视为错误。
+JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误只报告文件、字段或变量名称，不打印其值。结构合法但已启用的 TG 缺 Token 或 userId 无效时，仅禁用 TG 并给出警告，RN 和其他工具继续可用。关闭 TG 时不校验其凭据。
 
-`.env` 支持注释、可选 `export`、单/双引号，不执行 Shell、不展开命令或变量；Windows 路径建议用单引号。进程中未定义的变量不会抹掉本地值。该文件不注入 Expo 或全局进程环境。内置搜索同样复用这个环境读取入口，只读取 `BRAVE_SEARCH_API_KEY`，进程值覆盖本地值；不在 piko.json 新增供应商/Key 字段，不随产品发布凭据，见 [网络工具](web-tools.md)。
+## 修改、部署与安全
 
-`bun run dev`、`dev:web`、`dev:android` 使用同一个配置入口检查 API 地址与端口。开发 Web 与 API 使用不同端口时，Piko 返回浏览器所需的 CORS 响应头，不要求维护 Origin 白名单。客户端 `EXPO_PUBLIC_PIKO_API_URL` 仍由 Expo 的环境配置提供，修改 API 地址或端口时须相应设置客户端地址。
+配置在后端启动/创建 Harness 时读取，修改后重启；不会重读并替换进行中的模型请求。指导和技能的刷新规则不同，见 [生效时机](durable-runtime.md#更新的生效时机)。已有主会话的 cwd 不能随便换路径，恢复原路径或使用新 PIKO_HOME；state 固定在 home/state，必须在工作区之外。
 
-## 错误、生效与边界
+升级现有部署时，先把监听地址/端口/路径从 JSON 移到环境，把启用开关/允许用户从环境移到 JSON，再把 auth.json 的模型 API Key 移入环境并删除旧凭据文件；不要直接用旧格式重启。停止后备份整个私有目录，备份仍含敏感资料，不提交或公开。
 
-JSON 语法、核心字段类型、未知核心字段、HTTP 和路径配置错误阻止启动。Telegram 字段、布尔值、身份或凭据错误仅停用 Telegram，并记录字段级警告，RN 仍可运行；网络启动与运行错误保持原有通道隔离。错误不输出凭据值或完整配置。
-
-应用配置、模型文件和共享 `.env` 修改后均重启后端生效。目前不提供 reload API；不新增配置写入 API、管理页面、热更新或密钥库。
-
-已有环境变量继续按表映射。原先仅凭 token 启动 TG 的方式改为显式启用，需补充 `PIKO_TELEGRAM_ENABLED=true` 或修改 `piko.json`。这次改动不修改数据库 schema、模型凭据格式或原生会话日志。
-
-自动化覆盖默认值与读取副作用、文件/env 优先级、两种输入的校验错误一致、高优先级修正无效字段、空覆盖/未知字段、路径边界、严格参数解析、凭据引用、通道错误隔离、不覆盖用户文件和共享 `.env` 的模型请求。
-
-## 正式 Web 部署
-
-正式 `bun run start` 沿用同一 HTTP、工作区和 Telegram 配置，固定托管 apps/mobile/dist/web；Web 构建默认同源 `/api`。Piko 不过滤 Origin，也不提供 Origin 白名单；CORS 响应头允许浏览器跨源请求。访问认证和安全策略由部署时的反向代理或网络边界负责，并应覆盖 API/SSE。开发 Web 与原生端默认地址不变，`EXPO_PUBLIC_PIKO_API_URL` 是构建时的客户端覆盖，不属于运行时 `piko.json`。详细步骤见 [Linux 正式入口](linux-deployment.md)。
+凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见 [Linux 部署](linux-deployment.md)。

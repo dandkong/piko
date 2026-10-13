@@ -1,4 +1,4 @@
-import type { ConversationResponse, SubmissionReceipt, StreamEvent } from "../../shared/chat";
+import type { ConversationResponse, HistoryPage, SubmissionReceipt, StreamEvent } from "../../shared/chat";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 export type SessionEvent = StreamEvent;
 export type InputSource = { channel: "app" } | { channel: "telegram"; botId: string; chatId: string };
@@ -7,7 +7,8 @@ export class SessionCancelledError extends Error { constructor() { super("Reply 
 /** Only this boundary crosses into the native adapter. */
 export interface ChatSession {
   readonly isStreaming: boolean;
-  snapshot(): Promise<ConversationResponse>;
+  snapshot(options?: { limit: number }): Promise<ConversationResponse>;
+  history(before?: string, limit?: number): Promise<HistoryPage>;
   submit(text: string, requestId: string, source?: InputSource): Promise<{ submission: SubmissionReceipt; duplicate: boolean }>;
   subscribeBackgroundReplies?(listener: (reply: BackgroundReply) => Promise<void>): () => void;
   submission(requestId: string): Promise<SubmissionReceipt | undefined>;

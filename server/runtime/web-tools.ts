@@ -3,11 +3,13 @@ import { defineExtension, defineTool, section } from "@earendil-works/pi-durable
 import { extractWebPage, extractedPageMarkdown } from "../tools/web-extract";
 import { searchWeb } from "../tools/web-search";
 import type { WebFetch } from "../tools/http";
+import type { WebToolsConfig } from "../config";
+import { defaultPikoFile } from "../config/defaults";
 
 export const BUILTIN_WEB_TOOL_NAMES = ["web_search", "web_extract"] as const;
 
 /** Environment is resolved once by the host; credentials never enter tool schemas or details. */
-export function createWebTools(env: Record<string, string | undefined>, options: { fetch?: WebFetch } = {}) {
+export function createWebTools(env: Record<string, string | undefined>, options: { fetch?: WebFetch; settings?: WebToolsConfig } = {}) {
   const apiKey = env.BRAVE_SEARCH_API_KEY?.trim() || undefined;
   const search = defineTool({
     name: "web_search",
@@ -37,7 +39,9 @@ export function createWebTools(env: Record<string, string | undefined>, options:
         details: JSON.parse(JSON.stringify({ url: page.url, maxChars: args.maxChars ?? 10000, page })) };
     },
   });
-  return { searchConfigured: !!apiKey, extension: defineExtension({ name: "piko-web", tools: [search, extract], sections: [
+  const settings = options.settings ?? defaultPikoFile.tools;
+  const tools = [...(settings.web_search.enabled ? [search] : []), ...(settings.web_extract.enabled ? [extract] : [])];
+  return { searchConfigured: !!apiKey, extension: defineExtension({ name: "piko-web", tools, sections: [
     section("web_tools", ({ agent }) => {
       const names = new Set(agent.tools.map(tool => tool.name));
       const lines: string[] = [];
