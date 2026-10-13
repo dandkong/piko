@@ -27,6 +27,7 @@ export function ChatScreen() {
   const listRef = useRef<FlatList<Message>>(null);
   const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
   const followLatest = useRef(true);
+  const positionedLatest = useRef(false);
   const lastOffset = useRef(0);
   const historyAnchor = useRef<WebHistoryAnchor | undefined>(undefined);
   const webScroller = () => {
@@ -121,11 +122,17 @@ export function ChatScreen() {
             scrollEventThrottle={100}
             onContentSizeChange={(_, height) => {
               listMetrics.current.contentHeight = height;
-              if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
+              if (messages.length > 0 && followLatest.current && !historyAnchor.current) {
+                scrollToLatest(positionedLatest.current);
+                positionedLatest.current = true;
+              }
             }}
             onLayout={({ nativeEvent: { layout } }) => {
               listMetrics.current.viewportHeight = layout.height;
-              if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
+              if (messages.length > 0 && followLatest.current && !historyAnchor.current) {
+                scrollToLatest(false);
+                positionedLatest.current = true;
+              }
             }}
             ListHeaderComponent={hasOlder ? (
               <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
