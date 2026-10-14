@@ -112,7 +112,7 @@ export function useChat() {
     else if (lastMessage.current && error && !busy) await send(lastMessage.current);
     else { try { await refresh(); } catch (cause) { setError(String(cause)); } }
   }, [send, refresh, submitting, stopping, busy, error]);
-  const status = loading ? "Connecting…" : stopping ? "Stopping…" : reconnecting ? "Reconnecting…" : busy ? "Thinking…" : connected ? "Here when you need me" : "Waiting to connect";
+  const status = loading ? "Connecting…" : stopping ? "Stopping…" : reconnecting ? "Reconnecting…" : busy ? "Thinking…" : connected ? "" : "Waiting to connect";
   return { ready: !loading && modelReady.current, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
     hasOlder: !!history.nextBefore, loadingOlder, olderError, loadOlder };
 }

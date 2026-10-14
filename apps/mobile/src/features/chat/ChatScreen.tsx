@@ -12,7 +12,6 @@ import {
 import { ArrowDown, RotateCcw } from "lucide-react-native";
 import type { Message } from "../../../../../shared/chat";
 import { AppShell } from "../../components/AppShell";
-import { EDGE_FADE_HEIGHT } from "../../components/EdgeFade";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { ChatComposer } from "./ChatComposer";
@@ -59,7 +58,7 @@ export function ChatScreen() {
       if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
     });
     return () => cancelAnimationFrame(frame);
-  }, [footerHeight]);
+  }, [headerHeight, footerHeight]);
   useEffect(() => {
     if (busy) {
       followLatest.current = true;
@@ -105,6 +104,8 @@ export function ChatScreen() {
     <AppShell
       wide={width >= 900}
       status={status}
+      headerHeight={headerHeight}
+      footerHeight={footerHeight}
       onHeaderHeightChange={setHeaderHeight}
       onFooterHeightChange={setFooterHeight}
       composer={(
@@ -124,10 +125,10 @@ export function ChatScreen() {
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
             ItemSeparatorComponent={() => <View style={{ height: MESSAGE_GAP }} />}
-            // Only the controls obstruct content; the transparent fade is not extra spacing.
+            // Reserve one message gap at each measured content boundary; fade extents are visual only.
             contentContainerStyle={[styles.messageList, {
-              paddingTop: headerHeight + 12,
-              paddingBottom: Math.max(0, footerHeight - EDGE_FADE_HEIGHT) + MESSAGE_GAP,
+              paddingTop: headerHeight + MESSAGE_GAP,
+              paddingBottom: footerHeight + MESSAGE_GAP,
             }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"

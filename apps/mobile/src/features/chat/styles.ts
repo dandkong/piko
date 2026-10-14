@@ -16,7 +16,6 @@ export const styles = StyleSheet.create({
   },
   messageList: {
     flexGrow: 1,
-    paddingBottom: 20,
   },
   centerState: {
     flex: 1,

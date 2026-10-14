@@ -15,7 +15,7 @@
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
 - 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。
-- 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景，不另加头部底板。导航只保留 Chat / Posts / Artifacts / Tasks；菜单、通知、附件和非 Chat 导航仍禁用，不建设 Ideas。
+- 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景；头像在胶囊外，名字与活动状态上下排列在自适应胶囊内，正常空闲只显示名字。导航只保留 Chat / Posts / Artifacts / Tasks；左上菜单、右上设置、附件和非 Chat 导航仍禁用，不建设 Ideas。
 
 ## 近期开发顺序
 

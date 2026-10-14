@@ -1,6 +1,6 @@
 import {
-  Bell,
   Menu,
+  Settings,
   MessageCircle,
   PanelsTopLeft,
   Shapes,
@@ -11,13 +11,15 @@ import { Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Vie
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme";
-import { EdgeFade, EDGE_FADE_HEIGHT } from "./EdgeFade";
+import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
-export function AppShell({ children, composer, wide, status, onHeaderHeightChange, onFooterHeightChange }: {
+export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange }: {
   children: ReactNode;
   composer: ReactNode;
   wide: boolean;
   status: string;
+  headerHeight: number;
+  footerHeight: number;
   onHeaderHeightChange: (height: number) => void;
   onFooterHeightChange: (height: number) => void;
 }) {
@@ -28,6 +30,8 @@ export function AppShell({ children, composer, wide, status, onHeaderHeightChang
       <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.shell}>
           <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
+          <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
+          <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
           <AgentHeader wide={wide} topInset={insets.top} status={status} onHeightChange={onHeaderHeightChange} />
           <View
             testID="chat-footer-overlay"
@@ -35,7 +39,6 @@ export function AppShell({ children, composer, wide, status, onHeaderHeightChang
             onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
             style={[styles.footer, { paddingBottom: insets.bottom }]}
           >
-            <EdgeFade edge="bottom" />
             <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
             <BottomTabs wide={wide} />
           </View>
@@ -82,7 +85,6 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
       onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
       style={[styles.header, { paddingTop: topInset + (wide ? 14 : 2) }]}
     >
-      <EdgeFade edge="top" />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Menu — coming soon"
@@ -94,17 +96,19 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
       </Pressable>
       <View pointerEvents="none" style={styles.identity}>
         <Mascot size={wide ? 58 : 49} />
-        <Text style={styles.name}>Piko</Text>
-        <Text numberOfLines={1} style={styles.status}>{status}</Text>
+        <View testID="chat-identity-capsule" style={styles.identityCapsule}>
+          <Text style={styles.name}>Piko</Text>
+          {status ? <Text testID="chat-activity-status" numberOfLines={1} accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
+        </View>
       </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Notifications — coming soon"
+        accessibilityLabel="Settings — coming soon"
         accessibilityState={{ disabled: true }}
         disabled
         style={[styles.headerButton, { right: 20, top: topInset + 16 }]}
       >
-        <Bell size={20} strokeWidth={1.8} color={colors.text} />
+        <Settings size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
     </View>
   );
@@ -164,7 +168,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
     paddingHorizontal: 20,
-    paddingBottom: 10 + EDGE_FADE_HEIGHT,
   },
   footer: {
     position: "absolute",
@@ -172,13 +175,23 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
-    paddingTop: EDGE_FADE_HEIGHT,
   },
   identity: {
     alignItems: "center",
     alignSelf: "center",
-    maxWidth: "70%",
+    width: "70%",
+    gap: 4,
+  },
+  identityCapsule: {
+    alignItems: "center",
+    maxWidth: "100%",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     gap: 1,
+    borderRadius: 999,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   name: {
     fontSize: 16,
@@ -198,6 +211,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 22,
     backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   tabBarWrap: {
     paddingHorizontal: 22,

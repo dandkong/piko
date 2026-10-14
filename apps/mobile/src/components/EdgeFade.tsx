@@ -2,10 +2,11 @@ import { StyleSheet, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { colors } from "../theme";
 
-export const EDGE_FADE_HEIGHT = 32;
+export const HEADER_FADE_TAIL = 12;
+export const FOOTER_FADE_OVERHANG = 32;
 
 /** The same canvas-colored fade at both edges; decoration never captures list gestures. */
-export function EdgeFade({ edge }: { edge: "top" | "bottom" }) {
+export function EdgeFade({ edge, height }: { edge: "top" | "bottom"; height: number }) {
   const id = `chat-edge-${edge}`;
   return (
     <View
@@ -14,7 +15,7 @@ export function EdgeFade({ edge }: { edge: "top" | "bottom" }) {
       accessible={false}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={StyleSheet.absoluteFill}
+      style={[styles.fade, { height }, edge === "top" ? styles.top : styles.bottom]}
     >
       <Svg width="100%" height="100%">
         <Defs>
@@ -30,3 +31,14 @@ export function EdgeFade({ edge }: { edge: "top" | "bottom" }) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  fade: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 1,
+  },
+  top: { top: 0 },
+  bottom: { bottom: 0 },
+});
