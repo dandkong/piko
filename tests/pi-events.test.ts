@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type EntryRecord, type SnapshotEvent } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { PiMessageEvents } from "../server/runtime/pi-events";
-import { DurableChatSession } from "../server/runtime/pi";
+import type { TestChatSession as DurableChatSession } from "./fixtures/durable";
 import { readPiEntries } from "../server/runtime/pi-history";
 import { applyMessageEvent } from "../shared/messages";
 import type { Message } from "../shared/chat";

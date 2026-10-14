@@ -37,7 +37,7 @@ RN 提供完整产品体验，Telegram 接入适合私聊的功能，不要求�
 
 ## 依赖方向与接入位置
 
-RN 经 HTTP/SSE，TG 直接注入同一个 ConversationStore。server/channels/telegram 处理 SDK、身份、命令、轮询和网络呈现；配置由 server/config.ts 加载。会话业务协调输入/管理互斥和临时观察，原生执行、去重、inbox 与持久状态由 server/runtime 内 Durable 适配器处理，不额外创建 Harness 或数据库。
+RN 经 HTTP/SSE，TG 直接注入同一个 ConversationStore。server/channels/telegram 处理 SDK、身份、命令、轮询和网络呈现；配置由 server/config.ts 加载。ConversationStore 负责临时观察和输出合并；server/runtime 内 DurableChatSession 统一协调输入/管理互斥并缓存尚未挂接的后台回传，原生执行、去重、inbox 与持久状态仍由 Durable 管理，不额外创建 Harness 或数据库。
 
 ## 会话、并发与输入去重
 
@@ -66,13 +66,13 @@ TG 投递观察独立于输入提交，每条原生助手消息对应一个投�
 
 ## RN 如何发现另一通道的变化
 
-RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时也接收 TG 变化，删除原先 3 秒轮询和按 Run 切换观察。snapshot 提供最近一页历史、向前游标和状态，message 更新当前气泡；epoch/sequence 用于重连，缓存失效或后端重启直接接收新 snapshot。
+RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时也接收 TG 变化，删除原先 3 秒轮询和按 Run 切换观察。snapshot 提供最近一页历史、向前游标和状态，message 更新当前气泡；每次连接（包括重连和后端重启后）都先接收最新 snapshot，再观察实时更新，不携带事件游标或补齐中间事件。
 
 后台和卸载只退订，前台重新观察；不会重投任务。网络不确定的 POST 重试同一 requestId，明确拒绝释放乐观输入、恢复草稿。较新事件到达后丢弃过期 HTTP 刷新，不覆盖当前回复。键盘、滚动、布局保持原有交互。这仍是前台同步，系统通知和后台唤醒尚未实现。
 
 ## 配置与生命周期
 
-Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口；行为配置只从 JSON 读取，同名环境变量会被忽略，JSON 不接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效只停用 TG；JSON 结构/放错位置错误则拒绝启动。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
+Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口；行为配置只从 JSON 读取，同名环境变量会被忽略，JSON 不接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效拒绝启动，不自动降级成关闭 TG；JSON 结构/放错位置错误同样拒绝启动。关闭 TG 时不校验凭据。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
 
 piko.json：
 
@@ -97,7 +97,7 @@ bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮�
 
 启动顺序：工作区/锁/原生历史校验 → 共用会话业务 → HTTP 与可选 TG。TG handler 只等待身份验证和持久化接纳，不等待整轮生成或长时间发送；其后独立观察和发送，否则顺序处理 update 会阻塞 `/stop`。必须显式追踪后台观察/发送 promise，并处理异常；不能只用不受管理的 fire-and-forget。[grammY long polling](https://grammy.dev/guide/deployment-types#how-to-use-long-polling)
 
-配置校验发现缺 Token 或无效用户 ID 时仍只停用 TG。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，报告脱敏错误，按正常关闭顺序清理整个后端并以非零状态退出；部署需配置服务管理器自动重启（Linux 模板为 Restart=on-failure）。网络抖动不因尝试三次失败就永久停用 TG。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；首期没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
+明确启用 TG 却缺 Token 或用户 ID 无效时，配置校验直接拒绝启动并只报告字段名。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，报告脱敏错误，按正常关闭顺序清理整个后端并以非零状态退出；部署需配置服务管理器自动重启（Linux 模板为 Restart=on-failure）。网络抖动不因尝试三次失败就永久停用 TG。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；首期没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
 
 退出先拒绝新输入，停止 TG polling 与 HTTP 接纳，再按现有逻辑取消/等待原生任务，在有界时间内收尾投递，退订并关闭会话、runtime 和锁。TG 退出异常不能跳过共用资源清理。同一 Bot 只运行一个 poller；现有状态目录锁不能阻止其他机器/其他状态目录启动同一 Bot。
 
@@ -105,7 +105,7 @@ bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮�
 
 使用临时目录、原生 faux provider 和本机模拟 Bot API，无真实 Bot 凭据或付费模型调用。自动化覆盖鉴权、原生提交重投、RN/TG steer、独立助手消息、RN-only 与 TG 加入、旧停止命令、模型/思考菜单、压缩取消、流式首条/编辑、富文本降级与 Unicode 拆分、429/认证分类，以及 grammY 游标/停止确认、webhook 自动移除但不丢弃待处理更新、连续四次网络失败后恢复、handler 失败继续轮询、致命/启动错误触发服务恢复和启动取消。
 
-会话持久化、重启中断、HTTP/SSE 游标恢复在 persistence、server、transport 等测试覆盖。真实 Telegram 客户端、网络限流和 Android/iOS 前后台体验需要设备验证；不能以模拟测试代替。媒体、工具展示、持久投递 outbox 和主动通知仍未实现。
+会话持久化、重启中断、HTTP/SSE 快照恢复在 persistence、server、transport 等测试覆盖。真实 Telegram 客户端、网络限流和 Android/iOS 前后台体验需要设备验证；不能以模拟测试代替。媒体、工具展示、持久投递 outbox 和主动通知仍未实现。
 
 ## 后台委派回复
 

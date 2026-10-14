@@ -1,5 +1,5 @@
-import { RuntimeBusyError, type ConversationStore } from "../../chat/conversations";
-import type { ChatRuntime } from "../../runtime/types";
+import type { ConversationStore } from "../../chat/conversations";
+import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
@@ -112,31 +112,25 @@ export class TelegramChannel {
       const snapshot = await this.conversations.snapshot();
       text = `Status: ${snapshot.busy ? "Replying" : "Ready"}` + (snapshot.interruption ? `\n${snapshot.interruption}` : "") +
         (snapshot.latest?.status === "unanswered" ? `\nLast input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}` : "");
-      if (this.runtime.describe) {
-        try {
-          const description = await this.runtime.describe();
-          text += `\n${selectionText(description)}\nSkills: ${description.skills.length}`;
-        } catch { text += "\nModel details unavailable."; }
-      }
-    } else if ((command === "models" || command === "thinking") && this.runtime.describe && this.runtime.configure) {
+      const description = await this.runtime.describe();
+      text += `\n${selectionText(description)}\nSkills: ${description.skills.length}`;
+    } else if (command === "models" || command === "thinking") {
       await this.menus.open(message, command); return;
-    } else if (command === "compact" && this.runtime.compact) {
+    } else if (command === "compact") {
       const result = await this.conversations.changeRuntime(async () => {
         this.feedback(message, "Compacting context…");
-        return this.runtime.compact!();
+        return this.runtime.compact();
       });
       text = result.status === "compacted" ? "Context compacted. Your chat history is preserved."
         : result.status === "cancelled" ? "Compaction stopped."
         : result.reason === "stale" ? "Context changed. The summary wasn't applied."
         : "Context unchanged. No summary created.";
-      if (this.runtime.describe) {
-        const description = await this.runtime.describe().catch(() => undefined);
-        if (description) text += `\n${selectionText(description)}`;
-      }
+      const description = await this.runtime.describe();
+      text += `\n${selectionText(description)}`;
     } else if (command === "recent") {
       const history = (await this.conversations.snapshot()).messages;
       text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";
-    } else if (command === "skills" && this.runtime.describe) {
+    } else if (command === "skills") {
       const description = await this.runtime.describe();
       text = description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available.";
     } else text = "Unknown command. Use /help to see what's available.";

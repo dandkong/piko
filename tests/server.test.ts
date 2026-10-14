@@ -22,7 +22,6 @@ test("request validation, unfiltered Origin handling and native receipt lookup w
  expect((await f.app(new Request("http://local/api/chat",{method:"POST",body:"{"}))).status).toBe(400);
  expect((await f.app(new Request("http://local/api/chat",{method:"POST",body:JSON.stringify({message:"x"})}))).status).toBe(422);
  const crossOrigin=await f.app(new Request("http://local/api/chat",{headers:{origin:"https://bad.invalid"}}));expect(crossOrigin.status).toBe(200);expect(crossOrigin.headers.get("Access-Control-Allow-Origin")).toBe("https://bad.invalid");
- expect((await f.app(new Request("http://local/api/chat/events?after=-1"))).status).toBe(422);
  expect((await f.app(new Request("http://local/api/chat/submission?requestId=missing"))).status).toBe(404);
  expect((await f.app(new Request("http://local/api/main"))).status).toBe(404);
 });

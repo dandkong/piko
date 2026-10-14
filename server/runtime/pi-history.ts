@@ -41,14 +41,6 @@ export async function inputsFromStorage(storage: Storage): Promise<Map<number, s
   } while (cursor);
   return bindings;
 }
-export async function readPiHistory(session: Session, storage: Storage) {
-  return session.commit(async tx => {
-    const entries = await entriesFromTransaction(tx); const inputs = await inputsFromStorage(storage); const hidden = new Set<number>();
-    for (const [entry, requestId] of inputs) if (await internalInput(tx, requestId)) hidden.add(entry);
-    return projectPiHistory(entries, inputs, hidden);
-  }, context);
-}
-
 /** Read only enough raw entries to fill a visible page plus one lookahead message.
  * Bounds use immutable entry IDs, so new writes cannot shift an older-page cursor.
  * Bindings are an in-memory projection of native submissions, never a second store.

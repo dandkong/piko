@@ -12,15 +12,13 @@ import { createWebHandler } from "./web";
 const web = process.argv.includes("--web")
   ? await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web")) : undefined;
 const piko = loadPikoConfig();
-for (const warning of piko.warnings) console.warn(warning);
 const config = piko.http;
 const paths = initializeWorkspace(piko.paths);
 const releaseLock = acquireBackendLock(paths.state);
 process.on("exit", releaseLock);
 const runtime = createPiRuntime(paths);
-// Open and validate native state, withdrawing inherited work before accepting requests.
-await runtime.createSession();
 const conversations = new ConversationStore(runtime);
+// Open and validate native state, withdrawing inherited work before accepting requests.
 await conversations.get();
 const server = Bun.serve({
   development: false,
@@ -46,7 +44,7 @@ async function shutdown(failed = false) {
   server.stop(true);
   // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
   for (const close of [() => telegram?.stopInput(), () => conversations.close(), () => telegram?.close(),
-    () => runtime.dispose?.(), () => releaseLock()]) {
+    () => runtime.dispose(), () => releaseLock()]) {
     try { await close(); }
     catch { failed = true; console.error("A Piko resource failed to close."); }
   }

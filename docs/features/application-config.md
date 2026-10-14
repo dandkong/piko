@@ -86,7 +86,7 @@ PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 - settings.json 和 auth.json 都不是配置来源，不生成也不读取；即使文件存在也会忽略。模型预设只从 piko.json.agent 读取，凭据只从环境或私有 .env 读取。
 - 根级或 agent 下的 retry/compaction 不属于 Piko 配置；Durable 使用自己的默认策略。
 
-JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误只报告文件、字段或变量名称，不打印其值。结构合法但已启用的 TG 缺 Token 或 userId 无效时，仅禁用 TG 并给出警告，RN 和其他工具继续可用。关闭 TG 时不校验其凭据。
+JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误只报告文件、字段或变量名称，不打印其值。已启用的 TG 缺 Token 或 userId 无效时同样拒绝启动，不自动禁用通道来掩盖配置错误。关闭 TG 时不校验其凭据。
 
 ## 修改、部署与安全
 

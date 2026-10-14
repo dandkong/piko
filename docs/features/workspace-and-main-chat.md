@@ -15,7 +15,7 @@
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
 | state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
 | state/tmp/ | 工具溢出与可清理临时文件 |
-| 当前进程内存 | 流式消息、128 条会话 SSE 重放、TG 投递身份 |
+| 当前进程内存 | 流式消息、输出合并、Session 中待挂接的后台回传、TG 投递身份 |
 | workspace/ | AGENTS.md、MEMORY.md、技能与工作成果 |
 
 没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。旧 SQLite 和 durable-sessions 不迁移，也不作为当前主会话来源。
@@ -34,9 +34,9 @@ Web/RN 的首次快照与后续 SSE 快照只传最近 50 条可见已保存消�
 
 POST /api/chat 接收 {requestId,message}，返回原生提交回执。RN 新请求生成 UUID，网络重试保持该 ID；TG 使用 telegram:<botId>:<chatId>:<messageId>。同 ID 返回原提交；新意图使用新 ID，不再做哈希冲突或 retryOfRunId 关联校验。用户主动重试生成新 ID，连接恢复只观察、不自动重发。
 
-普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
+输入、停止与维护预留由 DurableChatSession 的单一接纳线协调；ConversationStore 只负责文本校验、输出合并与观察，不重复维护锁或后台回传缓存。普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
 
-GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。事件携带 epoch/sequence，最多 128 条内存重放；失效时发送最近一页的 authoritative snapshot，重启不伪造旧事件。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
+GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。每次连接先发送最近一页的 authoritative snapshot，再继续实时更新；不使用事件游标和重放缓存，不补齐断线期间的中间流式事件。首次快照与实时订阅仍衔接在同一发布线上，防止漏掉期间的变化。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
 
 POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
 

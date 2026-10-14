@@ -84,13 +84,14 @@ test("old stop receipts cannot abort a later execution, including after a restar
  expect(await s.abort("old-idle-stop")).toBe(false); expect((await s.snapshot()).busy).toBe(true);
  gate.resolve(); await s.native.waitForIdle(ctx); expect((await s.submission("new"))?.status).toBe("done");
 });
-test("conversation observers detach independently and stale epochs receive a fresh snapshot", async () => {
+test("detached observers do not cancel work and every reconnect starts with a current snapshot, not old events", async () => {
  const f = await fixture(); const store = new ConversationStore(f.runtime); cleanup(()=>store.close());
  const first: any[]=[]; const stop=await store.observe(e=>first.push(e));
- expect(first[0].type).toBe("snapshot"); const epoch=first[0].epoch; const cursor=first[0].sequence;
+ expect(first[0].type).toBe("snapshot"); expect(first[0]).not.toHaveProperty("epoch"); expect(first[0]).not.toHaveProperty("sequence");
  stop(); f.faux.setResponses([fauxAssistantMessage("Saved")]); await store.submit("Input", "id");
  await waitUntil(async()=> (await (await store.get()).submission("id"))?.status === "done"); await store.flush();
- expect(first).toHaveLength(1); const replay:any[]=[]; const detach=await store.observe(e=>replay.push(e),epoch,cursor);detach();
- expect(replay.length).toBeGreaterThan(0); const reset:any[]=[]; const stop2=await store.observe(e=>reset.push(e),"old-process",99999);stop2();
- expect(reset[0].conversation.messages.map((m:any)=>m.content)).toEqual(["Input","Saved"]);
+ expect(first).toHaveLength(1);
+ const current:any[]=[]; const detach=await store.observe(e=>current.push(e));detach();
+ expect(current).toHaveLength(1); expect(current[0].type).toBe("snapshot");
+ expect(current[0].conversation.messages.map((m:any)=>m.content)).toEqual(["Input","Saved"]);
 });

@@ -6,7 +6,8 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { initializeWorkspace } from "../../server/domain/workspace";
 import { loadPikoConfig } from "../../server/config";
-import { createPiRuntime, DurableChatSession } from "../../server/runtime/pi";
+import { createTestRuntime } from "./runtime";
+export type { TestChatSession } from "./runtime";
 
 const cleanups: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -24,9 +25,9 @@ export async function fixture(tokensPerSecond = 100_000) {
     { id: "reasoning", name: "Reasoning", reasoning: true, contextWindow: 250_000 },
   ] });
   const models = createModels(); models.setProvider(faux.provider);
-  const createRuntime = () => { const runtime = createPiRuntime(paths, { models }); cleanup(() => runtime.dispose!()); return runtime; };
+  const createRuntime = () => { const runtime = createTestRuntime(paths, { models }); cleanup(() => runtime.dispose!()); return runtime; };
   const runtime = createRuntime();
-  return { root, paths, faux, models, runtime, createSession: async () => await runtime.createSession() as DurableChatSession, createRuntime };
+  return { root, paths, faux, models, runtime, createSession: () => runtime.createSession(), createRuntime };
 }
 
 export async function waitUntil(predicate: () => boolean | Promise<boolean>) {

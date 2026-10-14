@@ -5,12 +5,11 @@ export type HistoryPage = { messages: Message[]; nextBefore?: string };
 /** A snapshot's history window is authoritative; older pages remain client-side. */
 export type ConversationResponse = { messages: Message[]; history?: { nextBefore?: string }; busy: boolean; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string> };
 export function isHistoryCursor(value: string): boolean { return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)); }
-export type StreamEvent = (
+export type StreamEvent =
   | { type: "message"; message: Message; final: boolean; previousId?: string }
   | { type: "refresh" }
   | { type: "snapshot"; conversation: ConversationResponse }
-  | { type: "error"; message: string }
-) & { epoch?: string; sequence?: number };
+  | { type: "error"; message: string };
 export type HealthResponse = { ok: boolean; app: "Piko"; runtime: "Pi"; modelReady: boolean; activeSessions: number };
 export const MAX_MESSAGE_LENGTH = 12_000;
 export function isRequestId(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value.length <= 250 && !value.startsWith("piko:"); }

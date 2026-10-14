@@ -13,8 +13,8 @@ describe("message streams", () => {
   test("parses CRLF, final blocks and replay metadata", () => {
     expect(consumeSse(encodeSse(messageEvent("hi")).replaceAll("\n", "\r\n") + 'data: {"type":"refresh"}', true).events)
       .toEqual([messageEvent("hi"), { type: "refresh" }]);
-    expect(consumeSse(': heartbeat\n\ndata: {"type":"refresh","epoch":"epoch","sequence":3}\n\n').events)
-      .toEqual([{ type: "refresh", epoch: "epoch", sequence: 3 }]);
+    expect(consumeSse(': heartbeat\n\ndata: {"type":"refresh"}\n\n').events)
+      .toEqual([{ type: "refresh" }]);
     const first = consumeSse(encodeSse(messageEvent("你好")).replaceAll("\n", "\r\n").slice(0, -1));
     expect(consumeSse(first.remainder + "\n").events).toEqual([messageEvent("你好")]);
   });

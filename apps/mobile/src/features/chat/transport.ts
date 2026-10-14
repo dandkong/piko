@@ -11,7 +11,7 @@ export function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
 /** Persistent conversation observation; no input is ever posted by reconnect logic. */
 export async function observeConversation(options: { signal: AbortSignal; onEvent: (event: StreamEvent) => void; onReconnecting: (value: boolean) => void },
   transport: { fetch: (path: string, init?: RequestInit) => Promise<Response>; wait?: typeof waitForRetry }) {
-  let epoch: string | undefined; let sequence = 0; let failures = 0;
+  let failures = 0;
   const wait = transport.wait ?? waitForRetry;
   while (!options.signal.aborted) {
     const controller = new AbortController(); const abort = () => controller.abort();
@@ -21,7 +21,7 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
     const touch = () => { clearTimeout(watchdog); watchdog = setTimeout(abort, 30000); };
     try {
       touch();
-      const response = await transport.fetch(`/api/chat/events${epoch ? `?epoch=${encodeURIComponent(epoch)}&after=${sequence}` : ""}`, { signal: controller.signal });
+      const response = await transport.fetch("/api/chat/events", { signal: controller.signal });
       if (!response.ok) throw new HttpStreamError("Could not observe conversation.", response.status);
       if (!response.body) throw new Error("Streaming response is unavailable.");
       reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
@@ -30,14 +30,7 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
         options.onReconnecting(false); failures = 0;
         buffer += decoder.decode(chunk.value, { stream: true });
         const parsed = consumeSse(buffer); buffer = parsed.remainder;
-        for (const event of parsed.events) {
-          if (event.sequence !== undefined && event.epoch) {
-            if (event.epoch === epoch && event.sequence <= sequence) continue;
-            if (event.type !== "snapshot" && (event.epoch !== epoch || event.sequence !== sequence + 1)) { epoch = undefined; sequence = 0; throw new Error("Conversation event gap."); }
-            epoch = event.epoch; sequence = event.sequence;
-          }
-          options.onEvent(event);
-        }
+        for (const event of parsed.events) options.onEvent(event);
       }
       if (options.signal.aborted) return;
       throw new Error("Conversation disconnected.");

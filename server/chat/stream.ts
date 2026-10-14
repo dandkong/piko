@@ -1,7 +1,7 @@
 import { encodeSse } from "../../shared/sse";
 import type { ConversationStore } from "./conversations";
 /** Closing an observer never cancels the conversation. */
-export function chatStream(store: ConversationStore, request: Request, epoch?: string, after = 0): Response {
+export function chatStream(store: ConversationStore, request: Request): Response {
   let cleanup = () => {};
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -14,7 +14,7 @@ export function chatStream(store: ConversationStore, request: Request, epoch?: s
         if (closed) return;
         if ((controller.desiredSize ?? 0) <= 0) { close(); return; }
         try { controller.enqueue(encoder.encode(encodeSse(event))); } catch { close(); }
-      }, epoch, after).then(stop => { unsubscribe = stop; if (closed) stop(); }).catch(() => close());
+      }).then(stop => { unsubscribe = stop; if (closed) stop(); }).catch(() => close());
     },
     cancel() { cleanup(); },
   }, { highWaterMark: 256 * 1024, size: chunk => chunk?.byteLength ?? 0 });

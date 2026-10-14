@@ -8,9 +8,9 @@ import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/n
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { WorkspacePaths } from "../domain/workspace";
 import type { BackgroundReply, InputSource, ChatRuntime, ChatSession, SessionEvent } from "./types";
-import { SessionCancelledError } from "./types";
-import { readPiContext, sessionDirectory } from "./pi-context";
-import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiHistory, readPiInputs } from "./pi-history";
+import { RuntimeBusyError } from "./types";
+import { sessionDirectory } from "./pi-context";
+import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
 import { createSubagentExtension, prepareRestart, subagentIds } from "./subagents";
 import { internalInput, registerInput } from "./input-origin";
@@ -53,30 +53,23 @@ export class DurableChatSession implements ChatSession {
   private unsubscribeBindings?: () => void;
   private eventStream!: AgentEventStream;
   private admission: Promise<unknown> = Promise.resolve();
-  private monitors = new Set<Promise<void>>();
-  private failureCleanup?: Promise<void>;
   private stopping = false;
   private liveBusy = false;
   private observationError?: Error;
   private delivery?: Promise<void>;
-  private deliveredEntry = 0;
-  private deliveryWaiters = new Set<{ entry: number; resolve: () => void; reject: (error: Error) => void }>();
   private output = new PiMessageEvents(event => this.emit(event));
   private hiddenEntries = new Set<number>();
   private replyListeners = new Set<(reply: BackgroundReply) => Promise<void>>();
   private pendingReplies: BackgroundReply[] = [];
   private previousIds = new Map<string, string>();
   private listeners = new Set<(event: SessionEvent) => void>();
-  private busy = false;
-  private changing = false;
-  private changeFinished?: Promise<void>;
+  private maintenance?: Promise<unknown>;
   private disposed = false;
   private closing?: Promise<void>;
 
-  constructor(readonly paths: WorkspacePaths, private readonly injected?: Models,
-    private readonly onDispose?: () => void) {}
+  constructor(readonly paths: WorkspacePaths, private readonly injected?: Models) {}
 
-  get isStreaming() { return this.busy || this.changing || this.stopping || this.liveBusy; }
+  get isStreaming() { return !!this.maintenance || this.stopping || this.liveBusy; }
   get closePromise() { return this.closing; }
   get messages() {
     const messages = projectPiHistory(this.entries, this.inputEntries, this.hiddenEntries).messages;
@@ -89,7 +82,7 @@ export class DurableChatSession implements ChatSession {
   async init(): Promise<void> {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
     const extensions = registry(this.paths, createSubagentExtension({ storage: () => this.storage,
-      canReport: () => !this.busy && !this.changing && !this.stopping && !this.disposed,
+      canReport: () => !this.maintenance && !this.stopping && !this.disposed,
       onReply: async reply => {
         if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
@@ -163,7 +156,6 @@ export class DurableChatSession implements ChatSession {
       harness.resume();
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
-        for (const waiter of this.deliveryWaiters) waiter.reject(this.observationError); this.deliveryWaiters.clear();
         if (!this.disposed) console.error("Piko durable event stream closed:", end);
       });
     } catch (error) { this.unsubscribeBindings?.(); await harness.close(ctx); throw error; }
@@ -175,19 +167,16 @@ export class DurableChatSession implements ChatSession {
         this.entries = await readPiEntries(this.harness);
         const through = event.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
         this.output.restore(this.entries.filter(entry => entry.id <= through), event);
-        this.deliveredEntry = Math.max(this.deliveredEntry, through);
         this.liveBusy = !!event.run;
         this.emit({ type: "refresh" });
       } else {
         if ((event.type === "entry_appended" || event.type === "message_end") && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
         this.output.apply(event);
-        if (event.type === "entry_appended" || event.type === "message_end") this.deliveredEntry = Math.max(this.deliveredEntry, event.entry.id);
         if (event.type === "run_start") this.liveBusy = true;
         if (event.type === "run_end") this.liveBusy = false;
         if (event.type === "message_end" || event.type === "run_start" || event.type === "run_end" || event.type === "submission") this.emit({ type: "refresh" });
       }
     }
-    for (const waiter of this.deliveryWaiters) if (waiter.entry <= this.deliveredEntry) { this.deliveryWaiters.delete(waiter); waiter.resolve(); }
   }
   private emit(event: SessionEvent) {
     if (event.type === "message" && !event.final && !this.output.partial(this.entries)) return;
@@ -252,10 +241,10 @@ export class DurableChatSession implements ChatSession {
   }
   async submit(text: string, requestId: string, source: InputSource = { channel: "app" }) {
     if (requestId.startsWith("piko:")) throw new Error("Reserved input identity.");
-    const task = this.admission.catch(() => {}).then(async () => {
-      if (this.disposed || this.changing || this.busy || this.stopping) throw new Error("Piko is busy with maintenance or stopping.");
+    return this.serial(async () => {
+      if (this.disposed) throw new Error("Piko is shutting down.");
+      if (this.maintenance || this.stopping) throw new RuntimeBusyError();
       if (this.observationError) throw this.observationError;
-      await this.failureCleanup;
       const existing = await this.submission(requestId);
       if (existing) return { submission: existing, duplicate: true };
       const agent = await this.conversation.agent(ctx);
@@ -264,41 +253,30 @@ export class DurableChatSession implements ChatSession {
       await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; await registerInput(tx, requestId, source); }, ctx);
       const handle = await this.conversation.submit({ type: "input", content: text, requestId, whenBusy: "steer" }, ctx);
       this.liveBusy = true;
-      const monitor = handle.wait(ctx).then(async settled => {
+      void handle.wait(ctx).then(async settled => {
         if (settled.status === "unanswered" && settled.reason !== "aborted" && settled.reason !== "withdrawn_after_failure") {
-          this.emit({ type: "error", message: typeof settled.detail === "string" ? settled.detail : settled.reason });
-          this.failureCleanup = (async () => {
+          const cleanup = this.serial(async () => {
             await this.conversation.commit(async tx => {
               const inbox = await tx.doc(InboxDoc, this.conversation.id);
               for (const item of inbox.items) if (item.mode !== "write") tx.settleSubmission(item.id,
                 { status: "unanswered", reason: "withdrawn_after_failure", detail: typeof settled.detail === "string" ? settled.detail : settled.reason });
               inbox.items = inbox.items.filter(item => item.mode === "write");
             }, ctx);
-            await this.abort();
-          })();
-          await this.failureCleanup;
+            await this.abortCurrent();
+          });
+          this.emit({ type: "error", message: typeof settled.detail === "string" ? settled.detail : settled.reason });
+          await cleanup;
         }
         this.emit({ type: "refresh" });
       }).catch(error => { if (!this.disposed) this.emit({ type: "error", message: error instanceof Error ? error.message : "Reply failed." }); });
-      this.monitors.add(monitor); void monitor.finally(() => this.monitors.delete(monitor));
       return { submission: receipt(await handle.status(ctx)), duplicate: false };
     });
-    this.admission = task; return task;
   }
-  /** Convenience for native adapter tests and callers that need to await completion. */
-  async prompt(text: string, input: { id: string; createdAt: number }) {
-    const admitted = await this.submit(text, input.id);
-    const handle = await this.harness.submission(Number(admitted.submission.id) as SubmissionId, ctx);
-    const settled = await handle!.wait(ctx);
-    await this.conversation.waitForIdle(ctx);
-    await this.failureCleanup;
-    const entry = settled.type === "input" && settled.status === "done" ? settled.answer : settled.entry;
-    if (entry !== undefined && entry > this.deliveredEntry && !this.observationError) await new Promise<void>((resolve, reject) => { this.deliveryWaiters.add({ entry, resolve, reject }); });
-    await this.delivery;
-    if (this.observationError) throw this.observationError;
-    if (settled.status === "unanswered") throw settled.reason === "aborted" ? new SessionCancelledError() : new Error(typeof settled.detail === "string" ? settled.detail : settled.reason);
+  private serial<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.admission.catch(() => {}).then(operation); this.admission = task; return task;
   }
-  async abort(commandId?: string): Promise<boolean> {
+  abort(commandId?: string): Promise<boolean> { return this.serial(() => this.abortCurrent(commandId)); }
+  private async abortCurrent(commandId?: string): Promise<boolean> {
     const wasActive = this.isStreaming;
     this.stopping = true; this.emit({ type: "refresh" });
     try {
@@ -336,19 +314,27 @@ export class DurableChatSession implements ChatSession {
     if (this.closing) return this.closing;
     this.disposed = true;
     this.closing = (async () => {
-      await this.changeFinished?.catch(() => {});
-      await this.closeNative(); this.listeners.clear(); this.onDispose?.();
+      await this.admission.catch(() => {});
+      const maintenance = this.maintenance;
+      if (maintenance) {
+        await this.conversation.abort(ctx);
+        await maintenance.catch(() => {});
+      }
+      await this.closeNative(); this.listeners.clear(); this.replyListeners.clear(); this.pendingReplies = [];
     })();
     return this.closing;
   }
-  private requireIdle() { if (this.disposed || this.isStreaming) throw new Error("Stop the current reply before changing runtime configuration."); }
-  private async change(operation: () => Promise<void>) {
-    this.requireIdle();
-    this.changing = true;
-    this.changeFinished = operation();
-    try { await this.changeFinished; } finally { this.changing = false; this.changeFinished = undefined; }
+  /** Reserve maintenance on the same input line; do not hold it while work runs, so stop remains available. */
+  private async maintain<T>(operation: () => Promise<T>): Promise<T> {
+    const reserved = await this.serial(async () => {
+      if (this.disposed || this.isStreaming) throw new RuntimeBusyError();
+      const task = Promise.resolve().then(operation); this.maintenance = task; this.emit({ type: "refresh" });
+      return { task };
+    });
+    try { return await reserved.task; }
+    finally { this.maintenance = undefined; this.emit({ type: "refresh" }); }
   }
-  async configure(selection: RuntimeSelection) { return this.change(async () => {
+  async configure(selection: RuntimeSelection) { return this.maintain(async () => {
     const agent = await this.conversation.agent(ctx);
     const profile = "profile" in selection ? (Object.hasOwn(this.config.profiles, selection.profile) ? this.config.profiles[selection.profile] : undefined)
       : "provider" in selection ? selection
@@ -376,9 +362,7 @@ export class DurableChatSession implements ChatSession {
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
   async compact(): Promise<CompactionResult> {
-    this.requireIdle();
-    this.busy = true;
-    try {
+    return this.maintain<CompactionResult>(async () => {
       const task = await this.conversation.compact(undefined, ctx);
       const settled = await this.harness.waitForTask(task, ctx);
       const outcome = settled.state.outcome;
@@ -394,13 +378,8 @@ export class DurableChatSession implements ChatSession {
       if (placed.reason === "aborted") return { status: "cancelled" };
       if (placed.reason === "stale") return { status: "skipped", reason: "stale" };
       throw new Error(`Compaction could not be applied: ${placed.reason}`);
-    } finally { this.busy = false; }
+    });
   }
-}
-
-export async function createPiSession(paths: WorkspacePaths, models?: Models) {
-  const session = new DurableChatSession(paths, models);
-  await session.init(); return session;
 }
 
 /** One native Harness owns the workspace. Opening is serialized; model work runs independently. */
@@ -415,16 +394,8 @@ export function createPiRuntime(paths: WorkspacePaths, options: { models?: Model
     return opening;
   }
   return {
-    isModelReady: async () => session && !session.closePromise ? session.modelReady() : (await (await loadWorkspaceModels(paths.home, options.models)).models.getAvailable()).length > 0,
+    isModelReady: async () => (await get()).modelReady(),
     createSession: get,
-    readHistory: async () => {
-      if (session && !session.closePromise) return session.snapshot();
-      if (opening) return (await opening).snapshot();
-      if (session?.closePromise) await session.closePromise;
-      const native = await readPiContext(runtimePaths(paths.home).sessions);
-      if (!native) return { messages: [], busy: false };
-      try { return { ...await readPiHistory(native.session, native.storage), busy: false }; } finally { await native.session.close(ctx); }
-    },
     describe: async () => (await get()).describe(),
     configure: async selection => (await get()).configure(selection),
     compact: async () => (await get()).compact(),

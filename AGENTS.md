@@ -29,7 +29,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 ## 代码边界
 
 - `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。
-- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
+- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。输入、停止与维护预留统一由运行时接纳线协调；ConversationStore 只负责输出合并和观察，不重复维护锁或后台回传缓存。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
 - `shared/` 保存跨端契约，不依赖 React Native、Bun 或 Pi SDK。
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具及内置 web_search/web_extract；文件/命令工具以后端进程的本机权限运行，默认工作目录为助手工作区。网络业务逻辑在 server/tools，SDK 注册在 server/runtime/web-tools.ts；搜索凭据由后端环境配置，不进入模型参数或客户端，见 [内置网络工具](docs/features/web-tools.md)。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。
@@ -38,7 +38,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - Piko 配置通过 server/config.ts 统一加载并严格按字段分工：piko.json 的 agent 管模型预设和可选 stream，channels/tools 管通道与工具行为，models.json 管模型目录；env 管 HTTP/工作区部署参数与敏感凭据。不提供 env 覆盖 JSON 的双入口，放错位置或使用已移除的行为变量应报错。只有环境体系内部 config/.env < 进程环境；PIKO_HOME 仅从进程环境定位。模型与工具复用配置层，使用处不各自读取 PIKO_*。变更后重启，见 [应用配置](docs/features/application-config.md)。
 - 保留提交去重、停止、流快照、断线恢复语义；断开观察者不等于取消任务，重启后不自动重放不确定执行。
 - 工作区指导、技能索引、Pi 上下文持久化和 read、write、edit、bash 四个内建工具已启用；支持读取技能正文、创建技能文件和运行脚本，个人 CLI 的全局扩展仍不自动加载。
-- 不建立第二套消息正文或永久流事件存储。Piko 不使用 SQLite；一个 PIKO_HOME 固定 state/durable 与一个 Harness/root，必要的停止去重与中断提示复用原生 doc；流式文字与 SSE 重放缓存在内存中，重启后不承诺恢复尚未由 Pi 保存的片段。
+- 不建立第二套消息正文或永久流事件存储。Piko 不使用 SQLite；一个 PIKO_HOME 固定 state/durable 与一个 Harness/root，必要的停止去重与中断提示复用原生 doc；流式文字与输出合并保存在内存中；SSE 每次连接通过最新快照恢复，不维护事件游标或重放缓存，重启后不承诺恢复尚未由 Pi 保存的片段。
 
 ## 修改与验证
 

@@ -7,14 +7,13 @@ import { readConfigEnvironment, readJsonValue } from "./config/files";
 import { defaultPikoFile, defaultDeployment } from "./config/defaults";
 import { object, agentSchema } from "./config/schema";
 
-export type ServerConfig = { hostname: string; port: number; idleSessionMs: number; maxSessions: number; maxRequestBytes: number };
+export type ServerConfig = { hostname: string; port: number; maxRequestBytes: number };
 export type TelegramConfig = { token: string; userId: string };
 export type PikoConfig = {
   paths: WorkspacePaths;
   http: ServerConfig;
   tools: WebToolsConfig;
   channels: { telegram: { enabled: false } | ({ enabled: true } & TelegramConfig) };
-  warnings: readonly string[];
 };
 const text = Type.String({ minLength: 1 });
 const tool = object({ enabled: Type.Boolean() });
@@ -29,8 +28,7 @@ export type WebToolsConfig = ApplicationSettings["tools"];
 const applicationValidator = Compile(applicationSchema);
 
 export function defaultServerConfig(): ServerConfig {
-  return { hostname: defaultDeployment.host, port: defaultDeployment.port,
-    idleSessionMs: 30 * 60 * 1000, maxSessions: 32, maxRequestBytes: 64_000 };
+  return { hostname: defaultDeployment.host, port: defaultDeployment.port, maxRequestBytes: 64_000 };
 }
 function invalid(field: string, expected: string): never {
   throw new Error(`Invalid Piko configuration at ${field}: expected ${expected}.`);
@@ -86,10 +84,7 @@ export function loadPikoConfig(ambient: Record<string, string | undefined> = pro
   if (!Number.isInteger(port) || port < 1 || port > 65535) invalid("PIKO_PORT", "an integer from 1 to 65535");
   const workspace = env.PIKO_WORKSPACE ?? join(root, "workspace");
   if (!isAbsolute(workspace)) invalid("PIKO_WORKSPACE", "an absolute path");
-  const warnings: string[] = [];
-  let telegram: PikoConfig["channels"]["telegram"] = { enabled: false };
-  try { telegram = telegramConfig(settings.channels.telegram, env); }
-  catch (error) { warnings.push(`${(error as Error).message} Telegram is disabled; RN remains available.`); }
+  const telegram = telegramConfig(settings.channels.telegram, env);
   return { paths: workspacePaths(root, workspace), http: { ...defaultServerConfig(), hostname, port },
-    tools: settings.tools, channels: { telegram }, warnings };
+    tools: settings.tools, channels: { telegram } };
 }

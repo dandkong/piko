@@ -6,7 +6,7 @@ import { UserEntry } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { fixture } from "./fixtures/durable";
-import { DurableChatSession } from "../server/runtime/pi";
+import type { TestChatSession as DurableChatSession } from "./fixtures/durable";
 import { loadWorkspaceResources, formatWorkspaceResources } from "../server/runtime/resources";
 import { runtimePaths } from "../server/runtime/config/paths";
 import { readPiEntries } from "../server/runtime/pi-history";

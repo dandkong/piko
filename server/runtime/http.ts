@@ -4,23 +4,21 @@ import { json } from "../http";
 
 const thinking = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
-export async function runtimeRequest(request: Request, runtime: ChatRuntime, busy: boolean,
+export async function runtimeRequest(request: Request, runtime: ChatRuntime,
   change: (operation: () => Promise<void>) => Promise<void> = operation => operation(),
-  stop: (commandId?: string) => Promise<boolean> = id => runtime.stop!(id)): Promise<Response | undefined> {
+  stop: (commandId?: string) => Promise<boolean> = id => runtime.stop(id)): Promise<Response | undefined> {
   const path = new URL(request.url).pathname;
   if (!path.startsWith("/api/runtime")) return undefined;
   try {
-    if (request.method === "GET" && path === "/api/runtime" && runtime.describe) return json(await runtime.describe());
+    if (request.method === "GET" && path === "/api/runtime") return json(await runtime.describe());
     if (request.method !== "POST") return json({ error: "Not found." }, 404);
-    if (path === "/api/runtime/cancel" && runtime.stop) { await stop(); return json({ ok: true }); }
-    if (!(path === "/api/runtime/compact" && runtime.compact || path === "/api/runtime/selection" && runtime.configure)) return json({ error: "Not found." }, 404);
-    if (busy) return json({ error: "Stop the current reply before changing runtime configuration." }, 409);
-    if (path === "/api/runtime/compact" && runtime.compact) {
+    if (path === "/api/runtime/cancel") { await stop(); return json({ ok: true }); }
+    if (path === "/api/runtime/compact") {
       let result!: CompactionResult;
-      await change(async () => { result = await runtime.compact!(); });
+      await change(async () => { result = await runtime.compact(); });
       return json({ ok: true, ...result });
     }
-    else if (path === "/api/runtime/selection" && runtime.configure) {
+    else if (path === "/api/runtime/selection") {
       const raw = await request.text();
       if (new TextEncoder().encode(raw).byteLength > 8000) return json({ error: "Request is too large." }, 413);
       let value: unknown;
@@ -36,7 +34,7 @@ export async function runtimeRequest(request: Request, runtime: ChatRuntime, bus
         && (choice.thinking === undefined || typeof choice.thinking === "string" && thinking.has(choice.thinking))) {
         selection = { provider: choice.provider, model: choice.model, ...(choice.thinking && { thinking: choice.thinking as ThinkingLevel }) };
       } else return json({ error: "Invalid model, profile or thinking level." }, 422);
-      await change(() => runtime.configure!(selection));
+      await change(() => runtime.configure(selection));
     } else return json({ error: "Not found." }, 404);
     return json({ ok: true });
   } catch (error) { return json({ error: error instanceof Error ? error.message : "Runtime configuration failed." }, 409); }

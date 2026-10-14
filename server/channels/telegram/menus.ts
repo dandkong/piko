@@ -1,6 +1,6 @@
 import type { ModelSelection, RuntimeDescription } from "../../../shared/runtime";
-import { RuntimeBusyError, type ConversationStore } from "../../chat/conversations";
-import type { ChatRuntime } from "../../runtime/types";
+import type { ConversationStore } from "../../chat/conversations";
+import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 
 type Address = { chatId: string; messageId: string };
@@ -34,7 +34,7 @@ export class TelegramMenus {
   constructor(private readonly store: ConversationStore, private readonly runtime: ChatRuntime, private readonly api: TelegramTransport) {}
 
   async open(address: Address, kind: Menu["kind"], description?: RuntimeDescription): Promise<void> {
-    description ??= await this.runtime.describe!();
+    description ??= await this.runtime.describe();
     description = { ...description, models: [...description.models].sort((a, b) =>
       a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)) };
     const menu: Menu = { ...address, token: crypto.randomUUID().slice(0, 12), createdAt: Date.now(), working: false,
@@ -102,21 +102,21 @@ export class TelegramMenus {
       }
       const index = Number(action.split(":")[1]);
       const description = await this.store.changeRuntime(async () => {
-        const current = await this.runtime.describe!();
+        const current = await this.runtime.describe();
         if (action.startsWith("model:")) {
           const target = menu.description.models[index];
           const model = current.models.find(model => model.provider === target.provider && model.id === target.id);
           if (!model) throw new Error("Model no longer available.");
-          await this.runtime.configure!({ provider: model.provider, model: model.id });
+          await this.runtime.configure({ provider: model.provider, model: model.id });
         } else {
           if (!sameModel(current.selection, menu.description.selection)) throw new Error("Model has changed.");
           const selected = menu.description.selection!;
           const model = menu.description.models.find(model => model.provider === selected.provider && model.id === selected.model)!;
           const thinking = model.thinkingLevels[index];
           if (!current.models.find(model => sameModel({ provider: model.provider, model: model.id }, selected))?.thinkingLevels.includes(thinking)) throw new Error("Thinking level no longer available.");
-          await this.runtime.configure!({ thinking });
+          await this.runtime.configure({ thinking });
         }
-        return this.runtime.describe!();
+        return this.runtime.describe();
       }).catch(error => { throw new TelegramMenuError(error); });
       // Keep issued indices stable for this menu's lifetime, including after returning home.
       menu.description = { ...menu.description, selection: description.selection };

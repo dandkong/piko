@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { fixture, cleanup, waitUntil } from "./fixtures/durable";
-import { DurableChatSession } from "../server/runtime/pi";
+import type { TestChatSession as DurableChatSession } from "./fixtures/durable";
 import { runtimeRequest } from "../server/runtime/http";
 
 async function history() {
@@ -15,7 +15,7 @@ async function history() {
 
 test("compact skips an empty context without invoking the model and HTTP exposes the result", async () => {
   const f = await fixture();
-  const response = await runtimeRequest(new Request("http://local/api/runtime/compact", { method: "POST" }), f.runtime, false);
+  const response = await runtimeRequest(new Request("http://local/api/runtime/compact", { method: "POST" }), f.runtime);
   expect(await response!.json()).toEqual({ ok: true, status: "skipped", reason: "no_summary" });
   expect(f.faux.state.callCount).toBe(0);
 });

@@ -121,7 +121,7 @@ test("multiple corrections share one final answer and return it to the main assi
   await waitUntil(async()=> (await f.session.nativeHarness.snapshot(InboxDoc,ids[0],ctx))?.items.length===2);
   gate.resolve();await waitUntil(()=>reports===1);await f.session.native.waitForIdle(ctx);
   expect(reports).toBe(1);expect((await f.session.nativeHarness.snapshot(JobControl,ids[0],ctx))?.reported).toHaveLength(1);
-});
+}, 15_000); // Multiple native conversations and fsync-backed cleanup can exceed the default five seconds.
 
 test("a queued internal report remains hidden and waits until the current main answer finishes",async()=>{
   const f=await setup();const childGate=Promise.withResolvers<void>();const childEntered=Promise.withResolvers<void>();const mainGate=Promise.withResolvers<void>();const mainEntered=Promise.withResolvers<void>();

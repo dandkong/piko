@@ -17,10 +17,10 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/app.ts、http.ts | 路由、校验与 HTTP 响应 |
 | server/index.ts、config.ts | 配置、初始化、单进程锁、监听与退出 |
 | server/web.ts | 正式 Web 导出文件托管、路径边界、缓存与 SPA fallback |
-| server/chat/ | 文本校验、接纳与管理操作互斥、会话观察和内存重放 |
+| server/chat/ | 文本校验、会话观察与输出合并；不重复管理运行时互斥或后台结果缓存 |
 | server/channels/telegram/ | 私聊身份、命令、轮询确认与回复呈现 |
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
-| server/runtime/ | Durable/pi-ai 适配、配置、内建扩展与工具注册、资源与原生历史投影 |
+| server/runtime/ | Durable/pi-ai 适配、输入/维护统一接纳、后台回传缓存、配置、内建工具、资源与历史投影 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
@@ -87,7 +87,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
-| StreamEvent | 当前进程 epoch、递增 sequence；最多 128 条内存重放 |
+| StreamEvent | 当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
 
@@ -102,7 +102,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | GET /api/chat | 共享主会话最近 50 条已保存消息、流式/排队消息、向前游标和 busy、latest、interruption 状态 |
 | GET /api/chat/history?before=… | 根据 entry ID 向前加载至多 50 条可见历史，返回 nextBefore |
 | POST /api/chat | {requestId,message}，返回 {submission,duplicate}；不返回 SSE |
-| GET /api/chat/events?epoch=…&after=N | 独立、持续的会话 SSE，空闲时保持连接 |
+| GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | GET /api/chat/submission?requestId=… | 查询原生提交回执；不存在返回 404 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/health | 后端和模型可用状态 |
@@ -111,13 +111,13 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 不通过客户端 ID 创建会话，不提供主会话删除、旧 /api/main 或按 Run 观察接口。
 
-接纳串行，模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
+DurableChatSession 统一串行输入、停止与维护预留，ConversationStore 只转发和合并输出，不维护第二套接纳锁、维护状态或后台回传缓存。运行时接口的描述、配置、压缩、停止与关闭都是必需能力；测试等待执行完成和离线历史检查仅在 tests/fixtures 中提供。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
 原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，不再双写 SQL 或另发 Piko 执行终态。watchEvents 将消息、条目和执行变化转换为普通跨端事件；SDK 事件不直接进入 UI。消息更新最多 50ms 合并，状态变化发送最近一页 snapshot；积压时从原始 entries 校正。工具、思考和自动压缩的展示尚未接入。
 
-SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标直接发送新 snapshot，客户端接受新 epoch。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察最近窗口，不重发输入；客户端保留已经加载的连续历史，无交集时回到最新页避免掩盖缺口。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
+SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再接收实时更新；不维护 epoch/sequence、游标或事件重放缓存，不补齐断线期间的中间流式事件。快照与实时订阅仍在同一发布线上衔接，避免漏掉连接期间的变化。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察最近窗口，不重发输入；客户端保留已经加载的连续历史，无交集时回到最新页避免掩盖缺口。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
 
 ## 恢复、退出与备份
 
@@ -129,7 +129,7 @@ SSE 用进程 epoch 和 sequence 重放；缓存过期、重启或未知游标�
 
 ## Telegram 通道
 
-TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。TG 来源可重新开启投递观察，RN 来源不额外推 TG。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；持久化接纳成功才确认 polling update，重复输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
+TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。TG 来源可重新开启投递观察，RN 来源不额外推 TG。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
 
 RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每条助手消息有独立 Rich Markdown 消息，条内流式编辑；补充输入不重发旧回复。TG 加入 RN 正在执行的工作只观察未完成及后续消息，纯 RN 工作默认不推送 TG。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
 

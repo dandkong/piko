@@ -40,7 +40,7 @@ DEEPSEEK_API_KEY="填写模型 API Key"
 BRAVE_SEARCH_API_KEY="填写搜索 API Key"
 ```
 
-.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见 [应用配置](application-config.md) 与 [Durable 配置](durable-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。缺少 TG 凭据等配置校验问题仅停用 TG；已启用通道的致命轮询/启动错误会清理并退出整个后端，由 Restart=on-failure 自动拉起，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见 [通道说明](telegram-channel.md)。
+.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见 [应用配置](application-config.md) 与 [Durable 配置](durable-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。明确启用 TG 后缺少凭据或用户 ID 无效会拒绝启动，主动关闭 TG 才跳过其校验；已启用通道的致命轮询/启动错误会清理并退出整个后端，由 Restart=on-failure 自动拉起，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见 [通道说明](telegram-channel.md)。
 
 ## Web 与 API 地址
 

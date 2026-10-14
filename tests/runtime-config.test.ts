@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { fixture, cleanup, waitUntil } from "./fixtures/durable";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { createPiRuntime } from "../server/runtime/pi";
+import { createTestRuntime as createPiRuntime, type TestChatSession } from "./fixtures/runtime";
 import { createApp } from "../server/app";
 import { ConversationStore } from "../server/chat/conversations";
 import { defaultServerConfig } from "../server/config";
@@ -71,7 +71,7 @@ test("JSON model behavior and environment-only credentials reach a real local Op
     main: { provider: "custom", model: "test-model", thinking: "high" },
   } } }));
   const runtime = createPiRuntime(f.paths); cleanup(() => runtime.dispose!());
-  const session = await runtime.createSession() as import("../server/runtime/pi").DurableChatSession;
+  const session = await runtime.createSession() as TestChatSession;
   await session.prompt("local only", { id: crypto.randomUUID(), createdAt: 1 });
   expect(requests[0]?.headers.get("authorization")).toBe("Bearer only-local-test-key");
   expect(requests[0]?.headers.get("x-piko-config-test")).toBe("shared-local-env-value");
@@ -84,7 +84,7 @@ test("JSON model behavior and environment-only credentials reach a real local Op
   expect(requests[1]?.headers.get("x-piko-config-test")).toBe("shared-local-env-value");
   await runtime.dispose!();
   const restarted = createPiRuntime(f.paths); cleanup(() => restarted.dispose!());
-  const next = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
+  const next = await restarted.createSession() as TestChatSession;
   await next.prompt("Updated after restart", { id: crypto.randomUUID(), createdAt: 3 });
   expect(requests[2]?.headers.get("authorization")).toBe("Bearer edited-test-key");
   expect(requests[2]?.headers.get("x-piko-config-test")).toBe("edited-header");
@@ -111,7 +111,7 @@ test("a model-free conversation can activate newly configured credentials and pr
     profiles: { main: { provider: "faux", model: "reasoning", thinking: "high" } } } }));
   await runtime.dispose!();
   const restarted = createPiRuntime(f.paths, { models }); cleanup(() => restarted.dispose!());
-  const session = await restarted.createSession() as import("../server/runtime/pi").DurableChatSession;
+  const session = await restarted.createSession() as TestChatSession;
   expect((await restarted.describe!()).selection).toEqual({ provider: "faux", model: "reasoning", thinking: "high" });
   f.faux.setResponses([fauxAssistantMessage("configured")]);
   await session.prompt("hello", { id: crypto.randomUUID(), createdAt: 1 });

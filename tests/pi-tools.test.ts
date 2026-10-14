@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/provid
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { fixture } from "./fixtures/durable";
-import { DurableChatSession } from "../server/runtime/pi";
+import type { TestChatSession as DurableChatSession } from "./fixtures/durable";
 import { applyMessageEvent } from "../shared/messages";
 import type { Message } from "../shared/chat";
 import type { SessionEvent } from "../server/runtime/types";

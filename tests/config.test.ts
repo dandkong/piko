@@ -22,7 +22,7 @@ function fixture() {
 
 test("defaults have no read side effects and initialization writes only behavior JSON, never deployment or credentials", () => {
   const f = fixture(); const initial = f.load();
-  expect(initial.http).toMatchObject({ hostname: "127.0.0.1", port: 8787 });
+  expect(initial.http).toEqual({ hostname: "127.0.0.1", port: 8787, maxRequestBytes: 64_000 });
   expect(initial.channels.telegram).toEqual({ enabled: false });
   expect(initial.paths.workspace).toBe(join(f.home, "workspace"));
   expect(initial.tools).toEqual({ web_search: { enabled: true }, web_extract: { enabled: true } });
@@ -53,7 +53,8 @@ test("JSON behavior and env deployment/credentials have disjoint ownership, with
   const ambient = f.load({ PIKO_HOST: "127.0.0.1", PIKO_PORT: "9003", PIKO_WORKSPACE: ambientWorkspace, PIKO_TELEGRAM_BOT_TOKEN: "ambient-secret" });
   expect(ambient.http).toMatchObject({ hostname: "127.0.0.1", port: 9003 }); expect(ambient.paths.workspace).toBe(ambientWorkspace);
   expect(ambient.channels.telegram).toEqual({ enabled: true, userId: "42", token: "ambient-secret" });
-  expect(ambient.tools).toEqual(local.tools); expect(ambient.warnings).toEqual([]);
+  expect(ambient.tools).toEqual(local.tools);
+  f.file({ channels: { telegram: { enabled: false } } });
   f.dotenv(""); expect(f.load().http.port).toBe(8787);
 });
 
@@ -127,24 +128,23 @@ test("Telegram enablement and authorized user are JSON-only and disabling skips 
   const f = fixture();
   expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "token" }).channels.telegram).toEqual({ enabled: false });
   f.file({ channels: { telegram: { enabled: false, userId: "invalid-user" } } });
-  expect(f.load().warnings).toEqual([]);
+  expect(f.load().channels.telegram).toEqual({ enabled: false });
   f.file({ channels: { telegram: { enabled: true, userId: "42" } } });
   expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "token" }).channels.telegram).toEqual({ enabled: true, userId: "42", token: "token" });
 });
 
-test("missing token and invalid authorized user disable only Telegram and redact private input", () => {
+test("enabled Telegram with missing token or invalid authorized user refuses startup without exposing private input", () => {
   const f = fixture();
   for (const userId of [undefined, "@private-user", "9007199254740992"]) {
     f.file({ channels: { telegram: { enabled: true, ...(userId && { userId }) } } });
-    const result = f.load({ PIKO_TELEGRAM_BOT_TOKEN: "private-token-value" });
-    expect(result.http.port).toBe(8787); expect(result.channels.telegram).toEqual({ enabled: false });
-    expect(result.warnings).toHaveLength(1); expect(result.warnings[0]).toContain("RN remains available");
-    expect(result.warnings[0]).not.toContain("private-token-value"); expect(result.warnings[0]).not.toContain("@private-user");
+    const load = () => f.load({ PIKO_TELEGRAM_BOT_TOKEN: "private-token-value" });
+    expect(load).toThrow("channels.telegram.userId");
+    expect(load).not.toThrow("private-token-value"); expect(load).not.toThrow("@private-user");
   }
   f.file({ channels: { telegram: { enabled: true, userId: "42" } } });
-  expect(f.load().warnings[0]).toContain("PIKO_TELEGRAM_BOT_TOKEN");
+  expect(() => f.load()).toThrow("PIKO_TELEGRAM_BOT_TOKEN");
   f.dotenv("PIKO_TELEGRAM_BOT_TOKEN=local-secret\n");
-  expect(f.load({ PIKO_TELEGRAM_BOT_TOKEN: "" }).channels.telegram).toEqual({ enabled: false });
+  expect(() => f.load({ PIKO_TELEGRAM_BOT_TOKEN: "" })).toThrow("PIKO_TELEGRAM_BOT_TOKEN");
 });
 
 test("piko.json owns versioned Agent profiles and rejects removed retry/compaction settings", () => {
@@ -169,7 +169,7 @@ test("piko.json owns versioned Agent profiles and rejects removed retry/compacti
 test("settings.json is ignored and never used as a profile source", () => {
   const f = fixture(); f.file({ agent: { profiles: {} } });
   writeFileSync(join(f.config, "settings.json"), '{"secret":"private-legacy-value"');
-  expect(f.load().warnings).toEqual([]);
+  expect(f.load().channels.telegram).toEqual({ enabled: false });
   expect(readApplicationSettings(f.home).agent).toEqual({ profiles: {} });
 });
 

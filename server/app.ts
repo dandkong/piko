@@ -2,7 +2,7 @@ import { CHAT_PAGE_SIZE, MAX_MESSAGE_LENGTH, isHistoryCursor, isRequestId, type 
 import type { ServerConfig } from "./config";
 import type { ChatRuntime } from "./runtime/types";
 import type { ConversationStore } from "./chat/conversations";
-import { RuntimeBusyError } from "./chat/conversations";
+import { RuntimeBusyError } from "./runtime/types";
 import { chatStream } from "./chat/stream";
 import { json, withCors } from "./http";
 import { runtimeRequest } from "./runtime/http";
@@ -14,7 +14,7 @@ export function createApp({ config, runtime, conversations, web }: { config: Ser
     if (request.method === "OPTIONS") return reply(new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Accept, Content-Type" } }));
     try {
       if (url.pathname.startsWith("/api/runtime")) {
-        const response = await runtimeRequest(request, runtime, conversations.isStreaming(), operation => conversations.changeRuntime(operation), id => conversations.stop(id));
+        const response = await runtimeRequest(request, runtime, operation => conversations.changeRuntime(operation), id => conversations.stop(id));
         if (response) return reply(response);
       }
       if (request.method === "GET" && url.pathname === "/api/health") return reply(json({ ok: true, app: "Piko", runtime: "Pi", modelReady: await runtime.isModelReady(), activeSessions: conversations.size } satisfies HealthResponse));
@@ -24,11 +24,7 @@ export function createApp({ config, runtime, conversations, web }: { config: Ser
         if (before !== undefined && !isHistoryCursor(before)) return reply(json({ error: "Invalid history cursor." }, 422));
         return reply(json(await conversations.history(before)));
       }
-      if (request.method === "GET" && url.pathname === "/api/chat/events") {
-        const after = Number(url.searchParams.get("after") ?? 0);
-        if (!Number.isSafeInteger(after) || after < 0) return reply(json({ error: "Invalid event cursor." }, 422));
-        return reply(chatStream(conversations, request, url.searchParams.get("epoch") ?? undefined, after));
-      }
+      if (request.method === "GET" && url.pathname === "/api/chat/events") return reply(chatStream(conversations, request));
       if (request.method === "GET" && url.pathname === "/api/chat/submission") {
         const id = url.searchParams.get("requestId");
         if (!isRequestId(id)) return reply(json({ error: "A requestId is required." }, 422));
