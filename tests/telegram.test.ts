@@ -6,7 +6,6 @@ import { fixture, cleanup, waitUntil } from "./fixtures/durable";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { ConversationStore } from "../server/chat/conversations";
 import { TELEGRAM_COMMANDS, TelegramChannel, type TelegramMessage } from "../server/channels/telegram/channel";
-import { TelegramBot } from "../server/channels/telegram/bot";
 import { TelegramReply, TelegramMessageOutput, splitReply, TELEGRAM_RICH_LIMIT, TELEGRAM_PLAIN_LIMIT } from "../server/channels/telegram/output";
 import { isFormatError, telegramRequest, TelegramApi, type TelegramTransport, type TelegramKeyboard } from "../server/channels/telegram/api";
 import { messageEvent } from "./fixtures/messages";
@@ -205,20 +204,6 @@ test("compact command distinguishes actual application from an empty context",as
  const f=await setup();await f.channel.handle({...message,text:"/compact"});await waitUntil(()=>f.api.writes.some(w=>w.text.includes("No summary created")));
  expect(f.faux.state.callCount).toBe(0);
 });
-test("poller confirms inputs only after admission and never removes an existing webhook",async()=>{
- const f=await setup();const offsets:number[]=[];const methods:string[]=[];let webhook=true;const held=Promise.withResolvers<void>();cleanup(()=>held.resolve());
- f.faux.setResponses([fauxAssistantMessage("Reply")]);
- const server=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(request){const method=new URL(request.url).pathname.split("/").at(-1)!;methods.push(method);const body=await request.json();let result:unknown=true;
- if(method==="getMe")result={id:77,is_bot:true,first_name:"Piko",username:"piko_bot"};
- if(method==="getWebhookInfo")result={url:webhook?"https://example.invalid/hook":"",has_custom_certificate:false,pending_update_count:0};
- if(method==="getUpdates"){offsets.push(body.offset);if(body.offset===0)result=[{update_id:10,message:{message_id:1,date:1,chat:{id:42,type:"private",first_name:"User"},from:{id:42,is_bot:false,first_name:"User"},text:"Task"}}];else{await held.promise;result=[];}}
- if(method==="sendMessage"||method==="sendRichMessage")result={message_id:3};return Response.json({ok:true,result});}});cleanup(()=>server.stop(true));
- const make=()=>new TelegramBot({token:"77:test",userId:"42"},f.store,f.runtime,new Bot("77:test",{client:{apiRoot:`http://127.0.0.1:${server.port}`,timeoutSeconds:2}}));
- const refused=make();await refused.start();await refused.stopInput();await refused.close();expect(methods).not.toContain("deleteWebhook");expect(offsets).toEqual([]);
- webhook=false;const bot=make();cleanup(async()=>{await bot.stopInput();await bot.close();});await bot.start();await waitUntil(()=>offsets.length>=2);expect(offsets.slice(0,2)).toEqual([0,11]);await bot.stopInput();await bot.close();
-});
-
-
 test("conversation delivery edits partial output before the native message completes", async () => {
  const f=await setup(30);const body="Streaming response before completion. ".repeat(3);
  f.faux.setResponses([fauxAssistantMessage(body)]);await f.channel.handle(message);

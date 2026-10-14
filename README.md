@@ -147,7 +147,7 @@ $env:PIKO_TELEGRAM_BOT_TOKEN = "<轮换后、未暴露的 Bot Token>"
 bun run dev:api
 ```
 
-默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。TG 开关与用户 ID 只从 piko.json 读取，同名环境变量会被忽略，JSON 不接受 botToken。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。已配置 webhook 的 Bot 需先自行移除 webhook，Piko 不会自动删除它。
+默认只运行 RN，设置 token 不会自动启用 TG；启用时必须配置 token 与有效数字用户 ID，配置错误仅停用 TG。TG 开关与用户 ID 只从 piko.json 读取，同名环境变量会被忽略，JSON 不接受 botToken。只接受指定用户的普通私聊；通过 long polling 出站连接 Telegram，不需要公开 API 端口。采用 grammY 内置轮询，启动自动删除 webhook，但不主动丢弃待处理更新。网络故障由 SDK 持续重试；致命轮询/启动错误清理后退出，由服务管理器自动重启。
 
 支持文本交流、流式 Rich Markdown 回复、`/start`、`/help`、`/status`、`/stop`、`/recent`、`/skills`；`/models` 与 `/thinking` 使用按钮选择，`/compact` 压缩上下文并区分实际应用、跳过、取消和失败。管理操作只在主会话空闲时执行，当前模型和思考强度由 RN/TG 共享；`/status` 同时显示这些选择、模型上下文上限与技能数量。TG 发起的消息和回复会出现在 RN；纯 RN 执行默认不推送 TG，可用 `/recent` 查询。两端运行中均可补充输入，使用原生 steer all 在下一个接纳边界一起加入当前工作；停止取消当前 conversation 执行及未应用输入。用户输入与助手回复各自展示，TG 按助手消息更新，补充输入不重发旧回复。RN 前台持续观察会话 SSE，输入提交与消息流分开。
 

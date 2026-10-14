@@ -32,10 +32,6 @@ const server = Bun.serve({
 });
 
 let telegram: TelegramBot | undefined;
-if (piko.channels.telegram.enabled) {
-  try { telegram = new TelegramBot(piko.channels.telegram, conversations, runtime); }
-  catch { console.warn("Telegram initialization failed; RN remains available."); }
-}
 
 console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
 if (web) console.log("Piko Web is available at the same address.");
@@ -44,11 +40,10 @@ console.log(`Piko workspace: ${paths.workspace}`);
 console.log(`Piko main conversation: root; state: ${paths.state}`);
 
 let stopping = false;
-async function shutdown() {
+async function shutdown(failed = false) {
   if (stopping) return;
   stopping = true;
   server.stop(true);
-  let failed = false;
   // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
   for (const close of [() => telegram?.stopInput(), () => conversations.close(), () => telegram?.close(),
     () => runtime.dispose?.(), () => releaseLock()]) {
@@ -59,5 +54,10 @@ async function shutdown() {
 }
 process.on("SIGINT", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });
+// Fatal Telegram failures exit cleanly with a failure code so the service manager can restart.
+if (piko.channels.telegram.enabled) {
+  try { telegram = new TelegramBot(piko.channels.telegram, conversations, runtime, undefined, () => { void shutdown(true); }); }
+  catch { console.warn("Telegram initialization failed; restarting service."); void shutdown(true); }
+}
 // Startup is independent of HTTP readiness and is observed even if shutdown races it.
 void telegram?.start();
