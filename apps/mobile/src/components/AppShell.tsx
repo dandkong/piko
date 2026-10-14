@@ -1,6 +1,5 @@
 import {
   Bell,
-  Lightbulb,
   Menu,
   MessageCircle,
   PanelsTopLeft,
@@ -8,36 +7,49 @@ import {
   SquareCheck,
 } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme";
+import { EdgeFade, EDGE_FADE_HEIGHT } from "./EdgeFade";
 
-export function AppShell({ children, wide, status, onHeaderHeightChange }: {
+export function AppShell({ children, composer, wide, status, onHeaderHeightChange, onFooterHeightChange }: {
   children: ReactNode;
+  composer: ReactNode;
   wide: boolean;
   status: string;
   onHeaderHeightChange: (height: number) => void;
+  onFooterHeightChange: (height: number) => void;
 }) {
+  const insets = useSafeAreaInsets();
+  const horizontalPadding = wide ? 42 : 17;
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "bottom", "left", "right"]}>
-      <View style={styles.shell}>
-        <View style={styles.stage}>
-          <View style={[styles.content, { paddingHorizontal: wide ? 42 : 17 }]}>{children}</View>
-          <AgentHeader wide={wide} status={status} onHeightChange={onHeaderHeightChange} />
+    <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
+      <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.shell}>
+          <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
+          <AgentHeader wide={wide} topInset={insets.top} status={status} onHeightChange={onHeaderHeightChange} />
+          <View
+            testID="chat-footer-overlay"
+            pointerEvents="box-none"
+            onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
+            style={[styles.footer, { paddingBottom: insets.bottom }]}
+          >
+            <EdgeFade edge="bottom" />
+            <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
+            <BottomTabs wide={wide} />
+          </View>
         </View>
-        <BottomTabs wide={wide} />
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const navigation = [
   { label: "Chat", icon: MessageCircle },
-  { label: "Activity", icon: PanelsTopLeft },
-  { label: "Ideas", icon: Lightbulb },
-  { label: "Goals", icon: SquareCheck },
-  { label: "Apps", icon: Shapes },
+  { label: "Posts", icon: PanelsTopLeft },
+  { label: "Artifacts", icon: Shapes },
+  { label: "Tasks", icon: SquareCheck },
 ] as const;
 
 function Mascot({ size }: { size: number }) {
@@ -57,23 +69,26 @@ function Mascot({ size }: { size: number }) {
   );
 }
 
-function AgentHeader({ wide, status, onHeightChange }: {
+function AgentHeader({ wide, topInset, status, onHeightChange }: {
   wide: boolean;
+  topInset: number;
   status: string;
   onHeightChange: (height: number) => void;
 }) {
   return (
     <View
+      testID="chat-header-overlay"
       pointerEvents="box-none"
       onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
-      style={[styles.header, { paddingTop: wide ? 14 : 2 }]}
+      style={[styles.header, { paddingTop: topInset + (wide ? 14 : 2) }]}
     >
+      <EdgeFade edge="top" />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Menu — coming soon"
         accessibilityState={{ disabled: true }}
         disabled
-        style={[styles.headerButton, { left: 0 }]}
+        style={[styles.headerButton, { left: 20, top: topInset + 16 }]}
       >
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
@@ -87,7 +102,7 @@ function AgentHeader({ wide, status, onHeightChange }: {
         accessibilityLabel="Notifications — coming soon"
         accessibilityState={{ disabled: true }}
         disabled
-        style={[styles.headerButton, { right: 0 }]}
+        style={[styles.headerButton, { right: 20, top: topInset + 16 }]}
       >
         <Bell size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
@@ -128,14 +143,15 @@ const styles = StyleSheet.create({
   },
   shell: {
     flex: 1,
+    minHeight: 0,
+    position: "relative",
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
   },
-  stage: {
+  keyboardArea: {
     flex: 1,
     minHeight: 0,
-    position: "relative",
   },
   content: {
     flex: 1,
@@ -147,8 +163,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
-    marginHorizontal: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 10 + EDGE_FADE_HEIGHT,
+  },
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    paddingTop: EDGE_FADE_HEIGHT,
   },
   identity: {
     alignItems: "center",
@@ -168,7 +192,6 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     position: "absolute",
-    top: 16,
     width: 44,
     height: 44,
     alignItems: "center",

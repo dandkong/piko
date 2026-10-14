@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   Text,
@@ -13,6 +12,7 @@ import {
 import { ArrowDown, RotateCcw } from "lucide-react-native";
 import type { Message } from "../../../../../shared/chat";
 import { AppShell } from "../../components/AppShell";
+import { EDGE_FADE_HEIGHT } from "../../components/EdgeFade";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { ChatComposer } from "./ChatComposer";
@@ -20,6 +20,8 @@ import { AssistantMessage } from "./AssistantMessage";
 import { styles } from "./styles";
 import { useChat } from "./useChat";
 import { captureHistoryAnchor, restoreHistoryAnchor, type WebHistoryAnchor } from "./history-scroll";
+
+const MESSAGE_GAP = 13;
 
 export function ChatScreen() {
   const { ready, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
@@ -42,12 +44,22 @@ export function ChatScreen() {
   });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
   const { width } = useWindowDimensions();
   const scrollToLatest = (animated: boolean) => {
     const { contentHeight, viewportHeight } = listMetrics.current;
     // The measured content height includes the list's bottom padding.
     listRef.current?.scrollToOffset({ offset: Math.max(0, contentHeight - viewportHeight), animated });
   };
+  useLayoutEffect(() => {
+    // Web may not publish a content-size event when only the overlay inset changes.
+    const frame = requestAnimationFrame(() => {
+      const node = webScroller();
+      if (node) listMetrics.current = { contentHeight: node.scrollHeight, viewportHeight: node.clientHeight };
+      if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [footerHeight]);
   useEffect(() => {
     if (busy) {
       followLatest.current = true;
@@ -90,18 +102,33 @@ export function ChatScreen() {
   };
 
   return (
-    <AppShell wide={width >= 900} status={status} onHeaderHeightChange={setHeaderHeight}>
-      <KeyboardAvoidingView style={styles.main} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.conversationViewport}>
+    <AppShell
+      wide={width >= 900}
+      status={status}
+      onHeaderHeightChange={setHeaderHeight}
+      onFooterHeightChange={setFooterHeight}
+      composer={(
+        <ChatComposer
+          draft={draft} onChange={setDraft} loading={loading} busy={busy}
+          ready={ready && !submitting} onSend={(text) => void send(text)} onStop={stop}
+        />
+      )}
+    >
+      <View style={styles.main}>
+        <View testID="chat-conversation-viewport" style={styles.conversationViewport}>
           <FlatList
+            testID="chat-list"
             ref={listRef}
             style={styles.conversation}
             data={messages}
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
-            ItemSeparatorComponent={() => <View style={{ height: 13 }} />}
-            // This inset scrolls with the messages, letting the list extend behind the header.
-            contentContainerStyle={[styles.messageList, { paddingTop: headerHeight + 12 }]}
+            ItemSeparatorComponent={() => <View style={{ height: MESSAGE_GAP }} />}
+            // Only the controls obstruct content; the transparent fade is not extra spacing.
+            contentContainerStyle={[styles.messageList, {
+              paddingTop: headerHeight + 12,
+              paddingBottom: Math.max(0, footerHeight - EDGE_FADE_HEIGHT) + MESSAGE_GAP,
+            }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             maintainVisibleContentPosition={Platform.OS !== "web" ? { minIndexForVisible: 0 } : undefined}
@@ -178,7 +205,7 @@ export function ChatScreen() {
             )}
           />
           {awayFromLatest && (
-            <View pointerEvents="box-none" style={styles.latestButtonOverlay}>
+            <View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }]}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Latest messages"
@@ -195,11 +222,7 @@ export function ChatScreen() {
             </View>
           )}
         </View>
-        <ChatComposer
-          draft={draft} onChange={setDraft} loading={loading} busy={busy}
-          ready={ready && !submitting} onSend={(text) => void send(text)} onStop={stop}
-        />
-      </KeyboardAvoidingView>
+      </View>
     </AppShell>
   );
 }
