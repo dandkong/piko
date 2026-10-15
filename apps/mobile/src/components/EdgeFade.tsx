@@ -1,13 +1,24 @@
 import { StyleSheet, View } from "react-native";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../theme";
 
 export const HEADER_FADE_TAIL = 12;
 export const FOOTER_FADE_OVERHANG = 32;
 
-/** The same canvas-colored fade at both edges; decoration never captures list gestures. */
+const canvasRgb = colors.canvas.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+if (!canvasRgb) throw new Error("Edge fades require a six-digit hex canvas color.");
+const [, red, green, blue] = canvasRgb;
+const canvasWithOpacity = (opacity: number) =>
+  `rgba(${Number.parseInt(red!, 16)}, ${Number.parseInt(green!, 16)}, ${Number.parseInt(blue!, 16)}, ${opacity})`;
+
+/** Native gradient overlay at both edges; decoration never captures list gestures. */
 export function EdgeFade({ edge, height }: { edge: "top" | "bottom"; height: number }) {
-  const id = `chat-edge-${edge}`;
+  const top = edge === "top";
+  const gradientColors = top
+    ? [canvasWithOpacity(1), canvasWithOpacity(0.96), canvasWithOpacity(0.45), canvasWithOpacity(0)] as const
+    : [canvasWithOpacity(0), canvasWithOpacity(0.45), canvasWithOpacity(0.96), canvasWithOpacity(1)] as const;
+  const locations = top ? [0, 0.35, 0.7, 1] as const : [0, 0.3, 0.65, 1] as const;
+
   return (
     <View
       testID={`chat-${edge}-fade`}
@@ -15,19 +26,15 @@ export function EdgeFade({ edge, height }: { edge: "top" | "bottom"; height: num
       accessible={false}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[styles.fade, { height }, edge === "top" ? styles.top : styles.bottom]}
+      style={[styles.fade, { height }, top ? styles.top : styles.bottom]}
     >
-      <Svg width="100%" height="100%">
-        <Defs>
-          <LinearGradient id={id} x1="0%" x2="0%" y1={edge === "top" ? "0%" : "100%"} y2={edge === "top" ? "100%" : "0%"}>
-            <Stop offset="0%" stopColor={colors.canvas} stopOpacity={1} />
-            <Stop offset="35%" stopColor={colors.canvas} stopOpacity={0.96} />
-            <Stop offset="70%" stopColor={colors.canvas} stopOpacity={0.45} />
-            <Stop offset="100%" stopColor={colors.canvas} stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <Rect width="100%" height="100%" fill={`url(#${id})`} />
-      </Svg>
+      <LinearGradient
+        colors={gradientColors}
+        locations={locations}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
     </View>
   );
 }
