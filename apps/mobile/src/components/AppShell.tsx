@@ -26,18 +26,23 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
   const insets = useSafeAreaInsets();
   const horizontalPadding = wide ? 42 : 17;
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.shell}>
           <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
           <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
           <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
-          <AgentHeader wide={wide} topInset={insets.top} status={status} onHeightChange={onHeaderHeightChange} />
+          <AgentHeader
+            wide={wide}
+            topInset={insets.top}
+            status={status}
+            onHeightChange={height => onHeaderHeightChange(height + insets.top)}
+          />
           <View
             testID="chat-footer-overlay"
             pointerEvents="box-none"
             onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
-            style={[styles.footer, { paddingBottom: insets.bottom }]}
+            style={styles.footer}
           >
             <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
             <BottomTabs wide={wide} />
@@ -83,14 +88,14 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
       testID="chat-header-overlay"
       pointerEvents="box-none"
       onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
-      style={[styles.header, { paddingTop: topInset + (wide ? 14 : 2) }]}
+      style={[styles.header, { top: topInset }]}
     >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Menu — coming soon"
         accessibilityState={{ disabled: true }}
         disabled
-        style={[styles.headerButton, { left: 20, top: topInset + 16 }]}
+        style={[styles.headerButton, { left: 20, top: 16 }]}
       >
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
@@ -106,7 +111,7 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
         accessibilityLabel="Settings — coming soon"
         accessibilityState={{ disabled: true }}
         disabled
-        style={[styles.headerButton, { right: 20, top: topInset + 16 }]}
+        style={[styles.headerButton, { right: 20, top: 16 }]}
       >
         <Settings size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
