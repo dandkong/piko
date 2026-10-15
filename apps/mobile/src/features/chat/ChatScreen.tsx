@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import {
   ActivityIndicator,
   FlatList,
@@ -26,6 +27,11 @@ export function ChatScreen() {
   const { ready, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
     hasOlder, loadingOlder, olderError, loadOlder } = useChat();
   const listRef = useRef<FlatList<Message>>(null);
+  const keyboardLift = useSharedValue(0);
+  const [keyboardLiftAmount, setKeyboardLiftAmount] = useState(0);
+  const arrowAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -keyboardLift.value }],
+  }));
   const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
   const followLatest = useRef(true);
   const positionedLatest = useRef(false);
@@ -108,6 +114,8 @@ export function ChatScreen() {
       footerHeight={footerHeight}
       onHeaderHeightChange={setHeaderHeight}
       onFooterHeightChange={setFooterHeight}
+      keyboardLift={keyboardLift}
+      onKeyboardLiftChange={setKeyboardLiftAmount}
       composer={(
         <ChatComposer
           draft={draft} onChange={setDraft} loading={loading} busy={busy}
@@ -128,7 +136,7 @@ export function ChatScreen() {
             // Reserve one message gap at each measured content boundary; fade extents are visual only.
             contentContainerStyle={[styles.messageList, {
               paddingTop: headerHeight + MESSAGE_GAP,
-              paddingBottom: footerHeight + MESSAGE_GAP,
+              paddingBottom: footerHeight + keyboardLiftAmount + MESSAGE_GAP,
             }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -206,7 +214,7 @@ export function ChatScreen() {
             )}
           />
           {awayFromLatest && (
-            <View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }]}>
+            <Animated.View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }, arrowAnimatedStyle]}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Latest messages"
@@ -220,7 +228,7 @@ export function ChatScreen() {
               >
                 <ArrowDown size={22} strokeWidth={1.8} color={colors.text} />
               </Pressable>
-            </View>
+            </Animated.View>
           )}
         </View>
       </View>

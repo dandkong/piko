@@ -6,14 +6,17 @@ import {
   Shapes,
   SquareCheck,
 } from "lucide-react-native";
-import type { ReactNode } from "react";
-import { Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { useAnimatedStyle, type SharedValue, withTiming } from "react-native-reanimated";
 import { colors } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
-export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange }: {
+const KEYBOARD_COMPOSER_GAP = 10;
+
+export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange }: {
   children: ReactNode;
   composer: ReactNode;
   wide: boolean;
@@ -22,12 +25,43 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
   footerHeight: number;
   onHeaderHeightChange: (height: number) => void;
   onFooterHeightChange: (height: number) => void;
+  keyboardLift: SharedValue<number>;
+  onKeyboardLiftChange: (lift: number) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [tabsHeight, setTabsHeight] = useState(0);
+  const keyboardDuration = useRef(250);
   const horizontalPadding = wide ? 42 : 17;
+  const keyboardLiftAmount = keyboardHeight > 0
+    ? Math.max(0, keyboardHeight - tabsHeight) + KEYBOARD_COMPOSER_GAP
+    : 0;
+  const composerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -keyboardLift.value }],
+  }));
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const showEvent = Platform.OS === "ios" ? "keyboardWillChangeFrame" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, event => {
+      keyboardDuration.current = event.duration > 0 ? event.duration : 250;
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener(hideEvent, event => {
+      keyboardDuration.current = event.duration > 0 ? event.duration : 250;
+      setKeyboardHeight(0);
+    });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  useEffect(() => {
+    keyboardLift.value = withTiming(keyboardLiftAmount, { duration: keyboardDuration.current });
+    onKeyboardLiftChange(keyboardLiftAmount);
+  }, [keyboardLift, keyboardLiftAmount, onKeyboardLiftChange]);
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
-      <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <View style={styles.keyboardArea}>
         <View style={styles.shell}>
           <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
           <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
@@ -44,11 +78,13 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
             onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
             style={styles.footer}
           >
-            <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
-            <BottomTabs wide={wide} />
+            <Animated.View style={composerAnimatedStyle}>
+              <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
+            </Animated.View>
+            <BottomTabs wide={wide} onHeightChange={setTabsHeight} />
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -119,9 +155,9 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
   );
 }
 
-function BottomTabs({ wide }: { wide: boolean }) {
+function BottomTabs({ wide, onHeightChange }: { wide: boolean; onHeightChange: (height: number) => void }) {
   return (
-    <View style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
+    <View onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)} style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
       <View style={styles.tabBar}>
         {navigation.map(({ label, icon: Icon }) => {
           const active = label === "Chat";
@@ -221,7 +257,7 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 22,
-    paddingTop: 10,
+    paddingTop: KEYBOARD_COMPOSER_GAP,
     alignItems: "center",
   },
   tabBar: {
