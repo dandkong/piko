@@ -1,12 +1,12 @@
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ChatScreen } from "./src/features/chat/ChatScreen";
+import { MainScreen } from "./src/features/shell/MainScreen";
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <ChatScreen />
+      <MainScreen />
     </SafeAreaProvider>
   );
 }
