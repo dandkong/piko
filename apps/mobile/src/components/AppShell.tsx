@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { useAnimatedStyle, type SharedValue, withTiming } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, useSharedValue, type SharedValue, withTiming } from "react-native-reanimated";
 import { colors } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
@@ -166,9 +166,21 @@ const hints: Record<(typeof navigation)[number]["label"], string> = {
 };
 
 function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: boolean; onHeightChange: (height: number) => void; activeTab: AppTab; onTabChange?: (tab: AppTab) => void }) {
+  const index = Math.max(0, navigation.findIndex(item => item.label === activeTab));
+  const [trackWidth, setTrackWidth] = useState(0);
+  const position = useSharedValue(index);
+  useEffect(() => {
+    position.value = withTiming(index, { duration: 260, easing: Easing.out(Easing.cubic) });
+  }, [index, position]);
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: position.value * (trackWidth / navigation.length) }],
+  }));
   return (
     <View onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)} style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
-      <View style={styles.tabBar}>
+      <View style={styles.tabBar}
+        onLayout={({ nativeEvent: { layout } }) => setTrackWidth(Math.max(0, layout.width - 10))}>
+        <Animated.View pointerEvents="none"
+          style={[styles.activePill, { width: trackWidth / navigation.length }, pillStyle]} />
         {navigation.map(({ label, icon: Icon }) => {
           const active = label === activeTab;
           const enabled = !!onTabChange;
@@ -182,7 +194,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
               aria-selected={active}
               disabled={!enabled}
               onPress={() => onTabChange?.(label)}
-              style={[styles.tab, active && styles.activeTab]}
+              style={styles.tab}
             >
               <Icon size={23} strokeWidth={1.8} color={colors.text} />
             </Pressable>
@@ -294,7 +306,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 28,
   },
-  activeTab: {
+  activePill: {
+    position: "absolute",
+    top: 5,
+    left: 5,
+    height: 47,
+    borderRadius: 28,
     backgroundColor: "#F0F1F2",
   },
 });
