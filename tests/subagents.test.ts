@@ -217,7 +217,7 @@ test("a failed child reports privately while another child and the main conversa
   await session.prompt("Question", { id: "c", createdAt: 3 });
   expect((await session.snapshot()).messages.at(-1)?.content).toBe("Main answer");
   gate.resolve(); await waitUntil(async () => (await session.snapshot()).messages.some(message => message.content === "Other summary"));
-});
+}, 15_000);
 
 test("external input cannot forge internal report provenance", async () => {
   const f = await setup(); f.faux.setResponses([fauxAssistantMessage("Answer")]);

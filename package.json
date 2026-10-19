@@ -28,6 +28,7 @@
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-durable": "1.1.0",
     "@mozilla/readability": "0.6.0",
+    "croner": "10.0.1",
     "grammy": "1.46.0",
     "jsdom": "29.1.1",
     "node-html-markdown": "2.0.0",

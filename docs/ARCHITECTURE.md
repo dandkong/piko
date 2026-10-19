@@ -22,6 +22,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
 | server/runtime/ | Durable/pi-ai 适配、输入/维护统一接纳、后台回传缓存、配置、内建工具、资源与历史投影 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
+| server/items/、server/domain/work-items.ts | 事项 HTTP 校验、时间规则与受控文件目录；原生文档与调度适配留在 runtime/work-items.ts |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 | tests/ | 协议、原生状态、并发、恢复、配置与通道验证 |
@@ -32,7 +33,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置和资源，仅移除嵌套委派；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和事项管理；事项执行在 items/<id> 下使用独立 cwd 和本事项记忆，见 [定时事项](features/scheduled-work-items.md)。用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md)。
 
 默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 
@@ -54,7 +55,10 @@ Telegram 私聊 → Bot API 适配器 ────┘
     ├── .agents/skills/<name>/SKILL.md
     ├── memory/
     ├── projects/
-    └── artifacts/
+    ├── artifacts/
+    └── items/<id>/
+        ├── MEMORY.md
+        └── outputs/<executionId>/
 ```
 
 初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。当前使用固定 state/durable，不迁移旧 SQLite 或 durable-sessions 布局，也不读取其聊天历史。清理旧数据须先停止后端，配置和工作区不随数据库清理删除。
@@ -87,6 +91,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
+| piko.work-items / piko.item-command / piko.item-context | 原生文档保存事项定义、时间游标、管理请求回执与子会话归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | StreamEvent | 当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
@@ -135,4 +140,4 @@ RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每�
 
 ## 后续方向（未实现）
 
-Side chat、产品调度、通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。
+事项调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时事项](features/scheduled-work-items.md)。Side chat、独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。

@@ -3,6 +3,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanima
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   Platform,
   Pressable,
   Text,
@@ -12,7 +13,8 @@ import {
 } from "react-native";
 import { ArrowDown, RotateCcw } from "lucide-react-native";
 import type { Message } from "../../../../../shared/chat";
-import { AppShell } from "../../components/AppShell";
+import { AppShell, type AppTab } from "../../components/AppShell";
+import { TasksScreen } from "../tasks/TasksScreen";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { ChatComposer } from "./ChatComposer";
@@ -24,6 +26,7 @@ import { captureHistoryAnchor, restoreHistoryAnchor, type WebHistoryAnchor } fro
 const MESSAGE_GAP = 13;
 
 export function ChatScreen() {
+  const [tab, setTab] = useState<AppTab>("Chat");
   const { ready, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
     hasOlder, loadingOlder, olderError, loadOlder } = useChat();
   const listRef = useRef<FlatList<Message>>(null);
@@ -109,6 +112,8 @@ export function ChatScreen() {
   return (
     <AppShell
       wide={width >= 900}
+      activeTab={tab}
+      onTabChange={value => { Keyboard.dismiss(); setTab(value); }}
       status={status}
       headerHeight={headerHeight}
       footerHeight={footerHeight}
@@ -116,14 +121,15 @@ export function ChatScreen() {
       onFooterHeightChange={setFooterHeight}
       keyboardLift={keyboardLift}
       onKeyboardLiftChange={setKeyboardLiftAmount}
-      composer={(
+      composer={tab === "Chat" ? (
         <ChatComposer
           draft={draft} onChange={setDraft} loading={loading} busy={busy}
           ready={ready && !submitting} onSend={(text) => void send(text)} onStop={stop}
         />
-      )}
+      ) : null}
     >
-      <View style={styles.main}>
+      {tab === "Tasks" && <TasksScreen topInset={headerHeight + MESSAGE_GAP} bottomInset={footerHeight + MESSAGE_GAP} />}
+      <View style={[styles.main, tab !== "Chat" && { display: "none" }]}>
         <View testID="chat-conversation-viewport" style={styles.conversationViewport}>
           <FlatList
             testID="chat-list"

@@ -1,0 +1,130 @@
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { Cron } from "croner";
+import type { ItemSchedule, WorkItemDraft } from "../../shared/work-items";
+import { isWithin, readGuidance } from "./workspace";
+
+export class WorkItemError extends Error {
+  constructor(message: string, readonly status = 422) { super(message); }
+}
+export function itemId(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(value)) throw new WorkItemError("Invalid item identity.");
+  return value;
+}
+export function executionId(value: unknown): string {
+  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) throw new WorkItemError("Invalid execution identity.");
+  return value;
+}
+export function itemDraft(value: unknown): WorkItemDraft {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new WorkItemError("An item is required.");
+  const input = value as Record<string, unknown>;
+  if (typeof input.title !== "string" || !input.title.trim() || input.title.length > 160) throw new WorkItemError("Title must contain 1–160 characters.");
+  if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 12000) throw new WorkItemError("Prompt must contain 1–12,000 characters.");
+  let schedule: ItemSchedule = null;
+  if (input.schedule !== null) {
+    if (!input.schedule || typeof input.schedule !== "object" || Array.isArray(input.schedule)) throw new WorkItemError("Choose manual, once, or cron scheduling.");
+    const rule = input.schedule as Record<string, unknown>;
+    if (rule.type === "once" && typeof rule.at === "number" && Number.isSafeInteger(rule.at) && rule.at > 0 && rule.at < 8.64e15) schedule = { type: "once", at: rule.at };
+    else if (rule.type === "cron" && typeof rule.expression === "string" && typeof rule.timezone === "string") {
+      const expression = rule.expression.trim().replace(/\s+/g, " ");
+      if (expression.length > 120 || expression.split(" ").length !== 5 || rule.timezone.length > 100) throw new WorkItemError("Use a five-field cron expression and an IANA time zone.");
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: rule.timezone });
+        if (!new Cron(expression, { timezone: rule.timezone }).nextRun()) throw new Error("No future occurrence");
+      }
+      catch { throw new WorkItemError("Invalid cron expression or time zone."); }
+      schedule = { type: "cron", expression, timezone: rule.timezone };
+    } else throw new WorkItemError("Invalid schedule.");
+  }
+  return { title: input.title.trim(), prompt: input.prompt.trim(), schedule };
+}
+/** Croner evaluates calendar/DST rules only; no library timer or second scheduler. */
+export function nextDue(schedule: ItemSchedule, after: number): number | null {
+  if (!schedule) return null;
+  if (schedule.type === "once") return schedule.at;
+  return new Cron(schedule.expression, { timezone: schedule.timezone }).nextRun(new Date(after))?.getTime() ?? null;
+}
+export function latestDue(schedule: Extract<ItemSchedule, { type: "cron" }>, now: number): number {
+  return new Cron(schedule.expression, { timezone: schedule.timezone }).previousRuns(1, new Date(now + 1))[0]?.getTime() ?? now;
+}
+
+/** Explicit paths, no title-derived directory names, no symlink traversal in product file APIs. */
+export class ItemFiles {
+  constructor(private readonly workspace: string) {}
+  directory(id: string) { return join(this.workspace, "items", itemId(id)); }
+  private async checked(path: string, directory: boolean) {
+    const base = await realpath(this.workspace);
+    if (!isWithin(base, resolve(path))) throw new WorkItemError("Path escapes the workspace.");
+    const relative = path.slice(this.workspace.length).split(/[\\/]/).filter(Boolean);
+    let current = this.workspace;
+    for (const part of relative) {
+      current = join(current, part);
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new WorkItemError("Symbolic links are not supported in item paths.");
+    }
+    const info = await lstat(path);
+    if (directory ? !info.isDirectory() : !info.isFile()) throw new WorkItemError("Invalid item file type.");
+    if (!isWithin(base, await realpath(path)) || await realpath(path) !== resolve(path)) throw new WorkItemError("Path escapes its declared item location.");
+    return info;
+  }
+  async prepare(id: string, execution?: string) {
+    // Check each existing parent before mkdir; never follow a pre-existing directory link.
+    const paths = [join(this.workspace, "items"), this.directory(id)];
+    if (execution) paths.push(join(this.directory(id), "outputs"), join(this.directory(id), "outputs", executionId(execution)));
+    for (const path of paths) {
+      try { await mkdir(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+      await this.checked(path, true);
+    }
+    const memory = join(this.directory(id), "MEMORY.md");
+    try {
+      const file = await open(memory, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      try { await file.writeFile("# Item memory\n\nKeep only reusable findings and progress; refer to execution outputs for details.\n"); }
+      finally { await file.close(); }
+    }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    await this.checked(memory, false);
+  }
+  async memory(id: string) {
+    const directory = this.directory(id);
+    await this.checked(join(directory, "MEMORY.md"), false);
+    return readGuidance(directory, "MEMORY.md", 4000);
+  }
+  async files(id: string, execution: string) {
+    const root = join(this.directory(id), "outputs", executionId(execution));
+    try { await this.checked(root, true); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+    const result: string[] = [];
+    let visited = 0;
+    const scan = async (directory: string, prefix = "", depth = 0) => {
+      if (depth > 8) return;
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (++visited > 500) return;
+        const path = prefix + entry.name;
+        if (entry.isSymbolicLink()) continue;
+        if (entry.isFile()) result.push(path);
+        else if (entry.isDirectory()) await scan(join(directory, entry.name), `${path}/`, depth + 1);
+      }
+    };
+    await scan(root); return result.sort();
+  }
+  async read(id: string, execution: string, relative: string) {
+    if (!relative || relative.includes("\\") || relative.split("/").some(part => !part || part === "." || part === "..")) throw new WorkItemError("Invalid output path.");
+    if (!/\.(md|markdown|txt|json|csv|log|yaml|yml)$/i.test(relative)) throw new WorkItemError("Only text outputs can be previewed.");
+    const path = join(this.directory(id), "outputs", executionId(execution), relative);
+    const info = await this.checked(path, false);
+    if (info.size > 1_000_000) throw new WorkItemError("Output is too large to preview.", 413);
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const opened = await file.stat();
+      if (opened.ino !== info.ino || opened.dev !== info.dev) throw new WorkItemError("Output changed while it was being opened. Retry.", 409);
+      const buffer = Buffer.alloc(1_000_001); let size = 0;
+      while (size < buffer.length) {
+        const read = (await file.read(buffer, size, buffer.length - size, size)).bytesRead;
+        if (!read) break;
+        size += read;
+      }
+      if (size > 1_000_000) throw new WorkItemError("Output is too large to preview.", 413);
+      return { path: relative, content: buffer.subarray(0, size).toString("utf8") };
+    } finally { await file.close(); }
+  }
+}

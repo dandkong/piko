@@ -15,10 +15,13 @@ import { colors } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
 const KEYBOARD_COMPOSER_GAP = 10;
+export type AppTab = "Chat" | "Tasks";
 
-export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange }: {
+export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
   children: ReactNode;
   composer: ReactNode;
+  activeTab?: AppTab;
+  onTabChange?: (tab: AppTab) => void;
   wide: boolean;
   status: string;
   headerHeight: number;
@@ -81,7 +84,7 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
             <Animated.View style={composerAnimatedStyle}>
               <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
             </Animated.View>
-            <BottomTabs wide={wide} onHeightChange={setTabsHeight} />
+            <BottomTabs wide={wide} onHeightChange={setTabsHeight} activeTab={activeTab} onTabChange={onTabChange} />
           </View>
         </View>
       </View>
@@ -155,21 +158,23 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
   );
 }
 
-function BottomTabs({ wide, onHeightChange }: { wide: boolean; onHeightChange: (height: number) => void }) {
+function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: boolean; onHeightChange: (height: number) => void; activeTab: AppTab; onTabChange?: (tab: AppTab) => void }) {
   return (
     <View onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)} style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
       <View style={styles.tabBar}>
         {navigation.map(({ label, icon: Icon }) => {
-          const active = label === "Chat";
+          const active = label === activeTab;
+          const enabled = label === "Chat" || label === "Tasks" && !!onTabChange;
           return (
             <Pressable
               key={label}
               accessibilityRole="tab"
               accessibilityLabel={label}
-              accessibilityHint={active ? "Current conversation" : "Coming soon"}
-              accessibilityState={{ selected: active, disabled: !active }}
+              accessibilityHint={enabled ? label === "Chat" ? "Main conversation" : "Persistent work items" : "Coming soon"}
+              accessibilityState={{ selected: active, disabled: !enabled }}
               aria-selected={active}
-              disabled={!active}
+              disabled={!enabled}
+              onPress={() => { if (label === "Chat" || label === "Tasks") onTabChange?.(label); }}
               style={[styles.tab, active && styles.activeTab]}
             >
               <Icon size={23} strokeWidth={1.8} color={colors.text} />

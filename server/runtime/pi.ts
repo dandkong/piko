@@ -12,7 +12,10 @@ import { RuntimeBusyError } from "./types";
 import { sessionDirectory } from "./pi-context";
 import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
-import { createSubagentExtension, prepareRestart, subagentIds } from "./subagents";
+import { createSubagents, prepareRestart, subagentIds } from "./subagents";
+import { createWorkItemTools, DurableWorkItems } from "./work-items";
+import { ItemContext } from "./item-context";
+import { ItemFiles } from "../domain/work-items";
 import { internalInput, registerInput } from "./input-origin";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
@@ -31,13 +34,14 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
 }
 
 type SessionRegistry = { registry: Registry; searchConfigured: boolean };
-function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension): SessionRegistry {
+function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension, items: import("@earendil-works/pi-durable").Extension): SessionRegistry {
   const value = createRegistry();
   const web = createWebTools(readConfigEnvironment(paths.home), { settings: readApplicationSettings(paths.home).tools });
   value.install(CodingTools);
   value.install(createWorkspaceResources(paths));
   value.install(web.extension);
   value.install(subagents);
+  value.install(items);
   return { registry: value, searchConfigured: web.searchConfigured };
 }
 
@@ -48,6 +52,7 @@ export class DurableChatSession implements ChatSession {
   private conversation!: Conversation;
   private config!: WorkspaceModelConfig;
   private extensions!: SessionRegistry;
+  private itemService!: DurableWorkItems;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
   private unsubscribeBindings?: () => void;
@@ -81,17 +86,20 @@ export class DurableChatSession implements ChatSession {
 
   async init(): Promise<void> {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
-    const extensions = registry(this.paths, createSubagentExtension({ storage: () => this.storage,
+    const children = createSubagents({ storage: () => this.storage,
       canReport: () => !this.maintenance && !this.stopping && !this.disposed,
       onReply: async reply => {
         if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
-    }));
-    await this.open(config, extensions);
+    });
+    const extensions = registry(this.paths, children.extension, createWorkItemTools(() => this.itemService));
+    await this.open(config, extensions, children);
   }
 
-  private async open(config: WorkspaceModelConfig, extensions: SessionRegistry): Promise<void> {
+  workItems() { return this.itemService; }
+
+  private async open(config: WorkspaceModelConfig, extensions: SessionRegistry, children: ReturnType<typeof createSubagents>): Promise<void> {
     const directory = sessionDirectory(runtimePaths(this.paths.home).sessions);
     const persisted = existsSync(join(directory, "main.jsonl"));
     const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
@@ -129,11 +137,22 @@ export class DurableChatSession implements ChatSession {
       const rootAgent = await conversation.agent(ctx);
       await harness.commit(async tx => {
         const ids = await subagentIds(tx);
-        for (const id of ids) await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
-          cwd: rootAgent.cwd, extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents"),
-          tools: rootAgent.tools.filter(item => item.name !== "subagent") });
+        for (const id of ids) {
+          const binding = (await tx.doc(ItemContext, id)).binding;
+          await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
+            cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd,
+            extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents" && item.name !== "piko-work-items"),
+            tools: rootAgent.tools.filter(item => item.name !== "subagent" && item.name !== "work_item") });
+        }
       }, ctx);
       this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
+      this.itemService = new DurableWorkItems(harness, this.paths.workspace, children, async () => {
+        if (this.disposed) throw new Error("Piko is shutting down.");
+        if (this.maintenance || this.stopping) throw new RuntimeBusyError();
+        const agent = await conversation.agent(ctx);
+        if (!agent.model) throw new Error("No model is configured.");
+        await requireAvailableModel(config.models, { provider: agent.model.provider, model: agent.model.modelId });
+      });
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
       this.inputEntries = await readPiInputs(harness, storage);
@@ -154,6 +173,7 @@ export class DurableChatSession implements ChatSession {
       this.output.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot, true);
       stream.start(events => this.delivery = this.observe(events));
       harness.resume();
+      this.itemService.start();
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
         if (!this.disposed) console.error("Piko durable event stream closed:", end);
@@ -314,6 +334,7 @@ export class DurableChatSession implements ChatSession {
     if (this.closing) return this.closing;
     this.disposed = true;
     this.closing = (async () => {
+      await this.itemService.close();
       await this.admission.catch(() => {});
       const maintenance = this.maintenance;
       if (maintenance) {
@@ -394,6 +415,7 @@ export function createPiRuntime(paths: WorkspacePaths, options: { models?: Model
     return opening;
   }
   return {
+    workItems: async () => (await get()).workItems(),
     isModelReady: async () => (await get()).modelReady(),
     createSession: get,
     describe: async () => (await get()).describe(),

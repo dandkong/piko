@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。Side chat 的交互、记忆提取、后台调度、工具进度和产物管理尚未实现；未来会话复用同一个 Harness。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时事项](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 管理 Prompt、时间规则、记忆和历次结果。Side chat 的交互、自动记忆提取、工具进度和全局产物管理尚未实现；未来会话复用同一个 Harness。
 
 默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
@@ -78,6 +78,6 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 后续与验证
 
-原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；长期调度、投递 outbox、权限及 side chat 交互尚未实现；后台委派及已完成结果的回传恢复已接入。
+原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；事项调度、后台委派及已完成结果的回传恢复已接入；可靠投递 outbox、权限及 side chat 交互尚未实现。
 
 自动化覆盖初始化/路径、原生去重与重启、完整历史、分页与游标验证、隐藏记录、分页与快照合并/缺口恢复、压缩、残尾/损坏/缺失、中断撤回、内建工具/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。

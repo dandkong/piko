@@ -18,7 +18,8 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 ## 已确定的方向
 
 - 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。一级模块只保留 Chat、Posts（主动帖子）、Artifacts（产物）、Tasks（任务），不建设 Ideas。聊天列表铺满可用屏幕，头部、输入框与导航悬浮；上下使用同一浅色渐隐样式但独立控制覆盖范围；头部覆盖实测内容并向下延伸 12px，底部覆盖输入框/导航并在输入框上方延伸 32px。渐隐只负责视觉，列表首尾根据头像胶囊底边和输入框顶边实测，并与消息间距统一为 13px；头像不加底板，名字与状态保留上下结构并包在自适应胶囊内，正常空闲隐藏状态。
-- 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、工作区资源和工具，仅移除嵌套委派；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
+- 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、全局工作区资源和基本工具，移除嵌套委派与事项管理；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
+- 定时事项已接入：一个事项对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载事项记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 可查看和管理；定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [定时事项](docs/features/scheduled-work-items.md)。
 - side chat 后续复用同一 Harness 的原生 conversation 与关系，交互、上下文共享和结论回传仍待设计。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
 - 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
@@ -48,4 +49,4 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 动效使用 Reanimated；现有 OpenMuse 素材与 UI 授权保留在 `THIRD_PARTY_NOTICES.md`。
 - 代码改动按影响运行 `bun run typecheck`、`bun run test`；涉及打包再做对应平台导出。关键状态、持久化、路径边界和恢复行为需要有意义的自动化验证。
 - 文档改动检查链接、命令和实现状态即可；原生键盘、网络和后台行为需要设备验证，未验证的范围明确说明。
-- 非 Chat 导航和其他占位入口在功能可用前保持禁用。
+- Chat、Tasks 导航可用；Posts、Artifacts 和其他占位入口在功能可用前保持禁用。

@@ -2,9 +2,9 @@
 
 **给日常留一点空间。由 Pi 驱动。**
 
-Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及 Chat / Activity / Ideas / Goals / Apps 五项胶囊 Tab。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及胶囊导航。当前一级模块为 Chat / Posts / Artifacts / Tasks，已启用 Chat 与 Tasks。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具、内置 web_search/web_extract，并支持后台子 Agent 委派。搜索凭据由部署者在后端环境配置，日常使用无需选择服务商。
+Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具、内置 web_search/web_extract，并支持后台子 Agent 委派与定时事项。一个事项保存一个 Prompt、可选定时和固定目录；子 Agent 完成后由主 Agent 整理回复。搜索凭据由部署者在后端环境配置，日常使用无需选择服务商。
 
 ## 文档入口
 
@@ -17,6 +17,7 @@ Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun �
 | [Durable 配置与运行时](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能与运行时控制 API |
 | [内置搜索与网页提取](docs/features/web-tools.md) | 搜索/提取契约、后端环境凭据、能力来源、取消与请求限制 |
 | [后台子 Agent](docs/features/background-subagents.md) | 共享资源、持久化子会话、私有回传与停止/恢复范围 |
+| [定时事项](docs/features/scheduled-work-items.md) | Tasks 管理、Prompt 与时间规则、事项记忆、历次输出、去重与恢复 |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
 | [Linux 正式入口](docs/features/linux-deployment.md) | Web + API/SSE + TG 单进程、构建和 systemd 部署 |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
@@ -183,11 +184,12 @@ bun run build:web
 ## 当前边界
 
 - 工作区和唯一主会话已持久化，Pi 上下文使用原生 JSONL 与压缩机制；side chat 将复用同一 Harness 的 conversation，交互尚未实现。
-- 后台子 Agent 共用工作区、模型、工具、内建扩展和技能；禁止嵌套，不增加任务展示。一次委派一个持久化子会话，结果私下交回主 Agent，由它决定回复或保持安静；普通停止不取消独立子工作。
+- 后台子 Agent 共用模型、基本工具、全局指导和技能；禁止嵌套。普通委派共用工作区、不单独展示，事项执行则有固定目录、独立记忆和 Tasks 执行记录。一次委派一个持久化子会话，结果私下交回主 Agent，由它决定回复或保持安静；普通停止不取消独立子工作。
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过会话停止接口终止当前工作，也可取消手动压缩。
 - Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 每次连接先加载最新快照，再接收实时更新，不维护事件游标或重放缓存。同 `requestId` 的重复提交由 Durable 去重，重启后仍不会重复执行；启动撤销不确定工作并显示中断提示，不自动重跑；已完成子任务的纯回传阶段可以恢复。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。原生 inbox 中尚未应用的输入会在启动时撤回，用户需要主动重新发送；不从另一套日志重建正文。
 - JSON 模型配置、思考强度、模型预设和手动压缩已接入；服务端提供模型/思考选择及压缩 API，TG 已提供模型/思考按钮与压缩命令，配置修改后重启生效，RN 配置管理界面尚未实现。Durable Extension 仅用于 Piko 内建运行时能力，不加载用户插件代码。
 - durable 1.1.0 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
-- 顶部菜单、通知、附件，以及 Activity / Ideas / Goals / Apps Tab 是禁用的布局占位。
-- Goal、后台任务、Feed、Memory、Browser、文件、登录、多用户和连接器按路线图逐步加入。
+- Tasks 首版支持手动、一次性、每天/自定义 Cron，事项内可查看记忆、原生最终回答和文本产物；去重、同事项串行、暂停/停止/归档和重启中断已接入。首版没有独立语义阻塞、自动重试整个任务、执行预算或失败熔断；详情见定时事项说明。
+- 顶部菜单、通知、附件，以及 Posts / Artifacts Tab 仍是禁用占位。
+- Feed、自动记忆、Browser、全局文件/产物管理、登录、多用户和连接器按路线图逐步加入。

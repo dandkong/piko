@@ -4,7 +4,9 @@
 
 ## 共享资源与会话
 
-主、子 Agent 共用同一个 Harness、JSONL 存储、工作区、模型与思考强度、工具、内建扩展、技能、AGENTS.md 和 MEMORY.md。子 Agent 没有独立配置或记忆目录，唯一工具差异是移除 subagent 委派入口；同时在工具执行处拒绝非 root 的委派。子角色说明只补充任务职责，仍加载共享指导。
+主、子 Agent 共用同一个 Harness、JSONL 存储、模型与思考强度、基本工具、内建扩展、技能、全局 AGENTS.md 和 MEMORY.md。普通委派共用工作区，没有独立配置或记忆目录；子工具移除 subagent 和 work_item，同时在工具执行处拒绝非 root 的委派/事项管理。子角色说明只补充任务职责，仍加载共享指导。
+
+[定时事项](scheduled-work-items.md) 复用相同 Anchor/Reporter 和回传机制，但使用固定事项目录作为 cwd，并额外加载本事项记忆、保存独立输出。本文其余共享文件与不增加展示的约定针对普通聊天委派；Tasks 页面单独展示事项执行记录，不把内部子消息投影到主聊天。
 
 每次 spawn 创建新的原生 conversation；完成后保留历史，新任务重新 spawn。send 只给仍在执行或等待输入递送的子任务补充要求，不重新启用已结束会话。不建设用户会话列表或切换入口，与未来的用户 side chat 分开。
 
@@ -63,4 +65,4 @@ Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对�
 
 依据本地 pi-mono 的 [后台委派示例](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/23-subagent-background.ts)，实施对照锁定的 durable 1.1.0 类型；本地 main 示例的 output、abandonOnRestart 不直接照搬。
 
-后续待设计：并发/成本限额、长期调度、可靠平台 outbox，以及用户 side chat 的入口、共享背景和结论回传。当前没有任务展示或自动续跑未完成执行。
+事项调度与 Tasks 首版见 [定时事项](scheduled-work-items.md)。普通委派的并发/成本限额、可靠平台 outbox，以及用户 side chat 的入口、共享背景和结论回传仍待设计；普通委派没有独立管理 UI，也不自动续跑未完成执行。

@@ -2,6 +2,8 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../domain/workspace";
+import { ItemFiles } from "../domain/work-items";
+import { ItemContext } from "./item-context";
 
 export type WorkspaceSkill = { name: string; description: string; path: string; disableModelInvocation: boolean };
 type GuidanceRole = "core" | "work_guidance" | "memory";
@@ -78,7 +80,12 @@ export function formatWorkspaceResources(resources: WorkspaceResources): string 
 export function createWorkspaceResources(paths: WorkspacePaths) {
   const reported = new Set<string>();
   return defineExtension({ name: "piko-resources", sections: [
-    section("cwd", () => paths.workspace),
+    section("cwd", input => input.agent.cwd ?? paths.workspace),
+    section("item_memory", async (input, context) => {
+      const binding = (await input.read.snapshot(ItemContext, input.conversationId, context))?.binding;
+      if (!binding) return undefined;
+      return `<instructions_file role="memory" path="${escape(new ItemFiles(paths.workspace).directory(binding.itemId))}/MEMORY.md">\n${await new ItemFiles(paths.workspace).memory(binding.itemId)}\n</instructions_file>`;
+    }),
     section("workspace_resources", async (_input, context) => {
       const resources = await loadWorkspaceResources(paths, context.abortSignal);
       for (const diagnostic of resources.diagnostics) {

@@ -7,12 +7,15 @@ import { chatStream } from "./chat/stream";
 import { json, withCors } from "./http";
 import { runtimeRequest } from "./runtime/http";
 import type { WebHandler } from "./web";
+import { itemRequest } from "./items/http";
+import { WorkItemError } from "./domain/work-items";
 export function createApp({ config, runtime, conversations, web }: { config: ServerConfig; runtime: ChatRuntime; conversations: ConversationStore; web?: WebHandler }) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const reply = (response: Response) => withCors(request, response);
     if (request.method === "OPTIONS") return reply(new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Accept, Content-Type" } }));
     try {
+      if (url.pathname === "/api/items" || url.pathname.startsWith("/api/items/")) return reply(await itemRequest(request, runtime, config.maxRequestBytes));
       if (url.pathname.startsWith("/api/runtime")) {
         const response = await runtimeRequest(request, runtime, operation => conversations.changeRuntime(operation), id => conversations.stop(id));
         if (response) return reply(response);
@@ -46,6 +49,6 @@ export function createApp({ config, runtime, conversations, web }: { config: Ser
       }
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return reply(json({ error: "Not found." }, 404));
       return reply(web ? await web(request) : new Response("Piko API is running."));
-    } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "Request failed." }, error instanceof RuntimeBusyError ? 409 : 503)); }
+    } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "Request failed." }, error instanceof WorkItemError ? error.status : error instanceof RuntimeBusyError ? 409 : 503)); }
   };
 }
