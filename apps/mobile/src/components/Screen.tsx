@@ -9,7 +9,8 @@ export function Screen({ children, topInset, bottomInset, testID }: {
   bottomInset: number;
   testID?: string;
 }) {
-  return <ScrollView testID={testID} contentContainerStyle={[styles.page, { paddingTop: topInset, paddingBottom: bottomInset }]}>
+  return <ScrollView testID={testID} showsVerticalScrollIndicator={false}
+    contentContainerStyle={[styles.page, { paddingTop: topInset, paddingBottom: bottomInset }]}>
     {children}
   </ScrollView>;
 }
