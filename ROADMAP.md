@@ -15,7 +15,7 @@
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。主动压缩已区分实际应用、未生成摘要、过时、取消和失败。
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
 - 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。
-- 定时事项首版已接入：一个 Prompt、可选 once/Cron、一个固定目录；Tasks 支持管理、执行记录与文本输出预览，每次新建子会话，加载本事项记忆，结果同普通子 Agent 回传主 Agent。原生 doc 保存定义/游标和回执，执行状态从原生任务投影。[功能说明](docs/features/scheduled-work-items.md)。
+- 定时事项首版已接入：一个 Prompt、可选 once/Cron、一个固定目录；任务在 Chat 里创建，Tasks 只展示任务、上次结果与时间线，干预只保留归档。每次新建子会话，加载本事项记忆，结果同普通子 Agent 回传主 Agent。原生 doc 保存定义/游标和回执，执行状态从原生任务投影。[功能说明](docs/features/scheduled-work-items.md)。
 - 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景；头像在胶囊外，名字与活动状态上下排列在自适应胶囊内，正常空闲只显示名字。导航只保留 Chat / Posts / Artifacts / Tasks；Chat / Tasks 可用；左上菜单、右上设置、附件和 Posts / Artifacts 导航仍禁用，不建设 Ideas。
 
 ## 近期开发顺序
@@ -26,7 +26,7 @@
 | 2. 工具与技能使用 | 助手能保存工作成果与可复用流程 | Pi 内建文件/命令工具、技能正文读取与创建、脚本执行；管理界面、来源追踪与访问边界后续设计 | 基础工具已启用；产品化管理待设计 |
 | 3. RN 与 Telegram 双通道 | 可通过 TG 私聊使用同一个助手，RN 可看到共享历史与执行状态 | 文本回复、停止、详细状态/只读查询、模型/思考按钮、压缩、输入去重、回复呈现与 RN 前台同步；复杂能力单独讨论 | 首期代码与自动化已接入；[通道说明](docs/features/telegram-channel.md)；真实 Bot 与设备行为待验证 |
 | 3a. 运行中输入 | 助手工作时仍可补充、纠正要求，RN/TG 遵循相同规则 | 输入使用 durable `whenBusy: "steer"`，运行时使用 `steeringMode: "all"`；独立提交、独立助手消息、停止与通道投递 | 已实现并通过原生 faux 模型与模拟通道测试；真实 Bot 和设备体验待验证 |
-| 4. Posts、Artifacts 与 Tasks | 查看主动帖子、工作产物和事项 | Tasks 首版：Prompt、手动/一次性/Cron、固定目录、记忆、执行记录与主 Agent 回传；Posts/全局 Artifacts 后续接入 | Tasks 已实现，原生自动化与临时 Web/faux 联调通过；真机和真实模型待验证；[功能说明](docs/features/scheduled-work-items.md) |
+| 4. Posts、Artifacts 与 Tasks | 查看主动帖子、工作产物和任务 | Tasks 首版：Chat 创建、人工时间标签、固定目录、记忆与主 Agent 回传；页面只读展示与最少干预 | Tasks 已实现，原生自动化与临时 Web/faux 联调通过；真机和真实模型待验证；[功能说明](docs/features/scheduled-work-items.md) |
 
 当前以应用配置确定工作区，一个 PIKO_HOME 使用一个 Harness/root；身份、提交、执行和状态复用 Durable 原生存储。Message 是原生记录的展示投影，持续会话事件只用于实时传输，重连通过最新快照恢复，不维护重放缓存。主会话是默认入口，side chat 的交互与上下文关系待设计，不做会话列表或切换交互。记忆目录与指导文件可以先建立，自动提取和检索不因此算完成。
 
@@ -79,7 +79,7 @@
 | 能力 | 核心结果与依赖 |
 | --- | --- |
 | Background Tasks | 后台委派与事项调度已接入，复用原生任务、文档、子 conversation 和回传；普通委派并发/成本限额与可靠 outbox 后续设计 |
-| Tasks | 首版事项管理、定时、历次结果与文本产物已接入；执行预算、语义阻塞与更丰富产物按需要扩展 |
+| Tasks | 首版 Chat 内创建、定时、结果时间线与最少的干预操作已接入；执行预算、语义阻塞与更丰富产物按需要扩展 |
 | Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
 | Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |
 | Posts | 助手主动发布有来源和反馈的内容，复用浏览器/搜索能力；主动投递与反馈待设计 |

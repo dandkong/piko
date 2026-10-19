@@ -22,7 +22,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
 | server/runtime/ | Durable/pi-ai 适配、输入/维护统一接纳、后台回传缓存、配置、内建工具、资源与历史投影 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
-| server/items/、server/domain/work-items.ts | 事项 HTTP 校验、时间规则与受控文件目录；原生文档与调度适配留在 runtime/work-items.ts |
+| server/items/、server/domain/work-items.ts | 事项 HTTP 校验、时间规则与事项目录边界；原生文档与调度适配留在 runtime/work-items.ts |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 | tests/ | 协议、原生状态、并发、恢复、配置与通道验证 |

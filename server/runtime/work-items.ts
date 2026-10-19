@@ -70,10 +70,12 @@ export class DurableWorkItems implements WorkItemsRuntime {
       const answerId = submission?.type === "input" && submission.status === "done" ? submission.answer
         : checkpoint?.phase === "report" ? checkpoint.answer : reported?.answer;
       const answer = answerId === undefined ? undefined : await tx.entry(answerId);
+      const text = (answer?.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
+      const preview = text.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
       result.push({ binding: { ...binding }, execution: { id: String(child), startedAt: binding.startedAt,
-        scheduledAt: binding.scheduledAt, revision: binding.revision, status, ...(error && { error }) },
-        message: (reporters[0].input as ReporterInput).message,
-        answer: (answer?.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("") });
+        scheduledAt: binding.scheduledAt, revision: binding.revision, status, ...(error && { error }),
+        ...(preview && { preview }) },
+        message: (reporters[0].input as ReporterInput).message, answer: text });
     }
     return result.reverse();
   }
@@ -87,7 +89,7 @@ export class DurableWorkItems implements WorkItemsRuntime {
     }, ctx);
   }
   async detail(id: string, before?: string): Promise<WorkItemDetail> {
-    const state = await this.harness.commit(async tx => {
+    return this.harness.commit(async tx => {
       const item = publicItem(find(await items(tx), id));
       const all = (await this.executions(tx)).filter(run => run.binding.itemId === id).map(run => run.execution);
       const index = before === undefined ? 0 : all.findIndex(run => run.id === before) + 1;
@@ -96,7 +98,6 @@ export class DurableWorkItems implements WorkItemsRuntime {
       return { item: { ...item, ...(all[0] && { latest: all[0] }) }, executions,
         ...(all.length > index + 50 && { nextBefore: executions.at(-1)!.id }) };
     }, ctx);
-    return { ...state, memory: await this.files.memory(id) };
   }
   private async execution(id: string, runId: string) {
     executionId(runId);
@@ -109,9 +110,8 @@ export class DurableWorkItems implements WorkItemsRuntime {
   }
   async result(id: string, runId: string) {
     const run = await this.execution(id, runId);
-    return { execution: run.execution, prompt: run.message, answer: run.answer, files: await this.files.files(id, runId) };
+    return { execution: run.execution, answer: run.answer };
   }
-  async file(id: string, runId: string, path: string) { await this.execution(id, runId); return this.files.read(id, runId, path); }
 
   async command(command: WorkItemCommand, source: InputSource = { channel: "app" }, signal?: AbortSignal): Promise<WorkItemReceipt> {
     signal?.throwIfAborted();
@@ -151,7 +151,7 @@ export class DurableWorkItems implements WorkItemsRuntime {
           item.revision++; item.updatedAt = now;
         } else if (command.action === "status") {
           checkRevision(item, command.revision);
-          if (!["active", "paused", "archived"].includes(command.status)) throw new WorkItemError("Invalid item status.");
+          if (!["active", "archived"].includes(command.status)) throw new WorkItemError("Invalid item status.");
           const active = (await this.executions(tx)).some(run => run.binding.itemId === id && run.execution.status === "running");
           if (command.status === "archived" && active) throw new WorkItemError("Stop this item's execution before archiving it.", 409);
           if (item.status !== command.status) {
@@ -221,10 +221,10 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
     Type.Object({ type: Type.Literal("cron"), expression: Type.String(), timezone: Type.String() })]);
   return defineExtension({ name: "piko-work-items", tools: [defineTool({
     name: "work_item", replay: "unsafe",
-    description: "Manage persistent work items: one prompt, an optional schedule, and reusable item memory/output files. list/get inspect items; create/update save a prompt and schedule (null=manual, once.at=Unix milliseconds, cron=five fields plus IANA timezone); run starts a fresh background assistant; pause/resume/archive control future triggers; stop needs the executionId. Results return privately to you like ordinary subagents; summarize them for the user. Get the current revision before editing. Never claim a schedule ran merely because it exists.",
-    parameters: Type.Object({ action: Type.Union(["list", "get", "create", "update", "run", "pause", "resume", "archive", "stop"].map(value => Type.Literal(value))),
+    description: "Manage persistent tasks: one instruction, an optional schedule and a short scheduleText label. list/get inspect tasks; create/update save the instruction, schedule (null=manual, once.at=Unix milliseconds, cron=five fields plus IANA timezone) and scheduleText such as \"每天 9:00\" (shown to the user verbatim: no time zone, no cron syntax); run starts a fresh background assistant; archive stops future triggers and restore re-enables them; stop needs the executionId. Results return privately to you like ordinary subagents; summarize them for the user. Get the current revision before editing. Never claim a schedule ran merely because it exists.",
+    parameters: Type.Object({ action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value))),
       id: Type.Optional(Type.String()), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), schedule: Type.Optional(schedule),
-      revision: Type.Optional(Type.Number()), executionId: Type.Optional(Type.String()) }),
+      scheduleText: Type.Optional(Type.String()), revision: Type.Optional(Type.Number()), executionId: Type.Optional(Type.String()) }),
     execute: async (args, api, context) => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) throw new WorkItemError("Only the main assistant can manage items.", 403);
       if (args.action === "list") return { content: [{ type: "text", text: JSON.stringify(await service().list()) }] };
@@ -234,12 +234,12 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
       let command: WorkItemCommand;
       if (args.action === "create" || args.action === "update") {
         if (args.action === "update" && args.schedule === undefined) throw new WorkItemError("An update requires the current schedule too; use null only for manual execution.");
-        const item = itemDraft({ title: args.title, prompt: args.prompt, schedule: args.schedule ?? null });
+        const item = itemDraft({ title: args.title, prompt: args.prompt, schedule: args.schedule ?? null, scheduleText: args.scheduleText });
         command = args.action === "create" ? { action: "create", requestId, item }
           : { action: "update", requestId, id: itemId(args.id), revision: args.revision!, item };
       } else if (args.action === "run") command = { action: "run", requestId, id: itemId(args.id) };
       else if (args.action === "stop") command = { action: "stop", requestId, id: itemId(args.id), executionId: executionId(args.executionId) };
-      else command = { action: "status", requestId, id: itemId(args.id), revision: args.revision!, status: args.action === "pause" ? "paused" : args.action === "archive" ? "archived" : "active" };
+      else command = { action: "status", requestId, id: itemId(args.id), revision: args.revision!, status: args.action === "archive" ? "archived" : "active" };
       const result = await service().command(command, source, context.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },

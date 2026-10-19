@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Cron } from "croner";
 import type { ItemSchedule, WorkItemDraft } from "../../shared/work-items";
@@ -37,7 +37,9 @@ export function itemDraft(value: unknown): WorkItemDraft {
       schedule = { type: "cron", expression, timezone: rule.timezone };
     } else throw new WorkItemError("Invalid schedule.");
   }
-  return { title: input.title.trim(), prompt: input.prompt.trim(), schedule };
+  const scheduleText = typeof input.scheduleText === "string" ? input.scheduleText.trim() : "";
+  if (scheduleText.length > 120) throw new WorkItemError("Keep the schedule summary under 120 characters.");
+  return { title: input.title.trim(), prompt: input.prompt.trim(), schedule, ...(scheduleText && { scheduleText }) };
 }
 /** Croner evaluates calendar/DST rules only; no library timer or second scheduler. */
 export function nextDue(schedule: ItemSchedule, after: number): number | null {
@@ -89,42 +91,5 @@ export class ItemFiles {
     const directory = this.directory(id);
     await this.checked(join(directory, "MEMORY.md"), false);
     return readGuidance(directory, "MEMORY.md", 4000);
-  }
-  async files(id: string, execution: string) {
-    const root = join(this.directory(id), "outputs", executionId(execution));
-    try { await this.checked(root, true); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
-    const result: string[] = [];
-    let visited = 0;
-    const scan = async (directory: string, prefix = "", depth = 0) => {
-      if (depth > 8) return;
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        if (++visited > 500) return;
-        const path = prefix + entry.name;
-        if (entry.isSymbolicLink()) continue;
-        if (entry.isFile()) result.push(path);
-        else if (entry.isDirectory()) await scan(join(directory, entry.name), `${path}/`, depth + 1);
-      }
-    };
-    await scan(root); return result.sort();
-  }
-  async read(id: string, execution: string, relative: string) {
-    if (!relative || relative.includes("\\") || relative.split("/").some(part => !part || part === "." || part === "..")) throw new WorkItemError("Invalid output path.");
-    if (!/\.(md|markdown|txt|json|csv|log|yaml|yml)$/i.test(relative)) throw new WorkItemError("Only text outputs can be previewed.");
-    const path = join(this.directory(id), "outputs", executionId(execution), relative);
-    const info = await this.checked(path, false);
-    if (info.size > 1_000_000) throw new WorkItemError("Output is too large to preview.", 413);
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const opened = await file.stat();
-      if (opened.ino !== info.ino || opened.dev !== info.dev) throw new WorkItemError("Output changed while it was being opened. Retry.", 409);
-      const buffer = Buffer.alloc(1_000_001); let size = 0;
-      while (size < buffer.length) {
-        const read = (await file.read(buffer, size, buffer.length - size, size)).bytesRead;
-        if (!read) break;
-        size += read;
-      }
-      if (size > 1_000_000) throw new WorkItemError("Output is too large to preview.", 413);
-      return { path: relative, content: buffer.subarray(0, size).toString("utf8") };
-    } finally { await file.close(); }
   }
 }

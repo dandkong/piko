@@ -17,7 +17,7 @@ Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun �
 | [Durable 配置与运行时](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能与运行时控制 API |
 | [内置搜索与网页提取](docs/features/web-tools.md) | 搜索/提取契约、后端环境凭据、能力来源、取消与请求限制 |
 | [后台子 Agent](docs/features/background-subagents.md) | 共享资源、持久化子会话、私有回传与停止/恢复范围 |
-| [定时事项](docs/features/scheduled-work-items.md) | Tasks 管理、Prompt 与时间规则、事项记忆、历次输出、去重与恢复 |
+| [定时事项](docs/features/scheduled-work-items.md) | 在 Chat 内创建任务、时间标签、事项记忆、去重与恢复 |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
 | [Linux 正式入口](docs/features/linux-deployment.md) | Web + API/SSE + TG 单进程、构建和 systemd 部署 |
 | [编码指导](AGENTS.md) | 后续仓库开发的必要约定 |
@@ -190,6 +190,6 @@ bun run build:web
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。原生 inbox 中尚未应用的输入会在启动时撤回，用户需要主动重新发送；不从另一套日志重建正文。
 - JSON 模型配置、思考强度、模型预设和手动压缩已接入；服务端提供模型/思考选择及压缩 API，TG 已提供模型/思考按钮与压缩命令，配置修改后重启生效，RN 配置管理界面尚未实现。Durable Extension 仅用于 Piko 内建运行时能力，不加载用户插件代码。
 - durable 1.1.0 的原生 `read` 暂不支持图片；附件 UI 也尚未启用。模型声明支持图片不代表当前 Piko 的文件读取已能传入图片。
-- Tasks 首版支持手动、一次性、每天/自定义 Cron，事项内可查看记忆、原生最终回答和文本产物；去重、同事项串行、暂停/停止/归档和重启中断已接入。首版没有独立语义阻塞、自动重试整个任务、执行预算或失败熔断；详情见定时事项说明。
+- Tasks 首版支持手动、一次性、每天/自定义 Cron；任务在 Chat 内创建，页面展示时间标签、上次结果和时间线，干预只保留归档。去重、同事项串行和重启中断已接入；首版没有独立语义阻塞、自动重试整个任务、执行预算或失败熔断；详情见定时事项说明。
 - 顶部菜单、通知、附件，以及 Posts / Artifacts Tab 仍是禁用占位。
 - Feed、自动记忆、Browser、全局文件/产物管理、登录、多用户和连接器按路线图逐步加入。

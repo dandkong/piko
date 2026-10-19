@@ -1,9 +1,9 @@
 /** Product contracts; native task/conversation IDs remain opaque strings. */
 export type ItemSchedule = null | { type: "once"; at: number } | { type: "cron"; expression: string; timezone: string };
-export type WorkItemDraft = { title: string; prompt: string; schedule: ItemSchedule };
+export type WorkItemDraft = { title: string; prompt: string; schedule: ItemSchedule; scheduleText?: string };
 export type WorkItem = WorkItemDraft & {
   id: string;
-  status: "active" | "paused" | "archived";
+  status: "active" | "archived";
   revision: number;
   createdAt: number;
   updatedAt: number;
@@ -17,9 +17,10 @@ export type ItemExecution = {
   revision: number;
   status: "running" | "completed" | "failed" | "stopped" | "interrupted";
   error?: string;
+  preview?: string;
 };
-export type WorkItemDetail = { item: WorkItem; memory: string; executions: ItemExecution[]; nextBefore?: string };
-export type ItemExecutionDetail = { execution: ItemExecution; prompt: string; answer: string; files: string[] };
+export type WorkItemDetail = { item: WorkItem; executions: ItemExecution[]; nextBefore?: string };
+export type ItemExecutionDetail = { execution: ItemExecution; answer: string };
 export type WorkItemCommand = { requestId: string } & (
   | { action: "create"; item: WorkItemDraft }
   | { action: "update"; id: string; revision: number; item: WorkItemDraft }
@@ -28,4 +29,3 @@ export type WorkItemCommand = { requestId: string } & (
   | { action: "stop"; id: string; executionId: string }
 );
 export type WorkItemReceipt = { id: string; executionId?: string; duplicate: boolean };
-export type ItemFile = { path: string; content: string };

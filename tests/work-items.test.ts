@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
@@ -27,6 +27,7 @@ test("five-field cron and timezone/DST calculations are validated without schedu
   expect(() => itemDraft({ ...draft(), schedule: { ...rule, expression: "* * * * * *" } })).toThrow();
   expect(() => itemDraft({ ...draft(), schedule: { ...rule, timezone: "not/a-zone" } })).toThrow();
   expect(() => itemDraft({ ...draft(), schedule: { type: "once", at: Infinity } })).toThrow();
+  expect(itemDraft({ ...draft(), scheduleText: " 每天 9:00 " }).scheduleText).toBe("每天 9:00");
   const dst = { ...rule, expression: "30 2 * * *", timezone: "America/New_York" };
   // Croner 10 normalizes the missing spring-forward hour to 03:30 local.
   expect(nextDue(dst, Date.parse("2026-03-08T05:00:00Z"))).toBe(Date.parse("2026-03-08T07:30:00Z"));
@@ -45,7 +46,7 @@ test("item commands persist, deduplicate, reject mismatched identities and prote
   await f.runtime.dispose();
   const restored = await f.createRuntime().workItems();
   expect((await restored.list()).map(item => item.title)).toEqual(["Renamed"]);
-  expect((await restored.detail(first.id)).memory).toContain("Item memory");
+  expect(await new ItemFiles(f.paths.workspace).memory(first.id)).toContain("Item memory");
   expect(f.faux.state.callCount).toBe(0);
 });
 
@@ -79,10 +80,9 @@ test("item executions share only item memory, save separate outputs, and return 
   await waitUntil(() => reports === 2);
   expect(first.executionId).not.toBe(second.executionId);
   expect((await f.service.detail(created.id)).executions.map(value => value.status)).toEqual(["completed", "completed"]);
-  expect((await f.service.result(created.id, first.executionId!)).files).toEqual(["report.md"]);
-  expect((await f.service.file(created.id, first.executionId!, "report.md")).content).toBe("# Report 1");
-  expect((await f.service.file(created.id, second.executionId!, "report.md")).content).toBe("# Report 2");
-  expect((await f.service.detail(created.id)).memory).toContain("Remembered finding from run 2");
+  expect(await readFile(join(directory, "outputs", first.executionId!, "report.md"), "utf8")).toBe("# Report 1");
+  expect(await readFile(join(directory, "outputs", second.executionId!, "report.md"), "utf8")).toBe("# Report 2");
+  expect(await readFile(join(directory, "MEMORY.md"), "utf8")).toContain("Remembered finding from run 2");
   await f.session.native.waitForIdle(ctx);
   const messages = (await f.session.snapshot()).messages;
   expect(messages.filter(value => value.role === "user")).toHaveLength(0);
@@ -104,7 +104,7 @@ test("an overdue once schedule is admitted once and renaming or restarting does 
   expect((await restored.detail(created.id)).item.nextDueAt).toBeNull();
 }, 15000);
 
-test("cron coalesces missed occurrences and skips overlap while paused/manual actions stay distinct", async () => {
+test("cron coalesces missed occurrences and skips overlap while a run is active", async () => {
   const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(() => gate.resolve());
   f.faux.setResponses(Array.from({ length: 16 }, () => async context => {
     if (isWorker(context)) { entered.resolve(); await gate.promise; return fauxAssistantMessage("Done"); }
@@ -120,10 +120,8 @@ test("cron coalesces missed occurrences and skips overlap while paused/manual ac
   await f.session.nativeHarness.commit(async tx => { (await tx.doc(WorkItems, ROOT_CONVERSATION_ID)).items[0].nextDueAt = Date.now() - 1; }, ctx);
   await f.service.tick(); detail = await f.service.detail(created.id);
   expect(detail.executions).toHaveLength(1); expect(detail.item.nextDueAt!).toBeGreaterThan(Date.now());
-  await f.service.command({ action: "status", requestId: "pause", id: created.id, revision: 1, status: "paused" });
-  expect((await f.service.detail(created.id)).executions[0].status).toBe("running");
   gate.resolve(); await waitUntil(async () => (await f.service.detail(created.id)).executions[0].status === "completed");
-  await f.service.command({ action: "run", requestId: "manual-paused", id: created.id });
+  await f.service.command({ action: "run", requestId: "manual-run", id: created.id });
   expect((await f.service.detail(created.id)).executions).toHaveLength(2);
 }, 15000);
 
@@ -181,17 +179,13 @@ test("a failed child is shown as failed even when its reporter successfully retu
   expect((await f.service.result(created.id, run.executionId!)).execution.error).toBeTruthy();
 }, 15000);
 
-test("output APIs reject traversal, symlinks, unknown file types and cross-item execution references", async () => {
+test("item directories refuse to follow symlinks and cross-item executions stay isolated", async () => {
   const f = await setup(); f.faux.setResponses(Array.from({ length: 8 }, () => route));
   const created = await f.service.command({ action: "create", requestId: "create", item: draft() });
   const other = await f.service.command({ action: "create", requestId: "other", item: draft("Other") });
   const run = await f.service.command({ action: "run", requestId: "run", id: created.id });
   await waitUntil(async () => (await f.service.result(created.id, run.executionId!)).execution.status === "completed");
-  const files = new ItemFiles(f.paths.workspace); const output = join(files.directory(created.id), "outputs", run.executionId!);
-  await writeFile(join(f.paths.workspace, "private.txt"), "private"); await symlink(join(f.paths.workspace, "private.txt"), join(output, "linked.txt"));
-  await expect(f.service.file(created.id, run.executionId!, "../../../../private.txt")).rejects.toThrow();
-  await expect(f.service.file(created.id, run.executionId!, "linked.txt")).rejects.toThrow("Symbolic");
-  await expect(f.service.file(created.id, run.executionId!, "script.html")).rejects.toThrow("Only text");
+  const files = new ItemFiles(f.paths.workspace);
   await expect(f.service.result(other.id, run.executionId!)).rejects.toThrow("not found");
   const outside = join(f.root, "outside"); await mkdir(outside); await symlink(outside, join(f.paths.workspace, "items", "unsafe"));
   await expect(files.prepare("unsafe")).rejects.toThrow("Symbolic");

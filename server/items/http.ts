@@ -15,7 +15,7 @@ function command(value: unknown): WorkItemCommand {
   if (input.action === "stop") return { action: "stop", requestId, id, executionId: executionId(input.executionId) };
   if (typeof input.revision !== "number" || !Number.isSafeInteger(input.revision) || input.revision < 1) throw new WorkItemError("The current item revision is required.");
   if (input.action === "update") return { action: "update", requestId, id, revision: input.revision, item: itemDraft(input.item) };
-  if (input.action === "status" && (input.status === "active" || input.status === "paused" || input.status === "archived")) return { action: "status", requestId, id, revision: input.revision, status: input.status };
+  if (input.action === "status" && (input.status === "active" || input.status === "archived")) return { action: "status", requestId, id, revision: input.revision, status: input.status };
   throw new WorkItemError("Unknown item command.");
 }
 export async function itemRequest(request: Request, runtime: ChatRuntime, maxBytes: number): Promise<Response> {
@@ -36,10 +36,6 @@ export async function itemRequest(request: Request, runtime: ChatRuntime, maxByt
   if (!parts.length) return json({ items: await service.list() });
   const id = itemId(parts[0]);
   if (parts.length === 1) return json(await service.detail(id, url.searchParams.get("before") ?? undefined));
-  if (parts[1] === "executions" && parts.length >= 3) {
-    const run = executionId(parts[2]);
-    if (parts.length === 3) return json(await service.result(id, run));
-    if (parts.length === 4 && parts[3] === "file") return json(await service.file(id, run, url.searchParams.get("path") ?? ""));
-  }
+  if (parts[1] === "executions" && parts.length === 3) return json(await service.result(id, executionId(parts[2])));
   return json({ error: "Not found." }, 404);
 }
