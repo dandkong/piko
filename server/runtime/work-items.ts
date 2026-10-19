@@ -18,6 +18,13 @@ const Receipts = defineDocFamily<{ hash: string; id: string; executionId: string
   initial: () => ({ hash: "", id: "", executionId: null }),
 });
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+/** Children lead with one outcome sentence; the list shows that sentence instead of a hard cut. */
+export function summaryLine(text: string) {
+  const plainText = text.replace(/^#{1,6}\s+.*$/gm, "").replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
+  const end = plainText.search(/[。！？!?]|\.(?:\s|$)/);
+  const sentence = end >= 0 ? plainText.slice(0, end + 1) : plainText;
+  return sentence.slice(0, 160).trim();
+}
 const publicItem = ({ source: _source, ...item }: (Awaited<ReturnType<typeof items>>)[number]) => plain(item);
 async function items(tx: Tx) { return (await tx.doc(WorkItems, ROOT_CONVERSATION_ID)).items; }
 function find(values: Awaited<ReturnType<typeof items>>, id: string) {
@@ -71,7 +78,7 @@ export class DurableWorkItems implements WorkItemsRuntime {
         : checkpoint?.phase === "report" ? checkpoint.answer : reported?.answer;
       const answer = answerId === undefined ? undefined : await tx.entry(answerId);
       const text = (answer?.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
-      const preview = text.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+      const preview = summaryLine(text);
       result.push({ binding: { ...binding }, execution: { id: String(child), startedAt: binding.startedAt,
         scheduledAt: binding.scheduledAt, revision: binding.revision, status, ...(error && { error }),
         ...(preview && { preview }) },

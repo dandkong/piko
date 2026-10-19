@@ -6,7 +6,7 @@ import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { ItemFiles, itemDraft, latestDue, nextDue } from "../server/domain/work-items";
-import { WorkItems } from "../server/runtime/work-items";
+import { WorkItems, summaryLine } from "../server/runtime/work-items";
 import { ItemContext } from "../server/runtime/item-context";
 import { cleanup, fixture, waitUntil } from "./fixtures/durable";
 import { createApp } from "../server/app";
@@ -28,6 +28,8 @@ test("five-field cron and timezone/DST calculations are validated without schedu
   expect(() => itemDraft({ ...draft(), schedule: { ...rule, timezone: "not/a-zone" } })).toThrow();
   expect(() => itemDraft({ ...draft(), schedule: { type: "once", at: Infinity } })).toThrow();
   expect(itemDraft({ ...draft(), scheduleText: " 每天 9:00 " }).scheduleText).toBe("每天 9:00");
+  expect(summaryLine("## 结论\n今天已整理 3 条。其余略。")).toBe("今天已整理 3 条。");
+  expect(summaryLine("No terminator here")).toBe("No terminator here");
   const dst = { ...rule, expression: "30 2 * * *", timezone: "America/New_York" };
   // Croner 10 normalizes the missing spring-forward hour to 03:30 local.
   expect(nextDue(dst, Date.parse("2026-03-08T05:00:00Z"))).toBe(Date.parse("2026-03-08T07:30:00Z"));

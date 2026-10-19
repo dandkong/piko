@@ -9,7 +9,7 @@ import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
 
 type Command = WorkItemCommand extends infer T ? T extends WorkItemCommand ? Omit<T, "requestId"> : never : never;
 const dayTime = (value: number) => new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const statusNames = { running: "正在做", completed: "已完成", failed: "失败", stopped: "已停止", interrupted: "被重启打断" };
+const statusNames = { running: "正在做", completed: "已完成", failed: "失败", stopped: "未完成", interrupted: "未完成" };
 const scheduleLabel = (item: WorkItem) => item.scheduleText ?? (!item.schedule ? "手动" : item.schedule.type === "once" ? dayTime(item.schedule.at) : "定期");
 
 /** The assistant's standing commitments: what it will do, when, and how the last run went. */
@@ -101,7 +101,9 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
         <Text style={styles.name}>{value.title}</Text>
         <Text style={styles.meta}>{scheduleLabel(value)}</Text>
         {value.latest && <Text numberOfLines={2} style={[styles.preview, value.latest.status === "failed" && styles.error]}>
-          {value.latest.status === "completed" ? value.latest.preview ?? "上次已完成" : statusNames[value.latest.status]}
+          {value.latest.status === "completed" ? value.latest.preview ?? "上次已完成"
+            : value.latest.status === "failed" && value.latest.error ? `失败 · ${value.latest.error}`
+            : statusNames[value.latest.status]}
         </Text>}
       </Pressable>
     </ScreenCard>)}
