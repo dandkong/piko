@@ -5,6 +5,7 @@ import { AppShell, type AppTab } from "../../components/AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
 import { ChatProvider, useChatStore } from "../chat/ChatProvider";
 import { ChatTab, MESSAGE_GAP } from "../chat/ChatTab";
+import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
 
 /** Owns the tab bar, the shared chat subscription, and the composer placement for each tab. */
@@ -57,6 +58,7 @@ function Shell() {
 function TabPanel({ tab, topInset, bottomInset }: { tab: AppTab; topInset: number; bottomInset: number }) {
   switch (tab) {
     case "Chat": return null;
+    case "Posts": return <PostsScreen topInset={topInset} bottomInset={bottomInset} />;
     case "Tasks": return <TasksScreen topInset={topInset} bottomInset={bottomInset} />;
   }
 }

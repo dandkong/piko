@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import type { ItemExecution, WorkItem, WorkItemCommand, WorkItemDetail } from "../../../../../shared/work-items";
 import { colors } from "../../theme";
+import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
 import { AssistantMessage } from "../chat/AssistantMessage";
 import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
 
@@ -82,17 +83,15 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
   const item = detail?.item;
   const list = [...items].sort((a, b) => Number(a.status === "archived") - Number(b.status === "archived"));
 
-  return <ScrollView testID="tasks-screen" contentContainerStyle={[styles.page, { paddingTop: topInset, paddingBottom: bottomInset }]}>
-    <View style={styles.header}>
-      <Text style={styles.title}>{item?.title ?? "任务"}</Text>
-      <View style={{ flex: 1 }} />
-      {selected ? <Pressable accessibilityRole="button" onPress={() => openItem()} style={styles.back}><Text style={styles.backText}>返回</Text></Pressable> : null}
-    </View>
+  return <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
+    <ScreenHeader title={item?.title ?? "任务"} action={selected
+      ? <Pressable accessibilityRole="button" onPress={() => openItem()} style={styles.back}><Text style={styles.backText}>返回</Text></Pressable>
+      : undefined} />
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
     {!selected && !loading && !items.length && <Text style={styles.empty}>还没有任务。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
-    {!selected && list.map(value => <View key={value.id} style={[styles.card, styles.row, value.status === "archived" && styles.archived]}>
+    {!selected && list.map(value => <ScreenCard key={value.id} muted={value.status === "archived"} style={styles.row}>
       <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value.status === "archived", disabled: busy || value.status === "archived" }}
         accessibilityLabel={value.status === "archived" ? "已归档" : "归档"} disabled={busy || value.status === "archived" || value.latest?.status === "running"}
         onPress={() => archive(value)} style={[styles.check, value.status === "archived" && styles.checkOn]}>
@@ -105,39 +104,37 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
           {value.latest.status === "completed" ? value.latest.preview ?? "上次已完成" : statusNames[value.latest.status]}
         </Text>}
       </Pressable>
-    </View>)}
+    </ScreenCard>)}
 
     {item && <>
-      <View style={styles.card}>
+      <ScreenCard>
         <Text style={styles.body}>{item.prompt}</Text>
         <Text style={styles.meta}>{scheduleLabel(item)}{item.status === "archived" ? " · 已归档" : ""}{item.nextDueAt !== null && item.status === "active" ? ` · 下次 ${dayTime(item.nextDueAt)}` : ""}</Text>
-      </View>
+      </ScreenCard>
 
-      {detail.executions.map(run => <Pressable key={run.id} accessibilityRole="button" onPress={() => toggle(run)} style={styles.card}>
-        <View style={styles.entryHeader}>
-          <Text style={styles.meta}>{dayTime(run.startedAt)}</Text>
-          {run.status !== "completed" && <Text style={[styles.meta, run.status === "failed" && styles.error]}>{statusNames[run.status]}</Text>}
-        </View>
-        {open === run.id
-          ? <>{answers[run.id] === undefined ? <Text style={styles.meta}>正在读取…</Text> : answers[run.id] ? <AssistantMessage content={answers[run.id]} /> : <Text style={styles.meta}>这次没有留下回答。</Text>}
-            {!!run.error && <Text style={styles.error}>{run.error}</Text>}</>
-          : <Text numberOfLines={2} style={styles.preview}>{run.preview ?? (run.status === "running" ? "正在做…" : statusNames[run.status])}</Text>}
-      </Pressable>)}
+      {detail.executions.map(run => <ScreenCard key={run.id}>
+        <Pressable accessibilityRole="button" onPress={() => toggle(run)} style={styles.entry}>
+          <View style={styles.entryHeader}>
+            <Text style={styles.meta}>{dayTime(run.startedAt)}</Text>
+            {run.status !== "completed" && <Text style={[styles.meta, run.status === "failed" && styles.error]}>{statusNames[run.status]}</Text>}
+          </View>
+          {open === run.id
+            ? <>{answers[run.id] === undefined ? <Text style={styles.meta}>正在读取…</Text> : answers[run.id] ? <AssistantMessage content={answers[run.id]} /> : <Text style={styles.meta}>这次没有留下回答。</Text>}
+              {!!run.error && <Text style={styles.error}>{run.error}</Text>}</>
+            : <Text numberOfLines={2} style={styles.preview}>{run.preview ?? (run.status === "running" ? "正在做…" : statusNames[run.status])}</Text>}
+        </Pressable>
+      </ScreenCard>)}
       {!detail.executions.length && <Text style={styles.empty}>还没做过。任务存在不代表已经执行过。</Text>}
     </>}
-  </ScrollView>;
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 20, gap: 12 },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
-  title: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   back: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: "#F3F4F5" },
   backText: { fontSize: 13, color: colors.text },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 16, gap: 10 },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  entry: { gap: 10 },
   cardBody: { flex: 1, gap: 8 },
-  archived: { opacity: 0.55 },
   check: { width: 22, height: 22, marginTop: 2, borderRadius: 7, borderWidth: 1.5, borderColor: "#C4C9CC", alignItems: "center", justifyContent: "center" },
   checkOn: { backgroundColor: colors.muted, borderColor: colors.muted },
   checkMark: { color: colors.card, fontSize: 13, lineHeight: 16 },

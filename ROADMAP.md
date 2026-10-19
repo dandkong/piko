@@ -16,7 +16,7 @@
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
 - 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。
 - 定时事项首版已接入：一个 Prompt、可选 once/Cron、一个固定目录；任务在 Chat 里创建，Tasks 只展示任务、上次结果与时间线，干预只保留归档。每次新建子会话，加载本事项记忆，结果同普通子 Agent 回传主 Agent。原生 doc 保存定义/游标和回执，执行状态从原生任务投影。[功能说明](docs/features/scheduled-work-items.md)。
-- 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景；头像在胶囊外，名字与活动状态上下排列在自适应胶囊内，正常空闲只显示名字。导航只保留 Chat / Posts / Artifacts / Tasks；Chat / Tasks 可用；左上菜单、右上设置、附件和 Posts / Artifacts 导航仍禁用，不建设 Ideas。
+- 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景；头像在胶囊外，名字与活动状态上下排列在自适应胶囊内，正常空闲只显示名字。导航只保留 Chat / Posts / Artifacts / Tasks；Chat / Posts / Tasks 可用（Posts 为空状态占位）；左上菜单、右上设置、附件和 Posts / Artifacts 导航仍禁用，不建设 Ideas。
 
 ## 近期开发顺序
 
@@ -82,7 +82,7 @@
 | Tasks | 首版 Chat 内创建、定时、结果时间线与最少的干预操作已接入；执行预算、语义阻塞与更丰富产物按需要扩展 |
 | Memory | 在工作区基线上实现提取、检索、来源追踪、可纠正与可删除；按实际需求可提前独立推进 |
 | Notifications | 有可追踪的重要执行结果后，再加入 Inbox、原生推送和重要性筛选 |
-| Posts | 助手主动发布有来源和反馈的内容，复用浏览器/搜索能力；主动投递与反馈待设计 |
+| Posts | 助手主动发布有来源和反馈的内容，复用浏览器/搜索能力；页面已占位，发布、来源与反馈待设计 |
 | Artifacts | 查看文件和结构化成果，关联主聊天及任务；产品界面待设计 |
 | Browser Computer | 持续的浏览器与执行环境，用户可查看和接管；早期只读公开网页与人工接管 |
 | Secrets + Permissions | 凭据存储、权限范围、撤权和审计；先于私人账号连接器与自动外部操作 |
