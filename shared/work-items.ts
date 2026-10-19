@@ -8,8 +8,6 @@ export type WorkItem = WorkItemDraft & {
   createdAt: number;
   updatedAt: number;
   nextDueAt: number | null;
-  /** Internal: set once a finished one-off has been archived, so restore does not archive it again. */
-  autoArchived?: boolean;
   latest?: ItemExecution;
 };
 export type ItemExecution = {

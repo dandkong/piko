@@ -147,7 +147,6 @@ export class DurableWorkItems implements WorkItemsRuntime {
           checkRevision(item, command.revision);
           const timingChanged = JSON.stringify(item.schedule) !== JSON.stringify(draft!.schedule);
           Object.assign(item, draft!);
-          delete item.autoArchived;
           if (timingChanged) item.nextDueAt = nextDue(item.schedule, now);
           item.revision++; item.updatedAt = now;
         } else if (command.action === "status") {
@@ -157,7 +156,6 @@ export class DurableWorkItems implements WorkItemsRuntime {
           if (command.status === "archived" && active) throw new WorkItemError("Stop this item's execution before archiving it.", 409);
           if (item.status !== command.status) {
             item.status = command.status; item.revision++; item.updatedAt = now;
-            if (command.status === "archived") item.autoArchived = true;
             if (item.status === "active" && item.schedule?.type === "cron") item.nextDueAt = nextDue(item.schedule, now);
           }
         } else if (command.action === "run") {
@@ -190,23 +188,8 @@ export class DurableWorkItems implements WorkItemsRuntime {
   tick(): Promise<void> {
     if (this.closing) return Promise.resolve();
     if (this.tickPending) return this.tickPending;
-    this.tickPending = this.dispatch().then(() => this.archiveCompleted()).finally(() => { this.tickPending = undefined; });
+    this.tickPending = this.dispatch().finally(() => { this.tickPending = undefined; });
     return this.tickPending;
-  }
-  /** A finished one-off would otherwise stay active with no next run; failures stay visible. */
-  private async archiveCompleted() {
-    const pending = (await this.harness.snapshot(WorkItems, ROOT_CONVERSATION_ID, ctx))?.items
-      .some(item => item.status === "active" && item.schedule?.type === "once" && item.nextDueAt === null);
-    if (!pending) return;
-    await this.harness.commit(async tx => {
-      const now = this.now(); const runs = await this.executions(tx);
-      for (const item of await items(tx)) {
-        if (item.status !== "active" || item.schedule?.type !== "once" || item.nextDueAt !== null || item.autoArchived) continue;
-        const latest = runs.find(run => run.binding.itemId === item.id);
-        if (latest?.execution.status !== "completed") continue;
-        item.status = "archived"; item.autoArchived = true; item.revision++; item.updatedAt = now;
-      }
-    }, ctx);
   }
   private async dispatch() {
     const due = (await this.harness.snapshot(WorkItems, ROOT_CONVERSATION_ID, ctx))?.items.some(item => item.status === "active" && item.nextDueAt !== null && item.nextDueAt <= this.now());

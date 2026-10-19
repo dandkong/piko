@@ -104,29 +104,6 @@ test("an overdue once schedule is admitted once and renaming or restarting does 
   expect((await restored.detail(created.id)).item.nextDueAt).toBeNull();
 }, 15000);
 
-test("a completed one-off archives itself while a failed one stays active", async () => {
-  const f = await setup();
-  f.faux.setResponses(Array.from({ length: 20 }, () => context => {
-    if (!isWorker(context)) return fauxAssistantMessage("Acknowledged");
-    if (lastUser(context).includes("Fails")) throw new Error("Research failed");
-    return fauxAssistantMessage("Done");
-  }));
-  const at = Date.now() - 1000;
-  const works = await f.service.command({ action: "create", requestId: "works", item: { ...draft("Works"), schedule: { type: "once", at } } });
-  const fails = await f.service.command({ action: "create", requestId: "fails", item: { ...draft("Fails"), schedule: { type: "once", at } } });
-  await f.service.tick();
-  await waitUntil(async () => (await f.service.detail(works.id)).executions[0]?.status === "completed");
-  await waitUntil(async () => (await f.service.detail(fails.id)).executions[0]?.status === "failed");
-  await f.service.tick();
-  const worksItem = (await f.service.detail(works.id)).item;
-  expect(worksItem.status).toBe("archived");
-  expect((await f.service.detail(fails.id)).item.status).toBe("active");
-  // Restoring a finished one-off must not be undone by the next scheduler tick.
-  await f.service.command({ action: "status", requestId: "restore", id: works.id, revision: worksItem.revision, status: "active" });
-  await f.service.tick();
-  expect((await f.service.detail(works.id)).item.status).toBe("active");
-}, 15000);
-
 test("cron coalesces missed occurrences and skips overlap while a run is active", async () => {
   const f = await setup(); const gate = Promise.withResolvers<void>(); const entered = Promise.withResolvers<void>(); cleanup(() => gate.resolve());
   f.faux.setResponses(Array.from({ length: 16 }, () => async context => {
