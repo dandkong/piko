@@ -2,7 +2,7 @@
 
 **给日常留一点空间。由 Pi 驱动。**
 
-Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及胶囊导航。当前一级模块为 Chat / Posts / Artifacts / Tasks，已启用 Chat、Posts 与 Tasks（Posts 暂时只有空状态）。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及胶囊导航。当前一级模块为 Chat / Posts / Artifacts / Tasks，四个页签均已启用（Posts 为示例内容，Artifacts 仅占位）。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 Agent 运行时使用 pi-durable 1.1.0，模型适配使用 pi-ai 1.1.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具、内置 web_search/web_extract，并支持后台子 Agent 委派与定时事项。一个事项保存一个 Prompt、可选定时和固定目录；子 Agent 完成后由主 Agent 整理回复。搜索凭据由部署者在后端环境配置，日常使用无需选择服务商。
 

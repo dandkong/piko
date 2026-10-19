@@ -5,6 +5,7 @@ import { AppShell, type AppTab } from "../../components/AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
 import { ChatProvider, useChatStore } from "../chat/ChatProvider";
 import { ChatTab, MESSAGE_GAP } from "../chat/ChatTab";
+import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
 import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
 
@@ -59,6 +60,7 @@ function TabPanel({ tab, topInset, bottomInset }: { tab: AppTab; topInset: numbe
   switch (tab) {
     case "Chat": return null;
     case "Posts": return <PostsScreen topInset={topInset} bottomInset={bottomInset} />;
+    case "Artifacts": return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} />;
     case "Tasks": return <TasksScreen topInset={topInset} bottomInset={bottomInset} />;
   }
 }

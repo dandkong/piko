@@ -15,7 +15,7 @@ import { colors } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
 const KEYBOARD_COMPOSER_GAP = 10;
-export type AppTab = "Chat" | "Posts" | "Tasks";
+export type AppTab = "Chat" | "Posts" | "Artifacts" | "Tasks";
 
 export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
   children: ReactNode;
@@ -171,7 +171,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
       <View style={styles.tabBar}>
         {navigation.map(({ label, icon: Icon }) => {
           const active = label === activeTab;
-          const enabled = (label === "Chat" || label === "Posts" || label === "Tasks") && !!onTabChange;
+          const enabled = !!onTabChange;
           return (
             <Pressable
               key={label}
@@ -181,7 +181,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
               accessibilityState={{ selected: active, disabled: !enabled }}
               aria-selected={active}
               disabled={!enabled}
-              onPress={() => { if (label !== "Artifacts") onTabChange?.(label); }}
+              onPress={() => onTabChange?.(label)}
               style={[styles.tab, active && styles.activeTab]}
             >
               <Icon size={23} strokeWidth={1.8} color={colors.text} />
