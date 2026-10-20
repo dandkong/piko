@@ -36,7 +36,10 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
       try {
         const [list, current] = await Promise.all([loadItems(controller.signal), selected ? loadItem(selected, controller.signal) : undefined]);
         if (!active) return;
-        setItems(list.items); setDetail(current); setError("");
+        setItems(list.items);
+        setDetail(current?.item.status === "archived" ? undefined : current);
+        if (current?.item.status === "archived") setSelected(undefined);
+        setError("");
       } catch (failure) { if (active) setError(failure instanceof Error ? failure.message : "暂时读不到任务。"); }
       finally { if (active) setLoading(false); }
     })();
@@ -81,7 +84,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
   };
 
   const item = detail?.item;
-  const list = [...items].sort((a, b) => Number(a.status === "archived") - Number(b.status === "archived"));
+  const visibleItems = items.filter(value => value.status !== "archived");
 
   return <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
     <ScreenHeader title={item?.title ?? "任务"} action={selected
@@ -90,13 +93,11 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
-    {!selected && !loading && !items.length && <Text style={styles.empty}>还没有任务。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
-    {!selected && list.map(value => <ScreenCard key={value.id} muted={value.status === "archived"} style={styles.row}>
-      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value.status === "archived", disabled: busy || value.status === "archived" }}
-        accessibilityLabel={value.status === "archived" ? "已归档" : "归档"} disabled={busy || value.status === "archived" || value.latest?.status === "running"}
-        onPress={() => archive(value)} style={[styles.check, value.status === "archived" && styles.checkOn]}>
-        {value.status === "archived" ? <Text style={styles.checkMark}>✓</Text> : null}
-      </Pressable>
+    {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>目前没有未归档的事项。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
+    {!selected && visibleItems.map(value => <ScreenCard key={value.id} style={styles.row}>
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false, disabled: busy || value.latest?.status === "running" }}
+        accessibilityLabel="归档" disabled={busy || value.latest?.status === "running"}
+        onPress={() => archive(value)} style={styles.check} />
       <Pressable accessibilityRole="button" disabled={busy} onPress={() => openItem(value.id)} style={styles.cardBody}>
         <Text style={styles.name}>{value.title}</Text>
         <Text style={styles.meta}>{scheduleLabel(value)}</Text>
@@ -109,7 +110,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     {item && <>
       <ScreenCard>
         <Text style={styles.body}>{item.prompt}</Text>
-        <Text style={styles.meta}>{scheduleLabel(item)}{item.status === "archived" ? " · 已归档" : ""}{item.nextDueAt !== null && item.status === "active" ? ` · 下次 ${dayTime(item.nextDueAt)}` : ""}</Text>
+        <Text style={styles.meta}>{scheduleLabel(item)}{item.nextDueAt !== null ? ` · 下次 ${dayTime(item.nextDueAt)}` : ""}</Text>
       </ScreenCard>
 
       {detail.executions.map(run => <ScreenCard key={run.id}>
@@ -136,8 +137,6 @@ const styles = StyleSheet.create({
   entry: { gap: 10 },
   cardBody: { flex: 1, gap: 8 },
   check: { width: 22, height: 22, marginTop: 2, borderRadius: 7, borderWidth: 1.5, borderColor: "#C4C9CC", alignItems: "center", justifyContent: "center" },
-  checkOn: { backgroundColor: colors.muted, borderColor: colors.muted },
-  checkMark: { color: colors.card, fontSize: 13, lineHeight: 16 },
   name: { fontSize: 16, fontWeight: "600", color: colors.text },
   body: { fontSize: 15, lineHeight: 23, color: colors.text },
   meta: { fontSize: 13, color: colors.muted, lineHeight: 20 },
