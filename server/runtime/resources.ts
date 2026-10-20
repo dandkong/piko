@@ -81,6 +81,13 @@ export function createWorkspaceResources(paths: WorkspacePaths) {
   const reported = new Set<string>();
   return defineExtension({ name: "piko-resources", sections: [
     section("cwd", input => input.agent.cwd ?? paths.workspace),
+    // Date only: enough for search recency and dated notes without stale clock text in the prompt.
+    section("now", () => {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const date = new Date().toLocaleDateString("en-CA", { timeZone });
+      return `Current date: ${date}
+Time zone: ${timeZone}`;
+    }),
     section("item_memory", async (input, context) => {
       const binding = (await input.read.snapshot(ItemContext, input.conversationId, context))?.binding;
       if (!binding) return undefined;

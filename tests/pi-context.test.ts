@@ -90,6 +90,7 @@ test("model requests refresh the two workspace files without loading retired fil
     const files = [...prompt.matchAll(/<instructions_file role="([^"]+)" path="([^"]+)">\n([\s\S]*?)\n<\/instructions_file>/g)];
     expect(files.map(file => file[1])).toEqual(["core", "work_guidance", "memory"]);
     expect(files.find(file => file[1] === "core")?.[2]).toBe(join(f.paths.resources, "prompts/core.md"));
+    expect(prompt).toMatch(/Current date: \d{4}-\d{2}-\d{2}/);
     expect(prompt).not.toContain("RETIRED_PERSONA_MUST_NOT_LOAD");
     expect(prompt).not.toContain("RETIRED_PROFILE_MUST_NOT_LOAD");
     for (const [name, role, before, after] of notes) {
