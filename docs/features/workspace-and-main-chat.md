@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时事项](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 管理 Prompt、时间规则、记忆和历次结果。Side chat 的交互、自动记忆提取、工具进度和全局产物管理尚未实现；未来会话复用同一个 Harness。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时事项](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 管理 Prompt、时间规则、事项记忆和历次结果。每日/长期记忆 Review 已接入；Side chat、工具进度和全局产物管理尚未实现。
 
 默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
@@ -16,7 +16,7 @@
 | state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
 | state/tmp/ | 工具溢出与可清理临时文件 |
 | 当前进程内存 | 流式消息、输出合并、Session 中待挂接的后台回传、TG 投递身份 |
-| workspace/ | AGENTS.md、MEMORY.md、技能与工作成果 |
+| workspace/ | AGENTS.md、MEMORY.md、memory/ 每日日记、技能与工作成果 |
 
 没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。旧 SQLite 和 durable-sessions 不迁移，也不作为当前主会话来源。
 
@@ -52,15 +52,26 @@ RN 在前台持续观察两通道变化，原生快照加未确认的本地输�
 | 工作区 `AGENTS.md` | work_guidance | 如何表达和做事：助手名字、语气、回复偏好、工作方法、文件组织和交付约定；默认名字 Piko 在此定义 |
 | 工作区 `MEMORY.md` | memory | 需要记住的事实：用户资料、环境事实、项目决定与长期结论；不推测未提供的信息，不作为聊天记录或操作授权 |
 
-希望助手怎么做放在 AGENTS.md，需要记住的事实放在 MEMORY.md；各文件内部用 Markdown 小节组织，无需按身份、用户资料等再次拆文件。
+希望助手怎么做放在 AGENTS.md，需要长期记住的事实放在 MEMORY.md；每日讨论、决定、进展和未完线索放在 `memory/YYYY-MM-DD.md`。各文件内部用 Markdown 小节组织，无需按身份、用户资料等再次拆文件。
 
 `role` 是资源用途标注，不是独立的模型消息权限层级，也不构成安全隔离。实际能力与文件访问边界必须由运行时实现。
 
-core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取。初始化只补缺失的 AGENTS.md、MEMORY.md，模板升级不覆盖已有用户文件。其他旧指导文件不再初始化或加载，也不会自动删除或搬移其内容。自动整理、提取用户资料与记忆尚未实现。
+core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 字节。每次模型请求重新加载指导和技能索引，技能正文通过 read 按需读取；每日记忆不自动注入，相关时由助手通过工作区 read/search 查阅。初始化只补缺失的 AGENTS.md、MEMORY.md，模板升级不覆盖已有用户文件。其他旧指导文件不再初始化或加载，也不会自动删除或搬移其内容。
+
+### 每日与长期记忆 Review
+
+主会话结束并闲置 30 分钟后，运行一个独立 Durable 后台 Memory Review task。它只选取上次游标之后新增的主会话原始用户/助手文本，不处理内部子 Agent 回报、工具日志，也不回填启用前的历史。没有可读新增文本时只推进游标，不调用模型。用户明确要求“记住”或纠正记忆时，主助手可立即触发同一 Review。
+
+一个 Review task 启动专用子会话，配置 `read`、`write`、`edit`、`bash` 四个工具，由 reviewer 读取当前文件并直接编辑。一次 Review 同时维护两类记忆；为了使用文件工具，模型可能经历多个工具调用轮次。
+
+- `memory/YYYY-MM-DD.md` 追加有延续价值的讨论/想法、已确认决定与变化、做过的事项及结果、用户主动分享的近况和未完线索；允许短期细节，不写逐条来源 ID。
+- `MEMORY.md` 只保留仍有效、跨会话值得携带的稳定背景、偏好、约定和长期结论；不将日记摘要直接照搬成事实，并可按明确纠正更新过时内容。
+
+游标、活动 task 和重试状态存于 Durable 文档，不写进记忆正文。Reviewer 被提示只改 `MEMORY.md` 和本批对应的日期文件；但这只是行为约定，不是权限沙箱：四个工具使用后端本机权限，特别是 `bash` 可访问工作区以外内容。文件写入与 Durable 游标不在同一事务；task 中断时不自动续跑，游标不推进，后续新 Review 会先读取当前文件再处理原范围。程序不做文件哈希冲突检测、回滚或写入结果独立校验；若写文件后中断，避免重复依赖 reviewer 判断。这比候选 JSON + 程序提交更简单，但并发改写和模型未正确落盘时的保护更弱。
 
 技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。自动记忆提取/检索未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。记忆 Review 已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
 
 ## 中断与损坏恢复
 

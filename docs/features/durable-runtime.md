@@ -179,13 +179,13 @@ Piko 应用内建 core.md 提供运行规则；工作区只使用 AGENTS.md（�
 
 Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；`/api/runtime` 只报告 Piko 内建工具及其配置状态。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
 
-Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。定时事项复用普通子 Agent 回传，详见 [定时事项](scheduled-work-items.md)。
+Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。定时事项复用普通子 Agent 回传，详见 [定时事项](scheduled-work-items.md)。主会话另有内部 Memory Review Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit/bash` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一个 Review 中可能有多个模型/工具轮次。游标、活动 Review task 与重试状态由 Durable 文档保存，不增加事项/UI、SQL 或独立历史副本。用户明确要求记住/纠正时可立即触发。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆-review)。
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。Tasks 事项管理与执行记录已接入；附件、RN 配置管理、工具轨迹和全局产物管理尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。Tasks 事项管理、执行记录和内部 Memory Review 已接入；附件、RN 配置管理、工具轨迹和全局产物管理尚未接入。
 
-验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置校验、Durable 原生文档、内建工具、历史压缩与重启去重；真机后台与真实长对话仍需使用验证。
+验证使用 faux provider 和本机 HTTP 模型服务，无真实付费请求。类型检查覆盖 API 与移动端，自动化覆盖 JSON 请求参数、配置校验、Durable 原生文档、内建工具、历史压缩、重启去重与记忆 Review 的游标、四工具范围、直接双文件编辑和中断后按原范围重试；程序不提供文件回滚或哈希冲突保护，真机后台与真实长对话仍需使用验证。
 
 ## 后台子 Agent
 
