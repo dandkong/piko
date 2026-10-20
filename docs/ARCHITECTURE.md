@@ -22,7 +22,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
 | server/runtime/ | Durable/pi-ai 适配、输入/维护统一接纳、后台回传缓存、配置、内建工具、资源与历史投影 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
-| server/items/、server/domain/work-items.ts | 事项 HTTP 校验、时间规则与事项目录边界；原生文档与调度适配留在 runtime/work-items.ts |
+| server/items/、server/domain/work-items.ts | 任务 HTTP 校验、时间规则与任务目录边界；原生文档与调度适配留在 runtime/work-items.ts |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 | tests/ | 协议、原生状态、并发、恢复、配置与通道验证 |
@@ -33,7 +33,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和事项管理；事项执行在 items/<id> 下使用独立 cwd 和本事项记忆，见 [定时事项](features/scheduled-work-items.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 事项；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [定时任务](features/scheduled-work-items.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
 
 默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 
@@ -91,7 +91,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
-| piko.work-items / piko.item-command / piko.item-context | 原生文档保存事项定义、时间游标、管理请求回执与子会话归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
+| piko.work-items / piko.item-command / piko.item-context | 原生文档保存任务定义、时间游标、管理请求回执与子会话归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | StreamEvent | 当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
@@ -141,4 +141,4 @@ RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每�
 
 ## 后续方向（未实现）
 
-事项调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时事项](features/scheduled-work-items.md)。Side chat、独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。
+任务调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时任务](features/scheduled-work-items.md)。Side chat、独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。

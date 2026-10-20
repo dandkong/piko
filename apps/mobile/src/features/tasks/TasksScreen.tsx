@@ -93,7 +93,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
-    {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>目前没有未归档的事项。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
+    {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>目前没有未归档的任务。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
     {!selected && visibleItems.map(value => <ScreenCard key={value.id} style={styles.row}>
       <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false, disabled: busy || value.latest?.status === "running" }}
         accessibilityLabel="归档" disabled={busy || value.latest?.status === "running"}

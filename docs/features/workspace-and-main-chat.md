@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时事项](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 只读展示未归档事项与结果时间线。每日/长期记忆整理 已接入；Side chat、工具进度和全局产物管理尚未实现。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时任务](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 只读展示未归档任务与结果时间线。每日/长期记忆整理已接入；Side chat、工具进度和全局产物管理尚未实现。
 
 默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
@@ -65,14 +65,14 @@ core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 �
 
 一个 整理 task 启动专用子会话，只配置 `read`、`write`、`edit` 三个工具，由 整理者 读取当前文件并直接编辑；不提供 bash。一次整理同时维护两类记忆；为了使用文件工具，模型可能经历多个工具调用轮次。
 
-- `memory/YYYY-MM-DD.md` 追加有延续价值的讨论/想法、已确认决定与变化、做过的事项及结果、用户主动分享的近况和未完线索；允许短期细节，不写逐条来源 ID。
+- `memory/YYYY-MM-DD.md` 追加有延续价值的讨论/想法、已确认决定与变化、做过的任务及结果、用户主动分享的近况和未完线索；允许短期细节，不写逐条来源 ID。
 - `MEMORY.md` 只保留仍有效、跨会话值得携带的稳定背景、偏好、约定和长期结论；不将每日记忆摘要直接照搬成事实，并可按明确纠正更新过时内容。
 
 游标、活动 task 和重试状态存于 Durable 文档，不写进记忆正文。整理者被提示只改 `MEMORY.md` 和本批对应的日期文件；但这只是行为约定，不是权限沙箱：三个工具使用后端本机权限，`write`/`edit` 仍可指向任意路径。文件写入与 Durable 游标不在同一事务；task 中断时不自动续跑，游标不推进，后续新的整理会先读取当前文件再处理原范围。程序不做文件哈希冲突检测、回滚或写入结果独立校验；若写文件后中断，避免重复依赖整理者的判断。这比候选 JSON + 程序提交更简单，但并发改写和模型未正确落盘时的保护更弱。
 
 技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。记忆整理 已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
 
 ## 中断与损坏恢复
 
@@ -90,6 +90,6 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 后续与验证
 
-原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；事项调度、后台委派及已完成结果的回传恢复已接入；可靠投递 outbox、权限及 side chat 交互尚未实现。
+原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；任务调度、后台委派及已完成结果的回传恢复已接入；可靠投递 outbox、权限及 side chat 交互尚未实现。
 
 自动化覆盖初始化/路径、原生去重与重启、完整历史、分页与游标验证、隐藏记录、分页与快照合并/缺口恢复、压缩、残尾/损坏/缺失、中断撤回、内建工具/模型选择、HTTP/SSE 重连、steer all、旧停止命令、维护取消和 TG 流式投递。真实设备网络、前后台、键盘和长对话仍需使用验证。
