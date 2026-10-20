@@ -136,7 +136,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
     const current = await tx.doc(AgentDoc, ROOT_CONVERSATION_ID);
     await configure(tx, child, { model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
       cwd: item ? new ItemFiles(agent.cwd!).directory(item.itemId) : agent.cwd,
-      extensions: agent.extensions.filter(value => value.name !== extension.name && value.name !== "piko-work-items" && value.name !== "piko-memory-review"),
+      extensions: agent.extensions.filter(value => value.name !== extension.name && value.name !== "piko-work-items" && value.name !== "piko-memory-curation"),
       tools: agent.tools.filter(value => value.name !== SUBAGENT_TOOL && value.name !== "work_item"),
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
     if (item) (await tx.doc(ItemContext, child)).binding = item;

@@ -24,7 +24,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
 - 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。
-- 工作区保存三类长期内容：AGENTS.md 管助手身份、表达和做事约定，MEMORY.md 管用户资料、环境事实与长期结论，`memory/YYYY-MM-DD.md` 记录每日记忆（讨论、决定、进展与未完线索，不自动注入，按需 read/search）。主会话闲置后由后台 Memory Review 增量维护两类记忆；应用内建 core 管运行规则与工具结果真实性。加载时标注角色和来源，角色不是权限隔离；细则见 [资源与工具](docs/features/workspace-and-main-chat.md#资源与工具)。
+- 工作区保存三类长期内容：AGENTS.md 管助手身份、表达和做事约定，MEMORY.md 管用户资料、环境事实与长期结论，`memory/YYYY-MM-DD.md` 记录每日记忆（讨论、决定、进展与未完线索，不自动注入，按需 read/search）。主会话闲置后由后台记忆整理 增量维护两类记忆；应用内建 core 管运行规则与工具结果真实性。加载时标注角色和来源，角色不是权限隔离；细则见 [资源与工具](docs/features/workspace-and-main-chat.md#资源与工具)。
 - Durable 原生 JSONL 是会话内容的唯一来源；UI 从所选 conversation 的完整原始 entries 投影，不能用压缩后的模型上下文代替展示历史。Piko 管理配置、通道与传输；执行状态、提交去重和 inbox 由 Durable 管理，不建立 Run 或身份表。
 
 ## 代码边界

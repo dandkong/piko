@@ -24,7 +24,7 @@ import { readConfigEnvironment } from "../config/files";
 import { readApplicationSettings } from "../config";
 import { createWebTools } from "./web-tools";
 import { WorkspaceExecutionEnv } from "./execution-env";
-import { createMemoryReviewExtension, MemoryReviewService } from "./memory-review";
+import { createMemoryCurationExtension, MemoryCurationService } from "./memory-curation";
 
 export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
 const Recovery = defineDoc<{ interruption: string }>({ kind: "piko.recovery", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ interruption: "" }) });
@@ -56,7 +56,7 @@ export class DurableChatSession implements ChatSession {
   private config!: WorkspaceModelConfig;
   private extensions!: SessionRegistry;
   private itemService!: DurableWorkItems;
-  private memoryReviewService?: MemoryReviewService;
+  private memoryCurationService?: MemoryCurationService;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
   private unsubscribeBindings?: () => void;
@@ -97,7 +97,7 @@ export class DurableChatSession implements ChatSession {
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
     });
-    const memory = createMemoryReviewExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries });
+    const memory = createMemoryCurationExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries });
     const extensions = registry(this.paths, children.extension, createWorkItemTools(() => this.itemService), memory.extension);
     await this.open(config, extensions, children, memory.task);
   }
@@ -105,7 +105,7 @@ export class DurableChatSession implements ChatSession {
   workItems() { return this.itemService; }
 
   private async open(config: WorkspaceModelConfig, extensions: SessionRegistry, children: ReturnType<typeof createSubagents>,
-    memoryTask: ReturnType<typeof createMemoryReviewExtension>["task"]): Promise<void> {
+    memoryTask: ReturnType<typeof createMemoryCurationExtension>["task"]): Promise<void> {
     const directory = sessionDirectory(runtimePaths(this.paths.home).sessions);
     const persisted = existsSync(join(directory, "main.jsonl"));
     const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
@@ -147,7 +147,7 @@ export class DurableChatSession implements ChatSession {
           const binding = (await tx.doc(ItemContext, id)).binding;
           await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
             cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd,
-            extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents" && item.name !== "piko-work-items" && item.name !== "piko-memory-review"),
+            extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents" && item.name !== "piko-work-items" && item.name !== "piko-memory-curation"),
             tools: rootAgent.tools.filter(item => item.name !== "subagent" && item.name !== "work_item") });
         }
       }, ctx);
@@ -159,7 +159,7 @@ export class DurableChatSession implements ChatSession {
         if (!agent.model) throw new Error("No model is configured.");
         await requireAvailableModel(config.models, { provider: agent.model.provider, model: agent.model.modelId });
       });
-      this.memoryReviewService = new MemoryReviewService(harness, memoryTask, () => this.inputEntries);
+      this.memoryCurationService = new MemoryCurationService(harness, memoryTask, () => this.inputEntries);
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
       this.entries = await readPiEntries(harness);
       this.inputEntries = await readPiInputs(harness, storage);
@@ -181,7 +181,7 @@ export class DurableChatSession implements ChatSession {
       stream.start(events => this.delivery = this.observe(events));
       harness.resume();
       this.itemService.start();
-      await this.memoryReviewService.start();
+      await this.memoryCurationService.start();
       void stream.closed.then(end => {
         this.observationError = end.reason === "listener_error" ? end.error : new Error(`Durable event stream closed: ${end.reason}`);
         if (!this.disposed) console.error("Piko durable event stream closed:", end);
@@ -202,11 +202,11 @@ export class DurableChatSession implements ChatSession {
         this.output.apply(event);
         if (event.type === "run_start") {
           this.liveBusy = true;
-          void this.memoryReviewService?.onRunStart().catch(error => console.warn("Piko memory review activity:", error instanceof Error ? error.message : "failed"));
+          void this.memoryCurationService?.onRunStart().catch(error => console.warn("Piko memory review activity:", error instanceof Error ? error.message : "failed"));
         }
         if (event.type === "run_end") {
           this.liveBusy = false;
-          void this.memoryReviewService?.onRunEnd().catch(error => console.warn("Piko memory review activity:", error instanceof Error ? error.message : "failed"));
+          void this.memoryCurationService?.onRunEnd().catch(error => console.warn("Piko memory review activity:", error instanceof Error ? error.message : "failed"));
         }
         if (event.type === "message_end" || event.type === "run_start" || event.type === "run_end" || event.type === "submission") this.emit({ type: "refresh" });
       }
@@ -338,7 +338,7 @@ export class DurableChatSession implements ChatSession {
     } finally { this.stopping = false; this.emit({ type: "refresh" }); }
   }
   private async closeNative() {
-    this.memoryReviewService?.close();
+    this.memoryCurationService?.close();
     await this.eventStream.stop();
     // Listener errors are already reported by stream.closed; release the native runtime.
     await this.delivery?.catch(() => {});
@@ -350,7 +350,7 @@ export class DurableChatSession implements ChatSession {
     this.disposed = true;
     this.closing = (async () => {
       await this.itemService.close();
-      this.memoryReviewService?.close();
+      this.memoryCurationService?.close();
       await this.admission.catch(() => {});
       const maintenance = this.maintenance;
       if (maintenance) {

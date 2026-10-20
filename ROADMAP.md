@@ -16,7 +16,7 @@
 - 正式 Web 构建和 start 单进程入口已接入，网页/API/SSE/TG 共用端口，提供 Linux systemd 模板；Web 默认同源 API。[部署说明](docs/features/linux-deployment.md)。
 - 后台子 Agent 已接入：共用配置和资源、禁止嵌套；一次委派一个持久化子会话，结果私下 follow-up 回传，不增加展示。普通停止保留子工作，重启只恢复已完成结果的回传。[功能说明](docs/features/background-subagents.md)。
 - 定时事项首版已接入：一个 Prompt、可选 once/Cron、一个固定目录；任务在 Chat 里创建，Tasks 只展示任务、上次结果与时间线，干预只保留归档。每次新建子会话，加载本事项记忆，结果同普通子 Agent 回传主 Agent。原生 doc 保存定义/游标和回执，执行状态从原生任务投影。[功能说明](docs/features/scheduled-work-items.md)。
-- 每日与长期记忆 Review 已接入：主会话闲置 30 分钟后，一个内部 Durable task 创建专用子 Agent，开放 `read/write/edit` 直接维护两类 Markdown 记忆；仅由后台闲置调度触发，不提供专用手动触发工具。Durable 文档保存增量游标与 task 状态；文件写入采用模型工具调用，不提供程序级哈希冲突保护或回滚。[功能说明](docs/features/workspace-and-main-chat.md#每日与长期记忆-review)。
+- 每日与长期记忆整理 已接入：主会话闲置 30 分钟后，一个内部 Durable task 创建专用子 Agent，开放 `read/write/edit` 直接维护两类 Markdown 记忆；仅由后台闲置调度触发，不提供专用手动触发工具。Durable 文档保存增量游标与 task 状态；文件写入采用模型工具调用，不提供程序级哈希冲突保护或回滚。[功能说明](docs/features/workspace-and-main-chat.md#每日与长期记忆整理)。
 - 主聊天列表铺满可用屏幕，头部、输入框和导航悬浮；上下采用对称的浅色渐隐背景；头像在胶囊外，名字与活动状态上下排列在自适应胶囊内，正常空闲只显示名字。导航只保留 Chat / Posts / Artifacts / Tasks，四个页签均已启用（Posts 为示例列表，Artifacts 仅标题占位）；左上菜单、右上设置、附件和 Posts / Artifacts 导航仍禁用，不建设 Ideas。
 
 ## 近期开发顺序
@@ -29,7 +29,7 @@
 | 3a. 运行中输入 | 助手工作时仍可补充、纠正要求，RN/TG 遵循相同规则 | 输入使用 durable `whenBusy: "steer"`，运行时使用 `steeringMode: "all"`；独立提交、独立助手消息、停止与通道投递 | 已实现并通过原生 faux 模型与模拟通道测试；真实 Bot 和设备体验待验证 |
 | 4. Posts、Artifacts 与 Tasks | 查看主动帖子、工作产物和任务 | Tasks 首版：Chat 创建、人工时间标签、固定目录、记忆与主 Agent 回传；页面只读展示与最少干预 | Tasks 已实现，原生自动化与临时 Web/faux 联调通过；真机和真实模型待验证；[功能说明](docs/features/scheduled-work-items.md) |
 
-当前以应用配置确定工作区，一个 PIKO_HOME 使用一个 Harness/root；身份、提交、执行和状态复用 Durable 原生存储。Message 是原生记录的展示投影，持续会话事件只用于实时传输，重连通过最新快照恢复，不维护重放缓存。主会话是默认入口，side chat 的交互与上下文关系待设计，不做会话列表或切换交互。每日/长期记忆自动 Review 已完成，专门的浏览、版本管理与遗忘交互仍待设计。
+当前以应用配置确定工作区，一个 PIKO_HOME 使用一个 Harness/root；身份、提交、执行和状态复用 Durable 原生存储。Message 是原生记录的展示投影，持续会话事件只用于实时传输，重连通过最新快照恢复，不维护重放缓存。主会话是默认入口，side chat 的交互与上下文关系待设计，不做会话列表或切换交互。每日/长期记忆自动整理 已完成，专门的浏览、版本管理与遗忘交互仍待设计。
 
 关键验收是：主会话唯一、模板不覆盖用户内容、原生历史和上下文能恢复、压缩不影响 UI 历史、重复提交不重复执行、重启明确中断、停止和重连仍可用。接口及恢复细项见功能方案；不保留旧数据库兼容。
 
