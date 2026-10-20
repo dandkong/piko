@@ -125,7 +125,7 @@ bun run dev
 
 `PIKO_HOME/config` 保存统一行为 piko.json、模型目录 models.json，以及私有部署/凭据 .env；不再读取 auth.json。Piko 不加载用户代码插件；用户 skill 放在助手工作区 `.agents/skills`。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存 Durable 原生文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
 
-工作区的主文件包括 AGENTS.md（如何表达和做事）、MEMORY.md（稳定长期事实与结论）以及 `memory/YYYY-MM-DD.md`（每日讨论、决定、进展与未完线索）。前两者按有限长度在模型请求前加载；每日记忆按需 read/search。一个后台 Memory Review 在主会话闲置 30 分钟后读取增量，由专用子 Agent 使用 read/write/edit/bash 直接维护每日和长期记忆；仅由后台闲置调度触发，不提供专用手动触发工具。技能来自应用内建与工作区 `.agents/skills`，同名时工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
+工作区的主文件包括 AGENTS.md（如何表达和做事）、MEMORY.md（稳定长期事实与结论）以及 `memory/YYYY-MM-DD.md`（每日讨论、决定、进展与未完线索）。前两者按有限长度在模型请求前加载；每日记忆按需 read/search。一个后台 Memory Review 在主会话闲置 30 分钟后读取增量，由专用子 Agent 使用 read/write/edit 直接维护每日和长期记忆；仅由后台闲置调度触发，不提供专用手动触发工具。技能来自应用内建与工作区 `.agents/skills`，同名时工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
 工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。每日与长期记忆的后台 Review 已接入；专门的记忆浏览/检索 UI 尚未实现。
 

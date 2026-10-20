@@ -10,7 +10,7 @@ import { MEMORY_REVIEW_IDLE_MS, MEMORY_REVIEW_KIND, MemoryReviewDoc, MemoryRevie
 import { fixture, waitUntil } from "./fixtures/durable";
 
 const isReviewer = (input: Parameters<FauxResponseFactory>[0]) => getCurrentSystemPrompt(input.messages).includes("You are Piko's private memory reviewer.");
-const reviewerTools = ["bash", "edit", "read", "write"];
+const reviewerTools = ["edit", "read", "write"];
 
 test("memory review waits for thirty minutes of idle", () => {
   const now = 100 * 60_000;
