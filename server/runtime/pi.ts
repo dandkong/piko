@@ -97,8 +97,7 @@ export class DurableChatSession implements ChatSession {
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
     });
-    const memory = createMemoryReviewExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries,
-      service: () => this.memoryReviewService });
+    const memory = createMemoryReviewExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries });
     const extensions = registry(this.paths, children.extension, createWorkItemTools(() => this.itemService), memory.extension);
     await this.open(config, extensions, children, memory.task);
   }
@@ -149,7 +148,7 @@ export class DurableChatSession implements ChatSession {
           await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
             cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd,
             extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents" && item.name !== "piko-work-items" && item.name !== "piko-memory-review"),
-            tools: rootAgent.tools.filter(item => item.name !== "subagent" && item.name !== "work_item" && item.name !== "memory_review") });
+            tools: rootAgent.tools.filter(item => item.name !== "subagent" && item.name !== "work_item") });
         }
       }, ctx);
       this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;

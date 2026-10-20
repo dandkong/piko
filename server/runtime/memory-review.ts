@@ -1,6 +1,5 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { Type } from "typebox";
-import { configure, defineDoc, defineExtension, defineTask, defineTool, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
+import { configure, defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
   type ConversationId, type Cursor, type EntryId, type EntryRecord, type Harness, type TaskId, type TaskRuntime, type Tx } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { internalInput } from "./input-origin";
@@ -9,8 +8,8 @@ import { MEMORY_REVIEW_MAX_INPUT_CHARS, buildMemoryReviewPrompt, localDate, reda
 
 export const MEMORY_REVIEW_KIND = "piko.memory-review";
 export const MEMORY_REVIEW_IDLE_MS = 30 * 60_000;
-export function memoryReviewIsDue(idleSince: number | null, now: number, busy: boolean, retryAfter: number | null, force = false): boolean {
-  return force || (!busy && idleSince !== null && now - idleSince >= MEMORY_REVIEW_IDLE_MS && (retryAfter === null || now >= retryAfter));
+export function memoryReviewIsDue(idleSince: number | null, now: number, busy: boolean, retryAfter: number | null): boolean {
+  return !busy && idleSince !== null && now - idleSince >= MEMORY_REVIEW_IDLE_MS && (retryAfter === null || now >= retryAfter);
 }
 const MEMORY_REVIEW_POLL_MS = 15_000;
 const MEMORY_REVIEW_RETRY_MS = 30 * 60_000;
@@ -22,18 +21,16 @@ export type MemoryReviewState = {
   idleSince: number | null;
   activeTaskId: number | null;
   retryAfter: number | null;
-  forceNext: boolean;
 };
 export const MemoryReviewDoc = defineDoc<MemoryReviewState>({
   kind: MEMORY_REVIEW_KIND, version: 1, scope: "conversation", history: "latest", fork: "initial",
-  initial: () => ({ initialized: false, cursor: 0, idleSince: null, activeTaskId: null, retryAfter: null, forceNext: false }),
+  initial: () => ({ initialized: false, cursor: 0, idleSince: null, activeTaskId: null, retryAfter: null }),
 });
 
 type ReviewInput = { fromEntryId: number; throughEntryId: number; timezone: string; requestedAt: number };
 type ReviewCheckpoint = { phase: "review"; childId?: number };
 type ReviewResult = { reviewedThrough: number };
 type ReviewTask = ReturnType<typeof createReviewTask>;
-type TriggerResult = "started" | "queued" | "nothing-new" | "not-ready";
 type Runtime = TaskRuntime<ReviewInput, ReviewCheckpoint, ReviewResult, object>;
 type CollectedMessages = { messages: MemoryReviewMessage[]; throughEntryId: number };
 
@@ -164,7 +161,7 @@ function createReviewTask(workspace: string, bindings: () => ReadonlyMap<number,
 
 export class MemoryReviewService {
   private timer?: ReturnType<typeof setInterval>;
-  private pending?: Promise<"started" | "queued" | "nothing-new">;
+  private pending?: Promise<"started" | "nothing-new">;
   private closing = false;
   private readonly timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   constructor(private readonly harness: Harness, private readonly task: ReviewTask, private readonly bindings: () => ReadonlyMap<number, string>,
@@ -205,94 +202,66 @@ export class MemoryReviewService {
     }, context);
   }
 
-  async runNow(): Promise<TriggerResult> {
-    if (this.closing) return "not-ready";
-    await this.harness.commit(async tx => { (await tx.doc(MemoryReviewDoc, ROOT_CONVERSATION_ID)).forceNext = true; }, context);
-    await this.pending;
-    return this.drive(true);
-  }
-
   private log(error: unknown): void {
     console.warn("Piko memory review:", error instanceof Error ? error.message : "failed");
   }
 
-  tick(): Promise<"started" | "queued" | "nothing-new"> { return this.drive(false); }
+  tick(): Promise<"started" | "nothing-new"> { return this.drive(); }
 
-  private drive(force = false): Promise<"started" | "queued" | "nothing-new"> {
+  private drive(): Promise<"started" | "nothing-new"> {
     if (this.closing) return Promise.resolve("nothing-new");
     if (this.pending) return this.pending;
-    this.pending = this.schedule(force).finally(() => { this.pending = undefined; });
+    this.pending = this.schedule().finally(() => { this.pending = undefined; });
     return this.pending;
   }
 
-  private async schedule(force: boolean): Promise<"started" | "queued" | "nothing-new"> {
+  private async schedule(): Promise<"started" | "nothing-new"> {
     const snapshot = await this.harness.commit(async tx => {
       const state = await tx.doc(MemoryReviewDoc, ROOT_CONVERSATION_ID);
       if (!state.initialized) return undefined;
       if (state.activeTaskId !== null) {
         const active = await tx.task(state.activeTaskId as TaskId);
-        if (active && active.state.status !== "terminal") return { kind: "active" as const, forced: state.forceNext };
+        if (active && active.state.status !== "terminal") return { kind: "active" as const };
         state.activeTaskId = null;
       }
-      const forced = force || state.forceNext;
       const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
       const inbox = await tx.doc(InboxDoc, ROOT_CONVERSATION_ID);
       const busy = !!live.run || inbox.items.some(item => item.mode !== "write");
-      if (!memoryReviewIsDue(state.idleSince, this.now(), busy, state.retryAfter, forced)) {
-        if (!forced && busy) state.idleSince = null;
+      if (!memoryReviewIsDue(state.idleSince, this.now(), busy, state.retryAfter)) {
+        if (busy) state.idleSince = null;
         return undefined;
       }
       const highWater = await rootHighWater(tx) || state.cursor;
-      if (highWater <= state.cursor) { state.forceNext = false; state.retryAfter = null; return undefined; }
+      if (highWater <= state.cursor) { state.retryAfter = null; return undefined; }
       const batch = await collectMessages(tx, state.cursor, highWater, this.timezone, this.bindings(), this.now());
       if (!batch.messages.length) {
         state.cursor = highWater;
-        state.forceNext = false;
         state.retryAfter = null;
         return { kind: "empty" as const };
       }
-      return { kind: "batch" as const, fromEntryId: state.cursor, throughEntryId: batch.throughEntryId, highWater, forced };
+      return { kind: "batch" as const, fromEntryId: state.cursor, throughEntryId: batch.throughEntryId, highWater };
     }, context);
-    if (!snapshot) return "nothing-new";
-    if (snapshot.kind === "active") return snapshot.forced ? "queued" : "nothing-new";
-    if (snapshot.kind === "empty") return "nothing-new";
+    if (!snapshot || snapshot.kind === "active" || snapshot.kind === "empty") return "nothing-new";
 
     let result: number | undefined;
     await this.harness.commit(async tx => {
       const state = await tx.doc(MemoryReviewDoc, ROOT_CONVERSATION_ID);
       if (state.activeTaskId !== null || state.cursor !== snapshot.fromEntryId) return;
-      const forced = force || state.forceNext;
       const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
       const inbox = await tx.doc(InboxDoc, ROOT_CONVERSATION_ID);
       const busy = !!live.run || inbox.items.some(item => item.mode !== "write");
-      if (!memoryReviewIsDue(state.idleSince, this.now(), busy, state.retryAfter, forced)) return;
-      const latestHighWater = await rootHighWater(tx);
-      if (state.forceNext && latestHighWater > snapshot.highWater) return;
+      if (!memoryReviewIsDue(state.idleSince, this.now(), busy, state.retryAfter)) return;
+      if ((await rootHighWater(tx)) > snapshot.highWater) return;
       const id = await tx.createTask(this.task, { fromEntryId: snapshot.fromEntryId, throughEntryId: snapshot.throughEntryId,
         timezone: this.timezone, requestedAt: this.now() },
       { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
-      result = Number(id); state.activeTaskId = Number(id);
-      state.forceNext = forced && snapshot.throughEntryId < snapshot.highWater;
-      state.retryAfter = null;
+      result = Number(id); state.activeTaskId = Number(id); state.retryAfter = null;
     }, context);
     return result === undefined ? "nothing-new" : "started";
   }
 }
 
-export function createMemoryReviewExtension(options: { workspace: string; bindings: () => ReadonlyMap<number, string>;
-  service: () => MemoryReviewService | undefined }) {
+export function createMemoryReviewExtension(options: { workspace: string; bindings: () => ReadonlyMap<number, string> }) {
   const task = createReviewTask(options.workspace, options.bindings);
-  const tool = defineTool({
-    name: "memory_review",
-    description: "Trigger one private memory review only when the user explicitly asks you to remember something for future conversations or correct a remembered fact. It updates daily and long-term memory from unprocessed conversation. Do not call for ordinary discussion.",
-    parameters: Type.Object({}), replay: "unsafe",
-    execute: async (_args, api) => {
-      if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, content: [{ type: "text", text: "Only the main assistant can request a memory review." }] };
-      const service = options.service();
-      if (!service) return { isError: true, content: [{ type: "text", text: "Memory review is not ready." }] };
-      const result = await service.runNow();
-      return { content: [{ type: "text", text: result === "started" ? "A private memory review was started." : result === "queued" ? "A private memory review is already running; this request is queued." : result === "not-ready" ? "Memory review is shutting down." : "There is no new conversation to review." }] };
-    },
-  });
-  return { task, extension: defineExtension({ name: "piko-memory-review", tasks: [task], tools: [tool] }) };
+  return { task, extension: defineExtension({ name: "piko-memory-review", tasks: [task] }) };
 }

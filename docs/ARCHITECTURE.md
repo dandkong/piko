@@ -74,7 +74,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 - 技能来源：工作区 `.agents/skills` 与应用 `server/resources/skills`；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。`memory/YYYY-MM-DD.md` 每日日记不自动注入，相关时由助手按需 read/search。注入时标注来源和角色，文件职责见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core/AGENTS 各上限 8,000 字节，MEMORY 上限 4,000 字节，超量截断。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
-- Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和 `memory_review` 工具。Memory Review task 在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit/bash`，从同一批增量直接维护每日及长期记忆；显式“记住/纠正”也可立即触发。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
+- Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和内部 Memory Review task。Memory Review task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit/bash`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
 - web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults 不暴露供应商；启用开关只在 piko.json，后端环境 BRAVE_SEARCH_API_KEY 在创建 Harness 时读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据报告内建工具与配置状态；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
 - 自动压缩、有限重试和手动压缩使用 durable 原生能力。1.1.0 的 read 暂不支持图片，工具进度、思考和产物专用 UI 尚未实现。

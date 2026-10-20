@@ -179,7 +179,7 @@ Piko 应用内建 core.md 提供运行规则；工作区只使用 AGENTS.md（�
 
 Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；`/api/runtime` 只报告 Piko 内建工具及其配置状态。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
 
-Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。定时事项复用普通子 Agent 回传，详见 [定时事项](scheduled-work-items.md)。主会话另有内部 Memory Review Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit/bash` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一个 Review 中可能有多个模型/工具轮次。游标、活动 Review task 与重试状态由 Durable 文档保存，不增加事项/UI、SQL 或独立历史副本。用户明确要求记住/纠正时可立即触发。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆-review)。
+Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。定时事项复用普通子 Agent 回传，详见 [定时事项](scheduled-work-items.md)。主会话另有内部 Memory Review Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit/bash` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一个 Review 中可能有多个模型/工具轮次。游标、活动 Review task 与重试状态由 Durable 文档保存，不增加事项/UI、SQL 或独立历史副本；只由后台闲置调度触发，不提供手动触发工具。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆-review)。
 
 ## 边界
 
