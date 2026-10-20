@@ -13,6 +13,7 @@ import { sessionDirectory } from "./pi-context";
 import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
 import { createSubagents, prepareRestart, subagentIds } from "./subagents";
+import { childScope } from "./background";
 import { createWorkItemTools, DurableWorkItems } from "./work-items";
 import { ItemContext } from "./item-context";
 import { ItemFiles } from "../domain/work-items";
@@ -143,12 +144,12 @@ export class DurableChatSession implements ChatSession {
       const rootAgent = await conversation.agent(ctx);
       await harness.commit(async tx => {
         const ids = await subagentIds(tx);
+        const scope = childScope(rootAgent);
         for (const id of ids) {
           const binding = (await tx.doc(ItemContext, id)).binding;
           await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
             cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd,
-            extensions: rootAgent.extensions.filter(item => item.name !== "piko-subagents" && item.name !== "piko-work-items" && item.name !== "piko-memory-curation"),
-            tools: rootAgent.tools.filter(item => item.name !== "subagent" && item.name !== "work_item") });
+            extensions: scope.extensions, tools: scope.tools });
         }
       }, ctx);
       this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;

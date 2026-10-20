@@ -1,12 +1,12 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { configure, defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
-  type ConversationId, type Cursor, type EntryId, type EntryRecord, type Harness, type TaskId, type TaskRuntime, type Tx } from "@earendil-works/pi-durable";
+import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
+  type ConversationId, type Harness, type TaskId, type TaskRuntime, type Tx } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { internalInput } from "./input-origin";
-import { messageText } from "./pi-history";
-import { MEMORY_CURATION_MAX_INPUT_CHARS, buildMemoryCurationPrompt, localDate, redactMemorySecrets, type MemoryCurationMessage } from "../domain/memory-curation";
+import { spawnBackgroundChild } from "./background";
+import { collectMainChatBatch, rootHighWater } from "./chat-batch";
+import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
@@ -36,59 +36,7 @@ type CurationCheckpoint = { phase: "curation"; childId?: number };
 type CurationResult = { reviewedThrough: number };
 type CurationTask = ReturnType<typeof createCurationTask>;
 type Runtime = TaskRuntime<CurationInput, CurationCheckpoint, CurationResult, object>;
-type CollectedMessages = { messages: MemoryCurationMessage[]; throughEntryId: number };
-
-async function rootHighWater(tx: Tx): Promise<number> {
-  const page = await tx.scanEntries({ conversationId: ROOT_CONVERSATION_ID, order: "descending" }, 1);
-  return page.items[0]?.id ?? 0;
-}
-
 function safeError(): string { return "Memory review failed; it can be retried."; }
-
-/** Collect only external, user-visible root chat text. Internal reports and tool results are not memory input. */
-async function collectMessages(tx: Tx, from: number, through: number, timezone: string, bindings: ReadonlyMap<number, string>, now: number): Promise<CollectedMessages> {
-  const entries: EntryRecord[] = []; let cursor: Cursor | undefined;
-  if (through > from) do {
-    const page = await tx.scanEntries({ conversationId: ROOT_CONVERSATION_ID, minEntryId: (from + 1) as EntryId,
-      maxEntryId: through as EntryId, order: "ascending" }, 500, cursor);
-    entries.push(...page.items); cursor = page.next;
-  } while (cursor);
-
-  const internalUsers = new Set<number>(); const internalAnswers = new Set<number>();
-  for (const entry of entries) {
-    if (entry.kind !== "pi.user") continue;
-    const requestId = bindings.get(entry.id);
-    if (!await internalInput(tx, requestId)) continue;
-    internalUsers.add(entry.id);
-    const submission = requestId ? await tx.submissionByRequest(ROOT_CONVERSATION_ID, requestId) : undefined;
-    if (submission?.type === "input" && submission.status === "done") internalAnswers.add(submission.answer);
-  }
-
-  const messages: MemoryCurationMessage[] = []; let chars = 0; let processed = from;
-  for (const entry of entries) {
-    if ((entry.kind !== "pi.user" && entry.kind !== "pi.assistant") || internalUsers.has(entry.id) || internalAnswers.has(entry.id)) {
-      processed = entry.id; continue;
-    }
-    const parts = (entry.model ?? []).filter(message => message.role === "user" || message.role === "assistant")
-      .map(message => ({ timestamp: typeof message.timestamp === "number" ? message.timestamp : now, content: redactMemorySecrets(messageText(message.content)).trim() }))
-      .filter(message => message.content.length > 0);
-    if (!parts.length) { processed = entry.id; continue; }
-    const role = entry.kind === "pi.user" ? "user" : "assistant";
-    const cost = parts.reduce((sum, part) => sum + part.content.length, 0);
-    if (messages.length && chars + cost > MEMORY_CURATION_MAX_INPUT_CHARS) break;
-    let remaining = MEMORY_CURATION_MAX_INPUT_CHARS - chars;
-    for (const part of parts) {
-      if (remaining <= 0) break;
-      const content = part.content.length > remaining ? `${part.content.slice(0, remaining)}\n[This message was abbreviated for memory review.]` : part.content;
-      messages.push({ role, date: localDate(part.timestamp, timezone), content });
-      remaining -= Math.min(part.content.length, remaining);
-    }
-    chars += Math.min(cost, MEMORY_CURATION_MAX_INPUT_CHARS - chars);
-    processed = entry.id;
-    if (chars >= MEMORY_CURATION_MAX_INPUT_CHARS) break;
-  }
-  return { messages, throughEntryId: Math.max(from, processed) };
-}
 
 function createCurationTask(workspace: string, bindings: () => ReadonlyMap<number, string>) {
   const fail = async (taskId: TaskId<CurationResult>, runtime: Runtime, ctx: typeof context) => {
@@ -113,9 +61,9 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
     phases: {
       curation: async (taskRecord, runtime, ctx) => {
         try {
-          let collected: CollectedMessages | undefined;
-          await runtime.commit(async tx => { collected = await collectMessages(tx, taskRecord.input.fromEntryId, taskRecord.input.throughEntryId,
-            taskRecord.input.timezone, bindings(), taskRecord.input.requestedAt); return undefined; }, ctx);
+          let collected: Awaited<ReturnType<typeof collectMainChatBatch>> | undefined;
+          await runtime.commit(async tx => { collected = await collectMainChatBatch(tx, { from: taskRecord.input.fromEntryId,
+            through: taskRecord.input.throughEntryId, timezone: taskRecord.input.timezone, bindings: bindings(), now: taskRecord.input.requestedAt }); return undefined; }, ctx);
           if (!collected?.messages.length) { await completeWithoutModel(taskRecord, runtime, ctx); return; }
           const agent = await runtime.agent(ctx);
           if (!agent.model) throw new Error("No model is configured for memory review.");
@@ -123,11 +71,9 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
           let childId = taskRecord.state.checkpoint.childId as ConversationId | undefined;
           if (childId === undefined) {
             await runtime.commit(async tx => {
-              const child = await tx.createConversation({ ownership: { kind: "task", taskId: taskRecord.id } });
-              await configure(tx, child.id, { model: agent.model, thinkingLevel: agent.thinkingLevel,
+              childId = await spawnBackgroundChild(tx, taskRecord.id, { model: agent.model, thinkingLevel: agent.thinkingLevel,
                 extensions: [CodingTools], tools: CURATOR_AGENT_TOOLS, cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS });
-              childId = child.id;
-              return { status: "running", checkpoint: { phase: "curation", childId: Number(child.id) } } as const;
+              return { status: "running", checkpoint: { phase: "curation", childId: Number(childId) } } as const;
             }, ctx);
           }
           const child = await runtime.conversation(childId!, ctx);
@@ -238,7 +184,7 @@ export class MemoryCurationService {
       }
       const highWater = await rootHighWater(tx) || state.cursor;
       if (highWater <= state.cursor) { state.retryAfter = null; return undefined; }
-      const batch = await collectMessages(tx, state.cursor, highWater, this.timezone, this.bindings(), this.now());
+      const batch = await collectMainChatBatch(tx, { from: state.cursor, through: highWater, timezone: this.timezone, bindings: this.bindings(), now: this.now() });
       if (!batch.messages.length) {
         state.cursor = highWater;
         state.retryAfter = null;

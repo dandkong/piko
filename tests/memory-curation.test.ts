@@ -5,7 +5,8 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { buildMemoryCurationPrompt, localDate, redactMemorySecrets } from "../server/domain/memory-curation";
+import { buildMemoryCurationPrompt } from "../server/domain/memory-curation";
+import { localDate, redactSecrets } from "../server/domain/chat-batch";
 import { MEMORY_CURATION_IDLE_MS, MEMORY_CURATION_KIND, MemoryCurationDoc, MemoryCurationService, memoryCurationIsDue } from "../server/runtime/memory-curation";
 import { fixture, waitUntil } from "./fixtures/durable";
 
@@ -24,7 +25,7 @@ test("memory review waits for thirty minutes of idle", () => {
 test("memory dates use the selected timezone and common credential patterns are redacted", () => {
   expect(localDate(Date.parse("2026-10-20T16:30:00Z"), "Asia/Shanghai")).toBe("2026-10-21");
   const secret = `sk-${"X".repeat(28)}`;
-  expect(redactMemorySecrets(`api_key=${secret}`)).not.toContain(secret);
+  expect(redactSecrets(`api_key=${secret}`)).not.toContain(secret);
 });
 
 test("the curation prompt carries the memory budget and write boundaries", () => {

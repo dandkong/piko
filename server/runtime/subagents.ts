@@ -1,12 +1,13 @@
 import { Type } from "typebox";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { AgentDoc, configure, defineDoc, defineExtension, defineTask, defineTool, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
+import { AgentDoc, defineDoc, defineExtension, defineTask, defineTool, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
   type Agent, type ConversationId, type Cursor, type EntryId, type SubmissionId, type Extension, type Harness, type Storage, type TaskRecord, type Tx } from "@earendil-works/pi-durable";
 import type { BackgroundReply, InputSource } from "./types";
 import { InputOrigin, registerInput } from "./input-origin";
 import { entriesFromTransaction, messageText } from "./pi-history";
 import { ItemContext, type ItemBinding } from "./item-context";
 import { ItemFiles } from "../domain/work-items";
+import { childScope, spawnBackgroundChild } from "./background";
 
 export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   kind: "piko.subagent-control", version: 1, scope: "conversation", history: "latest", fork: "initial",
@@ -132,12 +133,11 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
   let extension: Extension;
   async function spawn(tx: Tx, agent: Agent, message: string, source: InputSource, item?: ItemBinding) {
     const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
-    const child = (await tx.createConversation({ ownership: { kind: "task", taskId: anchor } })).id;
     const current = await tx.doc(AgentDoc, ROOT_CONVERSATION_ID);
-    await configure(tx, child, { model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
+    const child = await spawnBackgroundChild(tx, anchor, {
+      model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
       cwd: item ? new ItemFiles(agent.cwd!).directory(item.itemId) : agent.cwd,
-      extensions: agent.extensions.filter(value => value.name !== extension.name && value.name !== "piko-work-items" && value.name !== "piko-memory-curation"),
-      tools: agent.tools.filter(value => value.name !== SUBAGENT_TOOL && value.name !== "work_item"),
+      ...childScope(agent),
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
     if (item) (await tx.doc(ItemContext, child)).binding = item;
     const task = item ? `${message}\n\nThis is work item ${JSON.stringify(item.title)} (${item.itemId}), execution ${child}. ${item.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(item.scheduledAt).toISOString()}.`} Started at ${new Date(item.startedAt).toISOString()}. Your working directory is this item's persistent directory. Use MEMORY.md for reusable findings and progress, and outputs/${child}/ for this execution's files. Read earlier outputs only when needed. Update item memory conservatively; do not modify global guidance or global memory. Report findings and output paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
