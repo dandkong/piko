@@ -58,6 +58,27 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       inbox.items = inbox.items.filter(item => !withdraw.includes(item.id));
     }, ctx));
   }
+  /** Tool-call origin: the latest input admitted before the assistant entry that contains the call. */
+  async function originOfToolCall(tx: Tx, callId: string, ctx: typeof context): Promise<InputSource> {
+    const entries = await entriesFromTransaction(tx);
+    const call = entries.findLastIndex(entry => (entry.model ?? []).some(message => message.role === "assistant"
+      && message.content.some(block => block.type === "toolCall" && block.id === callId)));
+    const callEntry = call < 0 ? undefined : entries[call].id;
+    const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
+    let input;
+    for (const id of live.run?.inputs ?? []) {
+      const candidate = await options.storage().submission(id, ctx);
+      if (candidate?.entry !== undefined && (callEntry === undefined || candidate.entry < callEntry)) input = candidate;
+    }
+    return input?.requestId ? { ...(await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, input.requestId, null)).source } : { channel: "app" };
+  }
+  /** A Reporter still waiting to deliver means the job is working, not finished. */
+  function awaitingDelivery(records: TaskRecord<unknown, unknown, unknown>[], child: ConversationId, epoch: number): boolean {
+    return records.some(record => record.kind === REPORTER_KIND && record.state.status !== "terminal"
+      && (record.input as ReporterInput).child === child && (record.input as ReporterInput).epoch === epoch
+      && (record.state.status === "pending" || record.state.status === "running")
+      && (record.state.checkpoint as ReporterState).phase === "deliver");
+  }
   const Anchor = defineTask<null, { phase: "done" }, null>({
     name: ANCHOR_KIND, version: 1, initial: () => ({ phase: "done" }), phases: {
       done: (_task, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx),
@@ -167,11 +188,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           for (const child of id === undefined ? ids : [id]) {
             const live = await tx.doc(LiveDoc, child);
             const epoch = (await tx.doc(JobControl, child)).epoch;
-            const pending = records.some(record => record.kind === REPORTER_KIND && record.state.status !== "terminal"
-              && (record.input as ReporterInput).child === child && (record.input as ReporterInput).epoch === epoch
-              && (record.state.status === "pending" || record.state.status === "running")
-              && (record.state.checkpoint as ReporterState).phase === "deliver");
-            lines.push(`${child}: ${live.run || pending ? "working" : "finished"}`);
+            lines.push(`${child}: ${live.run || awaitingDelivery(records, child, epoch) ? "working" : "finished"}`);
           }
           return lines.join("\n") || "No delegated work.";
         }, ctx);
@@ -186,17 +203,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       if (!args.task?.trim()) return { isError: true, content: [{ type: "text", text: "A task is required." }] };
       const agent = await api.agent(ctx);
       const result = await api.commit(async tx => {
-        const entries = await entriesFromTransaction(tx);
-        const call = entries.findLastIndex(entry => (entry.model ?? []).some(message => message.role === "assistant"
-          && message.content.some(block => block.type === "toolCall" && block.id === api.callId)));
-        const callEntry = call < 0 ? undefined : entries[call].id;
-        const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
-        let input;
-        for (const id of live.run?.inputs ?? []) {
-          const candidate = await options.storage().submission(id, ctx);
-          if (candidate?.entry !== undefined && (callEntry === undefined || candidate.entry < callEntry)) input = candidate;
-        }
-        const source = input?.requestId ? (await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, input.requestId, null)).source : { channel: "app" as const };
+        const source = await originOfToolCall(tx, api.callId, ctx);
         let child = id;
         let epoch = 0;
         if (args.action === "send") {
@@ -204,11 +211,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           if ((await tx.doc(ItemContext, child)).binding) throw new Error("Item executions use a fixed prompt snapshot. Edit the item or start a new execution instead.");
           const active = await tx.doc(LiveDoc, child);
           epoch = (await tx.doc(JobControl, child)).epoch;
-          const records = await taskRecords(tx);
-          if (!active.run && !records.some(record => record.kind === REPORTER_KIND && record.state.status !== "terminal"
-            && (record.input as ReporterInput).child === child && (record.input as ReporterInput).epoch === epoch
-              && (record.state.status === "pending" || record.state.status === "running")
-            && (record.state.checkpoint as ReporterState).phase === "deliver")) throw new Error("That job has finished. Spawn a new job.");
+          if (!active.run && !awaitingDelivery(await taskRecords(tx), child, epoch)) throw new Error("That job has finished. Spawn a new job.");
         } else {
           return spawn(tx, agent, args.task!, source);
         }
@@ -222,17 +225,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
   extension = defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter], tools: [tool] });
   return { extension, spawn,
     async source(tx: Tx, callId: string): Promise<InputSource> {
-      const entries = await entriesFromTransaction(tx);
-      const call = entries.findLastIndex(entry => (entry.model ?? []).some(message => message.role === "assistant"
-        && message.content.some(block => block.type === "toolCall" && block.id === callId)));
-      const callEntry = call < 0 ? undefined : entries[call].id;
-      const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
-      let input;
-      for (const id of live.run?.inputs ?? []) {
-        const candidate = await options.storage().submission(id, context);
-        if (candidate?.entry !== undefined && (callEntry === undefined || candidate.entry < callEntry)) input = candidate;
-      }
-      return input?.requestId ? { ...(await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, input.requestId, null)).source } : { channel: "app" };
+      return originOfToolCall(tx, callId, context);
     },
     async stop(harness: Harness, ids: ConversationId[]) {
       await invalidate(harness, ids, context);

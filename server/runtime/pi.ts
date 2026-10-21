@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { clampThinkingLevel, getSupportedThinkingLevels, type Models, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type SubmissionId, type TaskId, type Storage, type Cursor, type Registry, configure as configureAgent } from "@earendil-works/pi-durable";
+import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness, ROOT_CONVERSATION_ID, watchEvents, type AgentEvent, type AgentEventStream, type Conversation, type EntryRecord, type SubmissionRecord, type TaskId, type Storage, type Cursor, type Registry, configure as configureAgent } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
@@ -23,7 +23,7 @@ import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, availableBackground, configuredBackground, type WorkspaceModelConfig } from "./model-config";
 import { readConfigEnvironment } from "../config/files";
-import { readApplicationSettings } from "../config";
+import { readApplicationSettings, type ApplicationSettings } from "../config";
 import { createWebTools } from "./web-tools";
 import { WorkspaceExecutionEnv } from "./execution-env";
 import { createMemoryCurationExtension, MemoryCurationService } from "./memory-curation";
@@ -37,10 +37,11 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
 }
 
 type SessionRegistry = { registry: Registry; searchConfigured: boolean };
-function registry(paths: WorkspacePaths, subagents: import("@earendil-works/pi-durable").Extension, items: import("@earendil-works/pi-durable").Extension,
+function registry(paths: WorkspacePaths, settings: ApplicationSettings, env: Record<string, string | undefined>,
+  subagents: import("@earendil-works/pi-durable").Extension, items: import("@earendil-works/pi-durable").Extension,
   memory: import("@earendil-works/pi-durable").Extension): SessionRegistry {
   const value = createRegistry();
-  const web = createWebTools(readConfigEnvironment(paths.home), { settings: readApplicationSettings(paths.home).tools });
+  const web = createWebTools(env, { settings: settings.tools });
   value.install(CodingTools);
   value.install(createWorkspaceResources(paths));
   value.install(web.extension);
@@ -93,7 +94,10 @@ export class DurableChatSession implements ChatSession {
   get nativeHarness() { return this.harness; }
 
   async init(): Promise<void> {
-    const config = await loadWorkspaceModels(this.paths.home, this.injected);
+    // Application JSON and the private env file are read once per boot, then passed down.
+    const settings = readApplicationSettings(this.paths.home);
+    const env = readConfigEnvironment(this.paths.home);
+    const config = await loadWorkspaceModels({ home: this.paths.home, settings, env, models: this.injected });
     const children = createSubagents({ storage: () => this.storage,
       canReport: () => !this.maintenance && !this.stopping && !this.disposed,
       background: () => this.background(),
@@ -105,7 +109,7 @@ export class DurableChatSession implements ChatSession {
     });
     const memory = createMemoryCurationExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries,
       background: () => this.background() });
-    const extensions = registry(this.paths, children.extension, createWorkItemTools(() => this.itemService), memory.extension);
+    const extensions = registry(this.paths, settings, env, children.extension, createWorkItemTools(() => this.itemService), memory.extension);
     await this.open(config, extensions, children, memory.task);
   }
 
@@ -167,9 +171,7 @@ export class DurableChatSession implements ChatSession {
       this.itemService = new DurableWorkItems(harness, this.paths.workspace, children, async () => {
         if (this.disposed) throw new Error("Piko is shutting down.");
         if (this.maintenance || this.stopping) throw new RuntimeBusyError();
-        const agent = await conversation.agent(ctx);
-        if (!agent.model) throw new Error("No model is configured.");
-        await requireAvailableModel(config.models, { provider: agent.model.provider, model: agent.model.modelId });
+        await this.requireCurrentAgent();
       });
       this.memoryCurationService = new MemoryCurationService(harness, memoryTask, () => this.inputEntries);
       const stream = this.eventStream = await watchEvents(harness, conversation.id, ctx);
@@ -312,9 +314,7 @@ export class DurableChatSession implements ChatSession {
       if (this.observationError) throw this.observationError;
       const existing = await this.submission(requestId);
       if (existing) return { submission: existing, duplicate: true };
-      const agent = await this.conversation.agent(ctx);
-      if (!agent.model) throw new Error("No model is configured. Add backend environment credentials and a profile in PIKO_HOME/config/piko.json under agent.profiles.");
-      await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
+      await this.requireCurrentAgent();
       await this.conversation.commit(async tx => { (await tx.doc(Recovery, this.conversation.id)).interruption = ""; await registerInput(tx, requestId, source); }, ctx);
       const handle = await this.conversation.submit({ type: "input", content: text, requestId, whenBusy: "steer" }, ctx);
       this.liveBusy = true;
@@ -426,6 +426,14 @@ export class DurableChatSession implements ChatSession {
       skills: resources.skills };
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
+
+  /** One gate for input, work items and maintenance: a stored model with usable credentials. */
+  private async requireCurrentAgent() {
+    const agent = await this.conversation.agent(ctx);
+    if (!agent.model) throw new Error("No model is configured. Add its credentials, then choose a model in PIKO_HOME/config/piko.json under agent.profiles.");
+    await requireAvailableModel(this.config.models, { provider: agent.model.provider, model: agent.model.modelId });
+    return agent;
+  }
 
   /** Background jobs read agent.profiles.background at spawn; credentials are checked then, not at startup. */
   private background() {

@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
-  type ConversationId, type Harness, type TaskId, type TaskRuntime, type Tx } from "@earendil-works/pi-durable";
+  type ConversationId, type Harness, type TaskId, type TaskRuntime } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
