@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Archive, MoreHorizontal, Pencil } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
+import { Modal, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../../../../shared/side-chats";
+import { IconButton } from "../../components/IconButton";
 import { TextButton } from "../../components/TextButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { colors, radii } from "../../theme";
@@ -8,62 +10,86 @@ import { colors, radii } from "../../theme";
 export type SideChatActions = {
   sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatError?: string;
   onRefreshSideChats?: () => void; onSelectSideChat?: (id: string) => void;
-  onCreateSideChat?: (title: string) => Promise<boolean>;
+  onCreateSideChat?: () => Promise<void>;
   onUpdateSideChat?: (id: string, change: UpdateSideChat) => Promise<boolean>;
 };
 export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatError,
-  onRefreshSideChats, onSelectSideChat, onCreateSideChat, onUpdateSideChat, creating, onCreated }: SideChatActions & { creating: boolean; onCreated: () => void }) {
-  const [title, setTitle] = useState("");
-  const [editing, setEditing] = useState<string | undefined>(undefined);
+  onRefreshSideChats, onSelectSideChat, onUpdateSideChat }: SideChatActions) {
+  const [menu, setMenu] = useState<{ chat: SideChat; left: number; top: number }>();
+  const [editing, setEditing] = useState<string>();
   const [renamed, setRenamed] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
-  const visible = sideChats.filter(chat => showArchived || chat.archivedAt === null);
-  const create = async () => { if (title.trim() && await onCreateSideChat?.(title.trim())) { setTitle(""); onCreated(); } };
+  const anchors = useRef(new Map<string, View>());
+  const { width, height } = useWindowDimensions();
+  const visible = sideChats.filter(chat => chat.archivedAt === null);
+  useEffect(() => {
+    if (!menu || typeof window === "undefined") return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopPropagation(); setMenu(undefined);
+    };
+    window.addEventListener("keydown", dismiss, true);
+    return () => window.removeEventListener("keydown", dismiss, true);
+  }, [menu]);
+  useEffect(() => { setMenu(undefined); }, [width, height]);
+  const save = async (id: string) => {
+    if (renamed.trim() && await onUpdateSideChat?.(id, { title: renamed.trim() })) setEditing(undefined);
+  };
+  const openMenu = (chat: SideChat) => anchors.current.get(chat.id)?.measureInWindow((x, y, w, h) => {
+    setMenu({ chat, left: Math.max(10, Math.min(width - 174, x + w - 164)), top: Math.max(10, Math.min(height - 126, y + h + 4)) });
+  });
   return <View style={styles.list}>
-    {creating && <View style={styles.editor}>
-      <TextInput accessibilityLabel="旁聊名称" testID="side-chat-title" placeholder="旁聊名称" value={title} onChangeText={setTitle}
-        maxLength={SIDE_CHAT_TITLE_LIMIT} editable={!sideChatBusy} style={styles.input} onSubmitEditing={() => void create()} />
-      <View style={styles.actions}>
-        <TextButton label="取消新建旁聊" disabled={sideChatBusy} onPress={onCreated}><Text style={styles.muted}>取消</Text></TextButton>
-        <TextButton label="创建旁聊" testID="side-chat-create" variant="primary" disabled={sideChatBusy || !title.trim()} onPress={() => void create()}><Text style={styles.text}>创建</Text></TextButton>
-      </View>
-    </View>}
     {sideChatError ? <View>
       <Text accessibilityLiveRegion="polite" style={styles.error}>{sideChatError}</Text>
       <TextButton label="重新加载旁聊" disabled={sideChatBusy} onPress={onRefreshSideChats}><Text style={styles.muted}>重试</Text></TextButton>
     </View> : null}
-    {!visible.length && !creating && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
+    {!visible.length && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
     {visible.map(chat => <View key={chat.id}>
-      <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: activeSideChatId === chat.id }}
-        onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={activeSideChatId === chat.id} scaleTo={1}
-        faceStyle={styles.row} testID={`side-chat-${chat.id}`}>
-        <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>{chat.title}</Text>
-        {chat.archivedAt !== null && <Text style={styles.muted}>已归档</Text>}
-      </TactilePressable>
-      {editing === chat.id ? <View style={styles.editor}>
-        <TextInput accessibilityLabel="新的旁聊名称" value={renamed} onChangeText={setRenamed} maxLength={SIDE_CHAT_TITLE_LIMIT}
-          editable={!sideChatBusy} style={styles.input} />
-        <View style={styles.actions}>
-          <TextButton label="取消改名" disabled={sideChatBusy} onPress={() => setEditing(undefined)}><Text style={styles.muted}>取消</Text></TextButton>
-          <TextButton label="保存旁聊名称" disabled={sideChatBusy || !renamed.trim()} onPress={() => void (async () => {
-            if (await onUpdateSideChat?.(chat.id, { title: renamed.trim() })) setEditing(undefined);
-          })()}><Text style={styles.text}>保存</Text></TextButton>
+      <View style={styles.row}>
+        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: activeSideChatId === chat.id }}
+          onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={activeSideChatId === chat.id} scaleTo={1}
+          style={{ flex: 1, minWidth: 0 }} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
+          <Text numberOfLines={1} style={styles.text}>{chat.title}</Text>
+        </TactilePressable>
+        <View collapsable={false} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
+          <IconButton label={`旁聊菜单：${chat.title}`} hint="重命名或归档" size="sm" variant="plain"
+            accessibilityState={{ expanded: menu?.chat.id === chat.id }} onPress={sideChatBusy ? undefined : () => openMenu(chat)}>
+            <MoreHorizontal size={20} strokeWidth={1.8} color={colors.muted} />
+          </IconButton>
         </View>
-      </View> : <View style={styles.actions}>
-        <TextButton label={`改名：${chat.title}`} variant="plain" disabled={sideChatBusy} onPress={() => { setEditing(chat.id); setRenamed(chat.title); }}><Text style={styles.muted}>改名</Text></TextButton>
-        <TextButton label={`${chat.archivedAt === null ? "归档" : "恢复"}：${chat.title}`} variant="plain" disabled={sideChatBusy} onPress={() => void onUpdateSideChat?.(chat.id, { archived: chat.archivedAt === null })}>
-          <Text style={styles.muted}>{chat.archivedAt === null ? "归档" : "恢复"}</Text>
-        </TextButton>
+      </View>
+      {editing === chat.id && <View style={styles.editor}>
+        <TextInput accessibilityLabel="新的旁聊名称" autoFocus value={renamed} onChangeText={setRenamed} maxLength={SIDE_CHAT_TITLE_LIMIT}
+          editable={!sideChatBusy} style={styles.input} onSubmitEditing={() => void save(chat.id)} />
+        <View style={styles.actions}>
+          <TextButton label="取消重命名" disabled={sideChatBusy} onPress={() => setEditing(undefined)}><Text style={styles.muted}>取消</Text></TextButton>
+          <TextButton label="保存旁聊名称" disabled={sideChatBusy || !renamed.trim()} onPress={() => void save(chat.id)}><Text style={styles.text}>保存</Text></TextButton>
+        </View>
       </View>}
     </View>)}
-    {sideChats.some(chat => chat.archivedAt !== null) && <TextButton label={showArchived ? "隐藏已归档旁聊" : "显示已归档旁聊"} variant="plain" onPress={() => setShowArchived(value => !value)}>
-      <Text style={styles.muted}>{showArchived ? "隐藏已归档" : "显示已归档"}</Text>
-    </TextButton>}
+    <Modal transparent visible={!!menu} animationType="fade" onRequestClose={() => setMenu(undefined)}>
+      <View style={StyleSheet.absoluteFill}>
+        <Pressable accessibilityRole="button" accessibilityLabel="关闭旁聊菜单" style={StyleSheet.absoluteFill} onPress={() => setMenu(undefined)} />
+        {menu && <View accessibilityRole="menu" testID="side-chat-menu" style={[styles.menu, { left: menu.left, top: menu.top }]}>
+          <TactilePressable accessibilityRole="menuitem" accessibilityLabel="重命名旁聊" variant="plain" scaleTo={1} faceStyle={styles.menuItem}
+            onPress={() => { setEditing(menu.chat.id); setRenamed(menu.chat.title); setMenu(undefined); }}>
+            <Pencil size={18} strokeWidth={1.8} color={colors.text} /><Text style={styles.text}>重命名</Text>
+          </TactilePressable>
+          <TactilePressable accessibilityRole="menuitem" accessibilityLabel="归档旁聊" variant="plain" scaleTo={1} faceStyle={styles.menuItem}
+            onPress={() => { const id = menu.chat.id; setMenu(undefined); void onUpdateSideChat?.(id, { archived: true }); }}>
+            <Archive size={18} strokeWidth={1.8} color={colors.text} /><Text style={styles.text}>归档</Text>
+          </TactilePressable>
+        </View>}
+      </View>
+    </Modal>
   </View>;
 }
 const styles = StyleSheet.create({
-  list: { gap: 6 }, row: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: "row", alignItems: "center", borderRadius: radii.control },
+  list: { gap: 6 }, row: { flexDirection: "row", alignItems: "center", gap: 4 },
+  titleRow: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, justifyContent: "center", borderRadius: radii.control },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
   editor: { padding: 8, gap: 8 }, input: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, paddingHorizontal: 12, color: colors.text, fontSize: 15 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 4 },
+  menu: { position: "absolute", width: 164, padding: 6, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card,
+    backgroundColor: colors.card, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 8 },
+  menuItem: { minHeight: 48, flexDirection: "row", alignItems: "center", paddingHorizontal: 12, gap: 10, borderRadius: radii.control },
 });

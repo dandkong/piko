@@ -41,7 +41,6 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
   const panelWidth = Math.min(PANEL_MAX_WIDTH, width * 0.84);
   const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(open);
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (open) setMounted(true);
@@ -144,7 +143,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <View style={styles.divider} />
 
           <Text style={styles.sectionLabel}>旁聊</Text>
-          <SideChatList {...sideChatActions} creating={creating} onCreated={() => setCreating(false)} />
+          <SideChatList {...sideChatActions} />
         </ScrollView>
 
         <View style={styles.footer}>
@@ -158,8 +157,8 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <IconButton
             hint="Create an independent side chat"
             label="New side chat"
-            onPress={sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy ? () => setCreating(true) : undefined}
-            variant={creating ? "soft" : "primary"}
+            onPress={sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy ? () => void sideChatActions.onCreateSideChat?.() : undefined}
+            variant="primary"
           >
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
