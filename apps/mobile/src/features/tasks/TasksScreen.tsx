@@ -82,7 +82,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
   };
   const archive = (item: WorkItem) => {
     if (item.status === "archived") return;
-    void send({ action: "status", id: item.id, revision: item.revision, status: "archived" });
+    void send({ action: "status", id: item.id, status: "archived" });
   };
 
   const item = detail?.item;

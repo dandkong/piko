@@ -6,7 +6,7 @@
 
 一个任务（WorkItem）就是一个 Prompt、一条可选时间规则、一个固定目录。不拆 Goal / 执行计划，不增加多计划工作流；每次执行创建一个新的 owned 子 conversation，不 fork 主聊天历史。全局模型、思考强度、指导与技能共用，子 Agent 移除 subagent 和 work_item，不能嵌套委派或创建调度。
 
-Tasks 导航已启用，只展示 Piko 在替用户做的事：列表仅显示未归档任务，展示名字、人话时间与上次结果摘要；每条前面一个方框用来归档，归档后从 UI 隐藏，但定义和执行历史仍保留，助手可恢复。详情页只读，是说明与结果时间线。写入都在对话里：用户在 Chat 里说做什么，主 Agent 创建、执行、恢复或停止；页面不提供创建、执行、暂停或恢复入口，人只看和归档。页面不提供标题/Prompt/Cron/时区表单、编辑、执行 ID、版本、任务记忆或产物文件浏览；这些属于助手和运行时，不暴露给用户。Chat 保持挂载以保留草稿和历史位置；Posts 是示例列表、Artifacts 仅标题占位。Tasks 进入页面读取一次，回前台刷新一次，不轮询、不增加任务 SSE 或持久事件日志，也不自动提交执行。
+Tasks 导航已启用，只展示 Piko 在替用户做的事：列表仅显示未归档任务，展示名字、人话时间与上次结果摘要；每条前面一个方框用来归档，归档后从 UI 隐藏，但定义和执行历史仍保留，助手可恢复。详情页只读，是说明与结果时间线。写入都在对话里：用户在 Chat 里说做什么，主 Agent 创建、执行、恢复或停止；页面不提供创建、执行、暂停或恢复入口，人只看和归档。页面不提供标题/Prompt/Cron/时区表单、编辑、执行 ID、任务记忆或产物文件浏览；这些属于助手和运行时，不暴露给用户。Chat 保持挂载以保留草稿和历史位置；Posts 是示例列表、Artifacts 仅标题占位。Tasks 进入页面读取一次，回前台刷新一次，不轮询、不增加任务 SSE 或持久事件日志，也不自动提交执行。
 
 ## 数据与事实源
 
@@ -24,7 +24,6 @@ type WorkItem = {
   schedule: ItemSchedule;
   scheduleText?: string;
   status: "active" | "archived";
-  revision: number;
   createdAt: number;
   updatedAt: number;
   nextDueAt: number | null;
@@ -32,11 +31,11 @@ type WorkItem = {
 ```
 
 - WorkItem ID 由应用分配 UUID；执行 ID 使用原生子 conversation ID，以不透明字符串跨端。
-- `scheduleText` 是助手写入的一句话时间标签（如“每天 9:00”），界面只展示它，从不解析 Cron；缺省时按规则退化显示。代码不改写、不清洗模型输出；只在工具说明里要求写成本地人话、不带时区与 Cron。
+- `scheduleText` 是助手写入的一句话时间标签（如“每天 9:00”），界面只展示它，从不解析 Cron；定时任务必须提供，手动任务可省略并按“手动”显示。代码不改写、不清洗模型输出；工具说明要求写成本地人话、不带时区与 Cron。
 - 执行投影带 `preview`，由最终回答截取，列表用一句话交代上次做了什么。
-- root 的原生 `piko.work-items` 文档保存定义、版本、游标与经验证的结果通道来源。
+- root 的原生 `piko.work-items` 文档保存定义、游标与经验证的结果通道来源。
 - `piko.item-command` 原生文档保存稳定管理请求的内容指纹和实体引用。重复请求返回原结果；同 ID 不接受不同命令。不保存第二套消息正文或执行状态。
-- 子会话的 `piko.item-context` 只保存任务关联、定义版本、标题快照、计划/启动时间和重启中断来源。
+- 子会话的 `piko.item-context` 只保存任务关联、标题快照、计划/启动时间和重启中断来源。
 - 执行 Prompt 快照保存在原生 Reporter input；子 Agent 实际收到的 Prompt 带本次工作说明。
 - 执行状态从 Reporter、submission、LiveDoc 和取消 epoch 投影。Reporter 完成不等于子工作成功；失败 submission 仍显示失败。Reporter 终态只增加原生回答 entry / 错误引用，不复制回答正文。
 - UI 的“已完成回答”表示模型完成输入，不声称用户目标已被确定性验收。缺输入等语义阻塞目前由主 Agent 从回答中处理，没有新增 blocked/approval 工作流。
@@ -72,9 +71,9 @@ workspace/items/<任务ID>/
 - 同时最多两个任务执行。手动超额返回 409；定时超额保留到期状态，容量释放后再检查。这个上限不改变普通 subagent 的现有并发行为。
 - 暂停由归档代替：归档只停止自动触发，不取消正在执行子 Agent；恢复由助手在对话中完成。
 - 恢复 Cron 从未来下一时刻开始，不补归档期间的全部轮次；恢复尚未接纳的一次性任务可以延迟执行。
-- 停止必须指定本次执行 ID，不影响未来时间规则。重复停止只作用于原子回执记录的原目标。
+- 停止按任务 ID 取该任务当前正在运行的执行，不影响未来时间规则。重复停止只作用于原子回执记录的原目标。
 - 归档前要求先停止执行，归档后不接纳新执行，文件和历史保留；可恢复。
-- Prompt/标题修改不重新触发已接纳的一次性规则。时间规则真正变化才重新计算游标；当前执行继续使用原始快照。更新需要当前 revision，陈旧编辑返回 409。
+- Prompt/标题修改不重新触发已接纳的一次性规则。时间规则真正变化才重新计算游标；当前执行继续使用原始快照。
 
 不是实时监控，也不承诺分秒不差。暂不实现自动重试整个任务、执行预算、连续失败暂停或复杂工作流。模型内部重试仍沿用 Durable 默认策略。
 
@@ -82,7 +81,7 @@ workspace/items/<任务ID>/
 
 复用现有后台 Anchor/Reporter：调度直接建立子工作，不先唤醒主 Agent 来转述；结果再以可信内部 follow-up 提交到 root，主 Agent 忙碌时等待当前回答结束。任务标题、执行身份和输出目录附在内部回传中，主 Agent 决定回复、继续整理或保持安静。
 
-- 普通主聊天停止不取消独立任务执行；Tasks 的停止操作与 work_item stop 只取消指定子工作，并撤回其未处理的内部报告。
+- 普通主聊天停止不取消独立任务执行；Tasks 的停止操作与 work_item stop 只取消该任务正在运行的子工作，并撤回其未处理的内部报告。
 - 任务执行与普通委派不同：不论创建或手动运行的来源，结果都推送到所有通道（当前为 Telegram 主人私聊）；App 是聚合视图，本来就包含全部记录，不需要额外推送。
 - 普通子 Agent 仍只回复来源通道；任务广播不影响这条默认规则。
 - 回传前重新挂接主回复观察，仍只发送主 Agent 实际生成的回复，任务子 Agent 原文不直接发布。
@@ -105,7 +104,7 @@ workspace/items/<任务ID>/
 | GET /api/items/:id?before=:executionId | 更早一页执行 |
 | GET /api/items/:id/executions/:executionId | 本次执行的状态与最终回答 |
 
-模型内建 work_item 的 list/get/create/update/run/archive/restore/stop 与 UI 使用同一个业务服务。create 默认手动，并应携带 `scheduleText`；update 必须显式携带完整 title/prompt/schedule 和当前 revision，避免意外移除定时。UI 只归档，不创建、不编辑、不恢复，也没有文件接口。工具身份由原生 tool task 分配，不接受用户伪造内部来源；已取消的管理工具不能再接纳新任务执行。
+模型内建 work_item 的 list/get/create/update/run/archive/restore/stop 与 UI 使用同一个业务服务。create 默认手动；只要 schedule 非 null，create/update 必须携带 `scheduleText`。update 必须显式携带完整 title/prompt/schedule，避免意外移除定时；工具说明要求先 get 再更新。UI 只归档，不创建、不编辑、不恢复，也没有文件接口。工具身份由原生 tool task 分配，不接受用户伪造内部来源；已取消的管理工具不能再接纳新任务执行。
 
 ## 未验证范围
 

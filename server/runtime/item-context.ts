@@ -4,7 +4,6 @@ import { defineDoc } from "@earendil-works/pi-durable";
 export type ItemBinding = {
   itemId: string;
   title: string;
-  revision: number;
   startedAt: number;
   scheduledAt: number | null;
   interrupted: boolean;

@@ -12,10 +12,9 @@ function command(value: unknown): WorkItemCommand {
   if (input.action === "create") return { action: "create", requestId, item: itemDraft(input.item) };
   const id = itemId(input.id);
   if (input.action === "run") return { action: "run", requestId, id };
-  if (input.action === "stop") return { action: "stop", requestId, id, executionId: executionId(input.executionId) };
-  if (typeof input.revision !== "number" || !Number.isSafeInteger(input.revision) || input.revision < 1) throw new WorkItemError("The current item revision is required.");
-  if (input.action === "update") return { action: "update", requestId, id, revision: input.revision, item: itemDraft(input.item) };
-  if (input.action === "status" && (input.status === "active" || input.status === "archived")) return { action: "status", requestId, id, revision: input.revision, status: input.status };
+  if (input.action === "stop") return { action: "stop", requestId, id };
+  if (input.action === "update") return { action: "update", requestId, id, item: itemDraft(input.item) };
+  if (input.action === "status" && (input.status === "active" || input.status === "archived")) return { action: "status", requestId, id, status: input.status };
   throw new WorkItemError("Unknown item command.");
 }
 export async function itemRequest(request: Request, runtime: ChatRuntime, maxBytes: number): Promise<Response> {

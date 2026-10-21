@@ -27,10 +27,6 @@ function find(values: Awaited<ReturnType<typeof items>>, id: string) {
   if (!item) throw new WorkItemError("Item not found.", 404);
   return item;
 }
-function checkRevision(item: WorkItem, revision: number) {
-  if (item.revision !== revision) throw new WorkItemError("This item changed. Refresh it before editing.", 409);
-}
-
 export class DurableWorkItems implements WorkItemsRuntime {
   private timer?: ReturnType<typeof setInterval>;
   private tickPending?: Promise<void>;
@@ -75,7 +71,7 @@ export class DurableWorkItems implements WorkItemsRuntime {
       const text = (answer?.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
       const preview = text.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
       result.push({ binding: { ...binding }, execution: { id: String(child), startedAt: binding.startedAt,
-        scheduledAt: binding.scheduledAt, revision: binding.revision, status, ...(error && { error }),
+        scheduledAt: binding.scheduledAt, status, ...(error && { error }),
         ...(preview && { preview }) },
         message: (reporters[0].input as ReporterInput).message, answer: text });
     }
@@ -135,29 +131,31 @@ export class DurableWorkItems implements WorkItemsRuntime {
     const draft: WorkItemDraft | undefined = command.action === "create" || command.action === "update" ? itemDraft(command.item) : undefined;
     const id = command.action === "create" ? randomUUID() : itemId(command.id);
     if (command.action === "create") await this.files.prepare(id);
+    let stopChildren: ConversationId[] = [];
     const result = await this.harness.commit(async tx => {
       signal?.throwIfAborted();
       const saved = await receipt(tx);
-      if (saved.hash) return { id: saved.id, ...(saved.executionId && { executionId: saved.executionId }), duplicate: true };
+      if (saved.hash) {
+        if (command.action === "stop" && saved.executionId) stopChildren = [Number(saved.executionId) as ConversationId];
+        return { id: saved.id, ...(saved.executionId && { executionId: saved.executionId }), duplicate: true };
+      }
       const values = await items(tx); const now = this.now();
       let child: ConversationId | undefined;
       if (command.action === "create") {
-        values.push({ ...draft!, id, source, status: "active", revision: 1, createdAt: now, updatedAt: now, nextDueAt: nextDue(draft!.schedule, now) });
+        values.push({ ...draft!, id, source, status: "active", createdAt: now, updatedAt: now, nextDueAt: nextDue(draft!.schedule, now) });
       } else {
         const item = find(values, id);
         if (command.action === "update") {
-          checkRevision(item, command.revision);
           const timingChanged = JSON.stringify(item.schedule) !== JSON.stringify(draft!.schedule);
           Object.assign(item, draft!);
           if (timingChanged) item.nextDueAt = nextDue(item.schedule, now);
-          item.revision++; item.updatedAt = now;
+          item.updatedAt = now;
         } else if (command.action === "status") {
-          checkRevision(item, command.revision);
           if (!["active", "archived"].includes(command.status)) throw new WorkItemError("Invalid item status.");
           const active = (await this.executions(tx)).some(run => run.binding.itemId === id && run.execution.status === "running");
           if (command.status === "archived" && active) throw new WorkItemError("Stop this item's execution before archiving it.", 409);
           if (item.status !== command.status) {
-            item.status = command.status; item.revision++; item.updatedAt = now;
+            item.status = command.status; item.updatedAt = now;
             if (item.status === "active" && item.schedule?.type === "cron") item.nextDueAt = nextDue(item.schedule, now);
           }
         } else if (command.action === "run") {
@@ -167,9 +165,10 @@ export class DurableWorkItems implements WorkItemsRuntime {
           if (runs.filter(run => run.execution.status === "running").length >= 2) throw new WorkItemError("Two items are already running. Try again after one finishes.", 409);
           child = await this.spawn(tx, agent!, item, source, null, now);
         } else {
-          const run = (await this.executions(tx)).find(run => run.binding.itemId === id && run.execution.id === command.executionId);
-          if (!run) throw new WorkItemError("Execution not found.", 404);
-          child = Number(executionId(command.executionId)) as ConversationId;
+          stopChildren = (await this.executions(tx))
+            .filter(run => run.binding.itemId === id && run.execution.status === "running")
+            .map(run => Number(run.execution.id) as ConversationId);
+          child = stopChildren[0];
         }
       }
       signal?.throwIfAborted();
@@ -177,13 +176,13 @@ export class DurableWorkItems implements WorkItemsRuntime {
       return { id, ...(child !== undefined && { executionId: String(child) }), duplicate: false };
     }, ctx);
     // A stop receipt always targets the original child, so a retry cannot stop a later execution.
-    if (command.action === "stop" && result.executionId) await this.children.stop(this.harness, [Number(result.executionId) as ConversationId]);
+    if (command.action === "stop" && stopChildren.length) await this.children.stop(this.harness, stopChildren);
     return result;
   }
   source(tx: Tx, callId: string) { return this.children.source(tx, callId); }
   private async spawn(tx: Tx, agent: Agent, item: Awaited<ReturnType<typeof items>>[number], source: InputSource, scheduledAt: number | null, now: number) {
     return this.children.spawn(tx, agent, item.prompt, source, {
-      itemId: item.id, title: item.title, revision: item.revision, startedAt: now, scheduledAt, interrupted: false,
+      itemId: item.id, title: item.title, startedAt: now, scheduledAt, interrupted: false,
     });
   }
   /** Public for deterministic tests; the native transaction serializes timer/manual admissions. */
@@ -219,42 +218,52 @@ export class DurableWorkItems implements WorkItemsRuntime {
 
 /** UI and main assistant share the same service. Children cannot create schedules or delegate. */
 export function createWorkItemTools(service: () => DurableWorkItems) {
-  const schedule = Type.Union([Type.Null(), Type.Object({ type: Type.Literal("once"), at: Type.String() }),
-    Type.Object({ type: Type.Literal("cron"), expression: Type.String(), timezone: Type.String() })]);
+  const schedule = Type.Union([Type.Null(), Type.Object({ type: Type.Literal("once"),
+    at: Type.String({ description: "ISO 8601 instant with an explicit offset, such as 2026-10-22T09:00:00+08:00." }) }),
+    Type.Object({ type: Type.Literal("cron"), expression: Type.String({ description: "Five-field cron expression." }),
+      timezone: Type.String({ description: "IANA time zone, such as Asia/Shanghai." }) })],
+    { description: "null=manual; once=run once at the given instant; cron=recurring." });
   return defineExtension({ name: "piko-work-items", tools: [defineTool({
     name: "work_item", replay: "unsafe",
-    description: "Manage persistent tasks: one instruction, an optional schedule and a short scheduleText label. list returns active tasks without their prompts (pass includeArchived to see archived ones); get adds the full instruction and the latest 5 executions. create/update save the instruction, schedule (null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone) and scheduleText such as \"每天 9:00\" (shown to the user verbatim: no time zone, no cron syntax); run starts a fresh background assistant; archive stops future triggers and restore re-enables them; stop needs the executionId. Results return privately to you like ordinary subagents; summarize them for the user. Get the current revision before editing. Never claim a schedule ran merely because it exists.",
-    parameters: Type.Object({ action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value))),
-      id: Type.Optional(Type.String()), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), schedule: Type.Optional(schedule),
-      scheduleText: Type.Optional(Type.String()), revision: Type.Optional(Type.Number()), executionId: Type.Optional(Type.String()),
-      includeArchived: Type.Optional(Type.Boolean()) }),
+    description: "Manage persistent tasks. list: active tasks without prompts; includeArchived also returns archived tasks. get: full definition and the latest 5 executions. create/update: save a complete definition; update replaces title, prompt and schedule, so call get first. schedule null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone. scheduleText is shown to the user verbatim and is required whenever schedule is not null. run: start a fresh background assistant now; it does not change the schedule; one execution per task and at most two task executions globally. archive: stop future triggers; stop its running execution first. restore: re-enable future triggers only. stop: cancel any running execution for the task without changing its schedule. Results return privately to you like ordinary subagents; after a task result, your reply may be sent to every channel. Summarize results for the user. Never claim a schedule ran merely because it exists.",
+    parameters: Type.Object({
+      action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value)),
+        { description: "list, get, create, update, run, archive, restore or stop." }),
+      id: Type.Optional(Type.String({ description: "Task id. Required for get, update, run, archive, restore and stop; pass it without '#'." })),
+      title: Type.Optional(Type.String({ minLength: 1, maxLength: 160, description: "Required for create and update. Maximum 160 characters." })),
+      prompt: Type.Optional(Type.String({ minLength: 1, maxLength: 12000, description: "Required for create and update. Full instruction, maximum 12,000 characters." })),
+      schedule: Type.Optional(schedule),
+      scheduleText: Type.Optional(Type.String({ maxLength: 120,
+        description: "Short human-readable schedule label shown verbatim; required whenever schedule is not null. Do not include a time zone or cron syntax." })),
+      includeArchived: Type.Optional(Type.Boolean({ description: "list only: include archived tasks." })),
+    }),
     execute: async (args, api, context) => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) throw new WorkItemError("Only the main assistant can manage items.", 403);
       if (args.action === "list") {
         const items = await service().list();
         // Prompt bodies stay out of list output; the tool only needs identity, timing and the last result.
         const summary = items.filter(item => args.includeArchived || item.status === "active").map(item => ({ id: item.id,
-          title: item.title, status: item.status, revision: item.revision, schedule: item.schedule, ...(item.scheduleText && { scheduleText: item.scheduleText }),
+          title: item.title, status: item.status, schedule: item.schedule, ...(item.scheduleText && { scheduleText: item.scheduleText }),
           nextDueAt: item.nextDueAt, ...(item.latest && { latest: { status: item.latest.status, startedAt: item.latest.startedAt,
             ...(item.latest.preview && { preview: item.latest.preview }), ...(item.latest.error && { error: item.latest.error }) } }) }));
         return { output: [{ type: "text", text: JSON.stringify(summary) }] };
       }
       if (args.action === "get") {
         const detail = await service().detail(itemId(args.id));
-        // Latest executions are enough to report status or target stop; full history stays in the app.
+        // Latest executions are enough to report status; full history stays in the app.
         return { output: [{ type: "text", text: JSON.stringify({ item: detail.item, executions: detail.executions.slice(0, 5) }) }] };
       }
       const source = await api.commit(tx => service().source(tx, api.callId), context);
       const requestId = `piko:item-tool:${api.taskId}`;
       let command: WorkItemCommand;
       if (args.action === "create" || args.action === "update") {
-        if (args.action === "update" && args.schedule === undefined) throw new WorkItemError("An update requires the current schedule too; use null only for manual execution.");
+        if (args.action === "update" && args.schedule === undefined) throw new WorkItemError("An update replaces the whole definition and requires schedule; use null for manual execution.");
         const item = itemDraft({ title: args.title, prompt: args.prompt, schedule: args.schedule ?? null, scheduleText: args.scheduleText });
         command = args.action === "create" ? { action: "create", requestId, item }
-          : { action: "update", requestId, id: itemId(args.id), revision: args.revision!, item };
+          : { action: "update", requestId, id: itemId(args.id), item };
       } else if (args.action === "run") command = { action: "run", requestId, id: itemId(args.id) };
-      else if (args.action === "stop") command = { action: "stop", requestId, id: itemId(args.id), executionId: executionId(args.executionId) };
-      else command = { action: "status", requestId, id: itemId(args.id), revision: args.revision!, status: args.action === "archive" ? "archived" : "active" };
+      else if (args.action === "stop") command = { action: "stop", requestId, id: itemId(args.id) };
+      else command = { action: "status", requestId, id: itemId(args.id), status: args.action === "archive" ? "archived" : "active" };
       const result = await service().command(command, source, context.abortSignal);
       return { output: [{ type: "text", text: JSON.stringify(result) }] };
     },

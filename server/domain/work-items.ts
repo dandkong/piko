@@ -48,6 +48,7 @@ export function itemDraft(value: unknown): WorkItemDraft {
   }
   const scheduleText = typeof input.scheduleText === "string" ? input.scheduleText.trim() : "";
   if (scheduleText.length > 120) throw new WorkItemError("Keep the schedule summary under 120 characters.");
+  if (schedule && !scheduleText) throw new WorkItemError("Add a short scheduleText for this schedule, such as \"每天 9:00\".");
   return { title: input.title.trim(), prompt: input.prompt.trim(), schedule, ...(scheduleText && { scheduleText }) };
 }
 /** Croner evaluates calendar/DST rules only; no library timer or second scheduler. */
