@@ -16,6 +16,15 @@ export function executionId(value: unknown): string {
   if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) throw new WorkItemError("Invalid execution identity.");
   return value;
 }
+/** once.at is an ISO 8601 instant with an explicit offset, normalized to UTC. */
+function onceAt(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(text))
+    throw new WorkItemError("Use an ISO 8601 time with an offset, such as 2026-10-22T09:00:00+08:00.");
+  const at = Date.parse(text);
+  if (!Number.isSafeInteger(at) || at <= 0 || at >= 8.64e15) throw new WorkItemError("Invalid time.");
+  return new Date(at).toISOString();
+}
 export function itemDraft(value: unknown): WorkItemDraft {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WorkItemError("An item is required.");
   const input = value as Record<string, unknown>;
@@ -25,7 +34,7 @@ export function itemDraft(value: unknown): WorkItemDraft {
   if (input.schedule !== null) {
     if (!input.schedule || typeof input.schedule !== "object" || Array.isArray(input.schedule)) throw new WorkItemError("Choose manual, once, or cron scheduling.");
     const rule = input.schedule as Record<string, unknown>;
-    if (rule.type === "once" && typeof rule.at === "number" && Number.isSafeInteger(rule.at) && rule.at > 0 && rule.at < 8.64e15) schedule = { type: "once", at: rule.at };
+    if (rule.type === "once") schedule = { type: "once", at: onceAt(rule.at) };
     else if (rule.type === "cron" && typeof rule.expression === "string" && typeof rule.timezone === "string") {
       const expression = rule.expression.trim().replace(/\s+/g, " ");
       if (expression.length > 120 || expression.split(" ").length !== 5 || rule.timezone.length > 100) throw new WorkItemError("Use a five-field cron expression and an IANA time zone.");
@@ -44,7 +53,7 @@ export function itemDraft(value: unknown): WorkItemDraft {
 /** Croner evaluates calendar/DST rules only; no library timer or second scheduler. */
 export function nextDue(schedule: ItemSchedule, after: number): number | null {
   if (!schedule) return null;
-  if (schedule.type === "once") return schedule.at;
+  if (schedule.type === "once") return Date.parse(schedule.at);
   return new Cron(schedule.expression, { timezone: schedule.timezone }).nextRun(new Date(after))?.getTime() ?? null;
 }
 export function latestDue(schedule: Extract<ItemSchedule, { type: "cron" }>, now: number): number {

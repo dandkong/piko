@@ -1,5 +1,5 @@
 /** Product contracts; native task/conversation IDs remain opaque strings. */
-export type ItemSchedule = null | { type: "once"; at: number } | { type: "cron"; expression: string; timezone: string };
+export type ItemSchedule = null | { type: "once"; at: string } | { type: "cron"; expression: string; timezone: string };
 export type WorkItemDraft = { title: string; prompt: string; schedule: ItemSchedule; scheduleText?: string };
 export type WorkItem = WorkItemDraft & {
   id: string;

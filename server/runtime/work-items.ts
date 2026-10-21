@@ -10,8 +10,15 @@ import { ItemContext, type ItemBinding } from "./item-context";
 import { messageText } from "./pi-history";
 import { JobControl, REPORTER_KIND, subagentIds, taskRecords, type ReporterInput, type ReporterResult, type ReporterState, type SubagentController } from "./subagents";
 
-export const WorkItems = defineDoc<{ items: (Omit<WorkItem, "latest"> & { source: InputSource })[] }>({
-  kind: "piko.work-items", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ items: [] }),
+type StoredItem = Omit<WorkItem, "latest"> & { source: InputSource };
+export const WorkItems = defineDoc<{ items: StoredItem[] }>({
+  kind: "piko.work-items", version: 2, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ items: [] }),
+  // Version 1 stored once.at as Unix milliseconds; stored values are ISO 8601 instants now.
+  migrate: value => ({ items: (Array.isArray(value.items) ? value.items : []).map(entry => {
+    const schedule = (entry as { schedule?: { type?: string; at?: unknown } }).schedule;
+    return schedule?.type === "once" && typeof schedule.at === "number"
+      ? Object.assign({}, entry, { schedule: { type: "once", at: new Date(schedule.at).toISOString() } }) : entry;
+  }) as unknown as StoredItem[] }),
 });
 const Receipts = defineDocFamily<{ hash: string; id: string; executionId: string | null }, null>({
   kind: "piko.item-command", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true,
@@ -217,18 +224,31 @@ export class DurableWorkItems implements WorkItemsRuntime {
 
 /** UI and main assistant share the same service. Children cannot create schedules or delegate. */
 export function createWorkItemTools(service: () => DurableWorkItems) {
-  const schedule = Type.Union([Type.Null(), Type.Object({ type: Type.Literal("once"), at: Type.Number() }),
+  const schedule = Type.Union([Type.Null(), Type.Object({ type: Type.Literal("once"), at: Type.String() }),
     Type.Object({ type: Type.Literal("cron"), expression: Type.String(), timezone: Type.String() })]);
   return defineExtension({ name: "piko-work-items", tools: [defineTool({
     name: "work_item", replay: "unsafe",
-    description: "Manage persistent tasks: one instruction, an optional schedule and a short scheduleText label. list/get inspect tasks; create/update save the instruction, schedule (null=manual, once.at=Unix milliseconds, cron=five fields plus IANA timezone) and scheduleText such as \"每天 9:00\" (shown to the user verbatim: no time zone, no cron syntax); run starts a fresh background assistant; archive stops future triggers and restore re-enables them; stop needs the executionId. Results return privately to you like ordinary subagents; summarize them for the user. Get the current revision before editing. Never claim a schedule ran merely because it exists.",
+    description: "Manage persistent tasks: one instruction, an optional schedule and a short scheduleText label. list returns active tasks without their prompts (pass includeArchived to see archived ones); get adds the full instruction and the latest 5 executions. create/update save the instruction, schedule (null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone) and scheduleText such as \"每天 9:00\" (shown to the user verbatim: no time zone, no cron syntax); run starts a fresh background assistant; archive stops future triggers and restore re-enables them; stop needs the executionId. Results return privately to you like ordinary subagents; summarize them for the user. Get the current revision before editing. Never claim a schedule ran merely because it exists.",
     parameters: Type.Object({ action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value))),
       id: Type.Optional(Type.String()), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), schedule: Type.Optional(schedule),
-      scheduleText: Type.Optional(Type.String()), revision: Type.Optional(Type.Number()), executionId: Type.Optional(Type.String()) }),
+      scheduleText: Type.Optional(Type.String()), revision: Type.Optional(Type.Number()), executionId: Type.Optional(Type.String()),
+      includeArchived: Type.Optional(Type.Boolean()) }),
     execute: async (args, api, context) => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) throw new WorkItemError("Only the main assistant can manage items.", 403);
-      if (args.action === "list") return { content: [{ type: "text", text: JSON.stringify(await service().list()) }] };
-      if (args.action === "get") return { content: [{ type: "text", text: JSON.stringify(await service().detail(itemId(args.id))) }] };
+      if (args.action === "list") {
+        const items = await service().list();
+        // Prompt bodies stay out of list output; the tool only needs identity, timing and the last result.
+        const summary = items.filter(item => args.includeArchived || item.status === "active").map(item => ({ id: item.id,
+          title: item.title, status: item.status, revision: item.revision, schedule: item.schedule, ...(item.scheduleText && { scheduleText: item.scheduleText }),
+          nextDueAt: item.nextDueAt, ...(item.latest && { latest: { status: item.latest.status, startedAt: item.latest.startedAt,
+            ...(item.latest.preview && { preview: item.latest.preview }), ...(item.latest.error && { error: item.latest.error }) } }) }));
+        return { content: [{ type: "text", text: JSON.stringify(summary) }] };
+      }
+      if (args.action === "get") {
+        const detail = await service().detail(itemId(args.id));
+        // Latest executions are enough to report status or target stop; full history stays in the app.
+        return { content: [{ type: "text", text: JSON.stringify({ item: detail.item, executions: detail.executions.slice(0, 5) }) }] };
+      }
       const source = await api.commit(tx => service().source(tx, api.callId), context);
       const requestId = `piko:item-tool:${api.taskId}`;
       let command: WorkItemCommand;

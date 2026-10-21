@@ -8,7 +8,7 @@ import { AssistantMessage } from "../chat/AssistantMessage";
 import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
 
 type Command = WorkItemCommand extends infer T ? T extends WorkItemCommand ? Omit<T, "requestId"> : never : never;
-const dayTime = (value: number) => new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const dayTime = (value: number | string) => new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const statusNames = { running: "正在做", completed: "已完成", failed: "失败", stopped: "已停止", interrupted: "被重启打断" };
 const scheduleLabel = (item: WorkItem) => item.scheduleText ?? (!item.schedule ? "手动" : item.schedule.type === "once" ? dayTime(item.schedule.at) : "定期");
 

@@ -14,7 +14,7 @@ Tasks 导航已启用，只展示 Piko 在替用户做的事：列表仅显示�
 
 ```ts
 type ItemSchedule = null
-  | { type: "once"; at: number }
+  | { type: "once"; at: string }   // ISO 8601，必须带偏移
   | { type: "cron"; expression: string; timezone: string };
 
 type WorkItem = {
@@ -65,7 +65,7 @@ workspace/items/<任务ID>/
 调度器在当前 Bun 后端每秒检查到期定义，Croner 10.0.1 只做时间计算，不启用自己的任务计时器。后端必须在线；客户端关闭不影响执行。
 
 - 手动：schedule=null，没有自动触发。
-- 一次性：at 为 Unix 毫秒；过去的时刻延迟补执行一次。接纳原生任务与将 nextDueAt 清空在同一 commit 完成。
+- 一次性：at 是带显式偏移的 ISO 8601 时刻（如 `2026-10-22T09:00:00+08:00`），存储时规范化为 UTC；过去的时刻延迟补执行一次。接纳原生任务与将 nextDueAt 清空在同一 commit 完成。
 - Cron：五段表达式和明确的 IANA 时区，只在存储与调度内部使用；用户只看到 `scheduleText` 这样的人话标签。时区/夏令时按锁定 Croner 行为计算；例如纽约春季不存在的 02:30 会规范化到 03:30，本项目不另外实现另一套时区算法。
 - 离线漏掉多轮 Cron：只启动最近到期的一轮，并推进到下一个未来时刻。
 - 同一任务只允许一个执行。停止先使回传失效，但只要原生 LiveDoc 仍有工作就继续占位，避免取消未收尾时启动新执行。
