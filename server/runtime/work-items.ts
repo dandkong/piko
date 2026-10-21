@@ -11,9 +11,9 @@ import { messageText } from "./pi-history";
 import { JobControl, REPORTER_KIND, subagentIds, taskRecords, type ReporterInput, type ReporterResult, type ReporterState, type SubagentController } from "./subagents";
 
 type StoredItem = Omit<WorkItem, "latest"> & { source: InputSource };
-/** Version 2 stores once.at as an ISO 8601 instant; no migration is kept for the old millisecond shape. */
+/** once.at is an ISO 8601 instant; the stored shape has no older variant to migrate. */
 export const WorkItems = defineDoc<{ items: StoredItem[] }>({
-  kind: "piko.work-items", version: 2, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ items: [] }),
+  kind: "piko.work-items", version: 1, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ items: [] }),
 });
 const Receipts = defineDocFamily<{ hash: string; id: string; executionId: string | null }, null>({
   kind: "piko.item-command", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true,
