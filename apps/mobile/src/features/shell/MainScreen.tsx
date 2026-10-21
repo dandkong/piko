@@ -8,6 +8,7 @@ import { ChatTab, MESSAGE_GAP } from "../chat/ChatTab";
 import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
 import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
+import { NavigationDrawer } from "./NavigationDrawer";
 
 /** Owns the tab bar, the shared chat subscription, and the composer placement for each tab. */
 export function MainScreen() {
@@ -16,18 +17,30 @@ export function MainScreen() {
 
 function Shell() {
   const [tab, setTab] = useState<AppTab>("Chat");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [footerHeight, setFooterHeight] = useState(0);
   const [keyboardLiftAmount, setKeyboardLiftAmount] = useState(0);
   const keyboardLift = useSharedValue(0);
   const { width } = useWindowDimensions();
   const { ready, draft, setDraft, loading, busy, submitting, status, send, stop, attachments, attaching, attach, removeAttachment } = useChatStore();
+  const selectTab = (value: AppTab) => { Keyboard.dismiss(); setTab(value); };
 
   return (
     <AppShell
       wide={width >= 900}
       activeTab={tab}
-      onTabChange={value => { Keyboard.dismiss(); setTab(value); }}
+      onTabChange={selectTab}
+      menuOpen={menuOpen}
+      onOpenMenu={() => { Keyboard.dismiss(); setMenuOpen(true); }}
+      drawer={(
+        <NavigationDrawer
+          open={menuOpen}
+          activeTab={tab}
+          onSelectTab={value => { selectTab(value); setMenuOpen(false); }}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
       status={status}
       headerHeight={headerHeight}
       footerHeight={footerHeight}

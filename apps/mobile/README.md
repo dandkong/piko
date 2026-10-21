@@ -9,7 +9,7 @@
 - `App.tsx` 负责初始化；`src/components/AppShell.tsx` 管理通用布局；`src/theme.ts` 管理视觉基础。
 - 页面按功能放进 `src/features/`，临时交互状态留在 Hook，持久业务状态归服务端。Chat 的页面、输入框、API 与 SSE transport 位于 `src/features/chat/`。
 - 动效使用 Reanimated 和匹配 Expo SDK 的 Worklets，Babel preset 自动配置插件。`TypingIndicator.tsx` 提供等待动效，启用减少动效时保持静止，卸载后停止循环。
-- 当前非 Chat 导航、菜单、通知和附件保持禁用；不展示不可用的功能页面。
+- 左上菜单打开悬浮导航抽屉，四个页签与底部导航共用 `src/navigation.ts` 的配置；抽屉下方旁聊区目前是空态。抽屉左下设置、右下新建旁聊、通知和附件尚未接入；不展示不可用的功能页面。
 - Android / iOS 生成工程已忽略，原生设置通过 app.json 和配置插件保存。新增原生依赖或原生配置后重建应用，不能只依赖热更新。
 - 键盘弹出时仅输入框与“回到底部”按钮跟随上移，聊天视口和其他控件保持原位。Android 使用 `adjustNothing` 让键盘覆盖底部区域，并由应用移动输入框；此原生设置在 `apps/mobile/plugins/with-android-adjust-nothing.js` 中配置，Android 需使用自定义开发构建，Expo Go 不会应用该插件。iOS 使用键盘事件驱动动画，可在 Expo Go 中验证。
 - 历史默认最近 50 条，向上滚到顶部附近加载更早记录；失败可点击列表顶端重试。分页合并与断线窗口恢复在 shared/history.ts，原生列表保位使用 maintainVisibleContentPosition，Web 使用可见消息 DOM 锚点补齐 RN Web 未实现的保位行为。

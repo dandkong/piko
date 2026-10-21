@@ -1,25 +1,22 @@
-import {
-  Menu,
-  Settings,
-  MessageCircle,
-  PanelsTopLeft,
-  Shapes,
-  SquareCheck,
-} from "lucide-react-native";
+import { Menu } from "lucide-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, type SharedValue, withTiming } from "react-native-reanimated";
+import { navigation, type AppTab } from "../navigation";
 import { colors } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 
 const KEYBOARD_COMPOSER_GAP = 10;
-export type AppTab = "Chat" | "Posts" | "Artifacts" | "Tasks";
+export type { AppTab };
 
-export function AppShell({ children, composer, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
+export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
   children: ReactNode;
   composer: ReactNode;
+  drawer?: ReactNode;
+  menuOpen?: boolean;
+  onOpenMenu?: () => void;
   activeTab?: AppTab;
   onTabChange?: (tab: AppTab) => void;
   wide: boolean;
@@ -73,6 +70,8 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
             wide={wide}
             topInset={insets.top}
             status={status}
+            menuOpen={!!menuOpen}
+            onOpenMenu={onOpenMenu}
             onHeightChange={height => onHeaderHeightChange(height + insets.top)}
           />
           <View
@@ -86,18 +85,12 @@ export function AppShell({ children, composer, wide, status, headerHeight, foote
             </Animated.View>
             <BottomTabs wide={wide} onHeightChange={setTabsHeight} activeTab={activeTab} onTabChange={onTabChange} />
           </View>
+          {drawer}
         </View>
       </View>
     </SafeAreaView>
   );
 }
-
-const navigation = [
-  { label: "Chat", icon: MessageCircle },
-  { label: "Posts", icon: PanelsTopLeft },
-  { label: "Artifacts", icon: Shapes },
-  { label: "Tasks", icon: SquareCheck },
-] as const;
 
 function Mascot({ size }: { size: number }) {
   return (
@@ -116,10 +109,12 @@ function Mascot({ size }: { size: number }) {
   );
 }
 
-function AgentHeader({ wide, topInset, status, onHeightChange }: {
+function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightChange }: {
   wide: boolean;
   topInset: number;
   status: string;
+  menuOpen: boolean;
+  onOpenMenu?: () => void;
   onHeightChange: (height: number) => void;
 }) {
   return (
@@ -131,10 +126,11 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Menu — coming soon"
-        accessibilityState={{ disabled: true }}
-        disabled
-        style={[styles.headerButton, { left: 20, top: 16 }]}
+        accessibilityLabel="Open navigation"
+        accessibilityState={{ expanded: menuOpen, disabled: !onOpenMenu }}
+        disabled={!onOpenMenu}
+        onPress={onOpenMenu}
+        style={({ pressed }) => [styles.headerButton, { left: 20, top: 16 }, pressed && styles.headerButtonPressed]}
       >
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
       </Pressable>
@@ -145,25 +141,9 @@ function AgentHeader({ wide, topInset, status, onHeightChange }: {
           {status ? <Text testID="chat-activity-status" numberOfLines={1} accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
         </View>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Settings — coming soon"
-        accessibilityState={{ disabled: true }}
-        disabled
-        style={[styles.headerButton, { right: 20, top: 16 }]}
-      >
-        <Settings size={20} strokeWidth={1.8} color={colors.text} />
-      </Pressable>
     </View>
   );
 }
-
-const hints: Record<(typeof navigation)[number]["label"], string> = {
-  Chat: "Main conversation",
-  Posts: "Assistant posts",
-  Artifacts: "Files and results",
-  Tasks: "Recurring work",
-};
 
 function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: boolean; onHeightChange: (height: number) => void; activeTab: AppTab; onTabChange?: (tab: AppTab) => void }) {
   const index = Math.max(0, navigation.findIndex(item => item.label === activeTab));
@@ -181,7 +161,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
         onLayout={({ nativeEvent: { layout } }) => setTrackWidth(Math.max(0, layout.width - 10))}>
         <Animated.View pointerEvents="none"
           style={[styles.activePill, { width: trackWidth / navigation.length }, pillStyle]} />
-        {navigation.map(({ label, icon: Icon }) => {
+        {navigation.map(({ label, icon: Icon, hint }) => {
           const active = label === activeTab;
           const enabled = !!onTabChange;
           return (
@@ -189,7 +169,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
               key={label}
               accessibilityRole="tab"
               accessibilityLabel={label}
-              accessibilityHint={enabled ? hints[label] : "Coming soon"}
+              accessibilityHint={enabled ? hint : "Coming soon"}
               accessibilityState={{ selected: active, disabled: !enabled }}
               aria-selected={active}
               disabled={!enabled}
@@ -278,6 +258,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
+  },
+  headerButtonPressed: {
+    opacity: 0.7,
   },
   tabBarWrap: {
     paddingHorizontal: 22,
