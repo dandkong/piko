@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { getRandomBytes } from "expo-crypto";
-import type { ConversationResponse, HistoryPage } from "../../../../../shared/chat";
-import { checkHealth, isAbortError, loadConversation, loadHistory, observe, submit, stopConversation } from "./api";
+import { MAX_ATTACHMENTS, type ConversationResponse, type HistoryPage, type MessageAttachment } from "../../../../../shared/chat";
+import { checkHealth, isAbortError, loadConversation, loadHistory, observe, submit, stopConversation, uploadAttachment } from "./api";
+import { pickAttachments } from "./pickAttachments";
 import { mergeHistorySnapshot, prependHistoryPage } from "../../../../../shared/history";
 import { applyMessageEvent } from "../../../../../shared/messages";
 import { HttpStreamError } from "./transport";
@@ -13,6 +14,8 @@ function randomUUID() {
   const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+export type PendingAttachment = MessageAttachment & { name: string };
+
 export function useChat() {
   const [history, setHistory] = useState<HistoryPage>({ messages: [] }); const [draft, setDraft] = useState("");
   const messages = history.messages;
@@ -23,7 +26,8 @@ export function useChat() {
   const [connected, setConnected] = useState(false); const [reconnecting, setReconnecting] = useState(false);
   const [stopping, setStopping] = useState(false); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
   const [foreground, setForeground] = useState(AppState.currentState === "active");
-  const mounted = useRef(true); const pending = useRef<{ id: string; message: string; createdAt: number } | null>(null);
+  const mounted = useRef(true); const pending = useRef<{ id: string; message: string; createdAt: number; attachments: PendingAttachment[] } | null>(null);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]); const [attaching, setAttaching] = useState(false);
   const sending = useRef(false); const submitController = useRef<AbortController | undefined>(undefined); const lastMessage = useRef("");
   const observedVersion = useRef(0);
   const stopId = useRef<string | undefined>(undefined); const modelReady = useRef(false);
@@ -87,19 +91,40 @@ export function useChat() {
       if (mounted.current) setLoadingOlder(false);
     }
   }, [loading]);
+  const attach = useCallback(async () => {
+    if (sending.current || loading || attaching) return;
+    setError("");
+    let files;
+    try { files = await pickAttachments(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't open the file picker."); return; }
+    if (!files.length) return;
+    setAttaching(true);
+    try {
+      const room = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+      if (files.length > room) setError(`Up to ${MAX_ATTACHMENTS} attachments per message.`);
+      for (const file of files.slice(0, room)) {
+        const stored = await uploadAttachment(file);
+        setAttachments(current => current.length >= MAX_ATTACHMENTS ? current : [...current, { ...stored, name: file.name }]);
+      }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't upload the attachment."); }
+    finally { if (mounted.current) setAttaching(false); }
+  }, [attachments.length, loading, attaching]);
+  const removeAttachment = useCallback((id: string) => { setAttachments(current => current.filter(item => item.id !== id)); }, []);
   const send = useCallback(async (text = draft, retry = false) => {
-    const content = text.trim(); if (!content || sending.current || stopping || loading) return;
-    const input = retry && pending.current ? pending.current : { id: randomUUID(), message: content, createdAt: Date.now() };
-    pending.current = input; lastMessage.current = input.message; sending.current = true; setSubmitting(true); setDraft(""); setError("");
-    setHistory(current => ({ ...current, messages: [...current.messages.filter(item => item.requestId !== input.id), { id: `input-${input.id}`, role: "user", content: input.message, createdAt: input.createdAt, requestId: input.id }] }));
+    const content = text.trim();
+    const input = retry && pending.current ? pending.current
+      : { id: randomUUID(), message: content, createdAt: Date.now(), attachments };
+    if ((!input.message && !input.attachments.length) || sending.current || stopping || loading || attaching) return;
+    pending.current = input; lastMessage.current = input.message; sending.current = true; setSubmitting(true); setDraft(""); setAttachments([]); setError("");
+    setHistory(current => ({ ...current, messages: [...current.messages.filter(item => item.requestId !== input.id), { id: `input-${input.id}`, role: "user", content: input.message, createdAt: input.createdAt, requestId: input.id, ...(input.attachments.length && { attachments: input.attachments }) }] }));
     const controller = new AbortController(); submitController.current = controller;
-    try { await submit(input.message, input.id, controller.signal); if (mounted.current) await refresh(); }
+    try { await submit(input.message, input.id, controller.signal, input.attachments.map(item => item.id)); if (mounted.current) await refresh(); }
     catch (cause) {
       if (!mounted.current || isAbortError(cause)) return;
-      if (cause instanceof HttpStreamError && cause.status < 500) { pending.current = null; setDraft(input.message); setHistory(current => ({ ...current, messages: current.messages.filter(item => item.requestId !== input.id) })); }
+      if (cause instanceof HttpStreamError && cause.status < 500) { pending.current = null; setDraft(input.message); setAttachments(input.attachments); setHistory(current => ({ ...current, messages: current.messages.filter(item => item.requestId !== input.id) })); }
       setError(cause instanceof Error ? cause.message : "Couldn't send message.");
     } finally { sending.current = false; if (mounted.current) setSubmitting(false); }
-  }, [draft, stopping, loading, refresh]);
+  }, [draft, stopping, loading, refresh, attachments, attaching]);
   const stop = useCallback(async () => {
     if (stopping) return; setStopping(true); stopId.current ??= randomUUID();
     try { await stopConversation(stopId.current); stopId.current = undefined; await refresh(); }
@@ -112,7 +137,8 @@ export function useChat() {
     else if (lastMessage.current && error && !busy) await send(lastMessage.current);
     else { try { await refresh(); } catch (cause) { setError(String(cause)); } }
   }, [send, refresh, submitting, stopping, busy, error]);
-  const status = loading ? "Connecting…" : stopping ? "Stopping…" : reconnecting ? "Reconnecting…" : busy ? "Thinking…" : connected ? "" : "Waiting to connect";
+  const status = loading ? "Connecting…" : attaching ? "Uploading…" : stopping ? "Stopping…" : reconnecting ? "Reconnecting…" : busy ? "Thinking…" : connected ? "" : "Waiting to connect";
   return { ready: !loading && modelReady.current, messages, draft, setDraft, loading, busy, submitting, error, status, send, stop, retry,
+    attachments, attach, removeAttachment, attaching,
     hasOlder: !!history.nextBefore, loadingOlder, olderError, loadOlder };
 }

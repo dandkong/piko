@@ -2,7 +2,8 @@ import type { Cursor, EntryRecord, Session, Storage, ConversationId, Tx } from "
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
-import { CHAT_PAGE_SIZE, type HistoryPage, type Message } from "../../shared/chat";
+import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
+import { detectExtension } from "../attachments";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -69,10 +70,16 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
   return { ...result, entries };
 }
 
-/** Attachment paths are model input, not chat copy: show a marker instead of the raw block. */
-const ATTACHED = /^<attached>\n[\s\S]*?\n<\/attached>\n?/;
-function displayText(content: string): string {
-  return content.replace(ATTACHED, "").trim() || "📎 附件";
+/** Attachment paths are model input; the UI gets ids and served URLs instead of the raw block. */
+const ATTACHED = /^<attached>\n([\s\S]*?)\n<\/attached>\n?/;
+function splitAttachments(content: string): { text: string; attachments?: MessageAttachment[] } {
+  const match = ATTACHED.exec(content);
+  if (!match) return { text: content };
+  const attachments = match[1].split("\n").map(line => line.trim()).filter(Boolean).map(path => {
+    const id = path.slice(path.lastIndexOf("/") + 1);
+    return { id, url: `/api/attachments/${encodeURIComponent(id)}`, mime: detectExtension(id) };
+  });
+  return { text: content.slice(match[0].length).trim(), ...(attachments.length && { attachments }) };
 }
 
 export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>(), hidden = new Set<number>()) {
@@ -82,11 +89,11 @@ export function projectPiHistory(entries: readonly EntryRecord[], inputs = new M
     if (entry.kind === "pi.user" || entry.kind === "pi.assistant") {
       for (const message of entry.model ?? []) {
         if (message.role !== "user" && message.role !== "assistant") continue;
-        const content = messageText(message.content);
+        const raw = messageText(message.content);
+        const { text, attachments } = message.role === "user" ? splitAttachments(raw) : { text: raw };
         const requestId = message.role === "user" ? inputs.get(entry.id) : undefined;
-        const shown = message.role === "user" ? displayText(content) : content;
-        if (content.trim()) messages.push({ id: "pi-" + entry.id, role: message.role, content: shown,
-          createdAt: message.timestamp, ...(requestId && { requestId }) });
+        if (text.trim() || attachments?.length) messages.push({ id: "pi-" + entry.id, role: message.role, content: text,
+          createdAt: message.timestamp, ...(requestId && { requestId }), ...(attachments && { attachments }) });
       }
     } else if (entry.kind === "piko.result" && data(entry).display === true) {
       const content = (entry.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");

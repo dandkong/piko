@@ -14,6 +14,7 @@ import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { AssistantMessage } from "./AssistantMessage";
+import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
 import { useChatAnchor } from "./useChatAnchor";
@@ -73,7 +74,8 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
 
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
     const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
-    if (!item.content.trim() && !waitingForText) return null;
+    const hasContent = !!item.content.trim();
+    if (!hasContent && !item.attachments?.length && !waitingForText) return null;
     const previous = messages[index - 1];
     const divider = shouldShowTimestamp(previous?.createdAt, item.createdAt)
       ? <Text accessibilityLabel="Message time" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
@@ -87,10 +89,15 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
         >
           {waitingForText ? (
             <TypingIndicator />
-          ) : item.role === "assistant" ? (
-            <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
           ) : (
-            <Text selectable style={styles.messageText}>{item.content}</Text>
+            <View style={{ gap: 7 }}>
+              <AttachmentList attachments={item.attachments} />
+              {hasContent ? (item.role === "assistant" ? (
+                <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
+              ) : (
+                <Text selectable style={styles.messageText}>{item.content}</Text>
+              )) : null}
+            </View>
           )}
         </View>
       </>

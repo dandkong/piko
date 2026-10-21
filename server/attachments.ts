@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 
 /** One stored upload. The model reads `path`; channels share the same file. */
 export type StoredAttachment = { id: string; path: string; mime: string; bytes: number };
@@ -19,7 +19,6 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/wav": "wav",
   "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm",
 };
-const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
 
 /** Sniff the formats both the model and the image processor accept; never trust a client-supplied type. */
 export function detectAttachmentMimeType(bytes: Uint8Array): string | undefined {
@@ -33,30 +32,47 @@ export function detectAttachmentMimeType(bytes: Uint8Array): string | undefined 
 }
 
 /**
- * Downloads and app uploads land here, outside the workspace: attachments are runtime data, not user content.
- * Names are server-generated, so a path never comes from a client.
+ * Files keep the name they arrived with; a repeated name overwrites the earlier file. Only the last path segment is
+ * used, so a client can never choose a directory, and control characters are dropped.
  */
+export function safeAttachmentName(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  let value = basename(name.replace(/\\/g, "/")).replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!value || value === "." || value === "..") return undefined;
+  // Filesystems cap a single name; keep the extension when trimming bytes.
+  if (Buffer.byteLength(value) > 200) {
+    const dot = value.lastIndexOf(".");
+    const suffix = dot > 0 ? value.slice(dot) : "";
+    let head = dot > 0 ? value.slice(0, dot) : value;
+    while (head && Buffer.byteLength(head + suffix) > 200) head = head.slice(0, -1);
+    value = head + suffix;
+  }
+  return value;
+}
+
+/** Downloads and app uploads land here, outside the workspace: attachments are runtime data, not user content. */
 export class AttachmentStore {
   constructor(readonly directory: string, private readonly maxBytes = MAX_ATTACHMENT_BYTES) {}
 
-  /** Any file is kept: the model decides how to inspect it. Only the suffix is taken from the name, never a path. */
+  /** Any file is kept under its own name; the model decides how to inspect it. */
   async save(input: { bytes: Uint8Array; name?: string; mime?: string }): Promise<StoredAttachment> {
     const { bytes } = input;
     if (!bytes.length) throw new Error("The attachment is empty.");
     if (bytes.length > this.maxBytes) throw new Error("The attachment is too large.");
     const detected = detectAttachmentMimeType(bytes);
-    const extension = nameExtension(input.name) ?? (detected && MIME_EXTENSIONS[detected])
-      ?? (input.mime && MIME_EXTENSIONS[input.mime]) ?? "bin";
-    const id = `${randomUUID()}.${extension}`;
+    const extension = nameExtension(input.name) ?? (detected && MIME_EXTENSIONS[detected]) ?? (input.mime && MIME_EXTENSIONS[input.mime]) ?? "bin";
+    const id = withExtension(safeAttachmentName(input.name) ?? randomUUID(), extension);
+    const fromExtension = detectExtension(id);
+    const mime = detected ?? (fromExtension !== "application/octet-stream" ? fromExtension : input.mime ?? "application/octet-stream");
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const path = join(this.directory, id);
-    await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-    return { id, path, mime: detected ?? input.mime ?? "application/octet-stream", bytes: bytes.length };
+    const path = this.pathOf(id);
+    await writeFile(path, bytes, { mode: 0o600 });
+    return { id, path, mime, bytes: bytes.length };
   }
 
   async read(id: string): Promise<{ attachment: StoredAttachment; bytes: Uint8Array } | undefined> {
-    if (!ID.test(id)) return undefined;
-    const path = join(this.directory, id);
+    if (!this.allowed(id)) return undefined;
+    const path = this.pathOf(id);
     try {
       const bytes = new Uint8Array(await readFile(path));
       return { attachment: { id, path, mime: detectExtension(id), bytes: bytes.length }, bytes };
@@ -64,8 +80,8 @@ export class AttachmentStore {
   }
 
   async lookup(id: string): Promise<StoredAttachment | undefined> {
-    if (!ID.test(id)) return undefined;
-    const path = join(this.directory, id);
+    if (!this.allowed(id)) return undefined;
+    const path = this.pathOf(id);
     try {
       const info = await stat(path);
       return info.isFile() ? { id, path, mime: detectExtension(id), bytes: info.size } : undefined;
@@ -78,14 +94,23 @@ export class AttachmentStore {
     try { names = await readdir(this.directory); } catch { return 0; }
     let removed = 0;
     for (const name of names) {
-      if (!ID.test(name)) continue;
-      const path = join(this.directory, name);
+      if (!this.allowed(name)) continue;
+      const path = this.pathOf(name);
       try {
-        if (now - (await stat(path)).mtimeMs < maxAgeMs) continue;
+        const info = await stat(path);
+        if (!info.isFile() || now - info.mtimeMs < maxAgeMs) continue;
         await unlink(path); removed++;
       } catch { /* A concurrent sweep or a manual deletion is fine. */ }
     }
     return removed;
+  }
+
+  private pathOf(id: string): string {
+    return join(this.directory, id);
+  }
+
+  private allowed(id: string): boolean {
+    return safeAttachmentName(id) === id && resolve(this.pathOf(id)).startsWith(resolve(this.directory) + sep);
   }
 }
 
@@ -94,7 +119,11 @@ function nameExtension(name: string | undefined): string | undefined {
   return value && /^[a-z0-9]+$/.test(value) ? value : undefined;
 }
 
-function detectExtension(id: string): string {
-  const extension = id.slice(id.lastIndexOf(".") + 1);
+function withExtension(name: string, extension: string): string {
+  return nameExtension(name) ? name : `${name}.${extension}`;
+}
+
+export function detectExtension(id: string): string {
+  const extension = id.slice(id.lastIndexOf(".") + 1).toLowerCase();
   return Object.entries(MIME_EXTENSIONS).find(([, value]) => value === extension)?.[0] ?? "application/octet-stream";
 }

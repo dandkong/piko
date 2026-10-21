@@ -21,7 +21,7 @@ function Shell() {
   const [keyboardLiftAmount, setKeyboardLiftAmount] = useState(0);
   const keyboardLift = useSharedValue(0);
   const { width } = useWindowDimensions();
-  const { ready, draft, setDraft, loading, busy, submitting, status, send, stop } = useChatStore();
+  const { ready, draft, setDraft, loading, busy, submitting, status, send, stop, attachments, attaching, attach, removeAttachment } = useChatStore();
 
   return (
     <AppShell
@@ -41,6 +41,7 @@ function Shell() {
         <ChatComposer
           draft={draft} onChange={setDraft} loading={loading} busy={busy}
           ready={ready && !submitting} onSend={(text) => void send(text)} onStop={stop}
+          attachments={attachments} attaching={attaching} onAttach={() => void attach()} onRemoveAttachment={removeAttachment}
         />
       ) : null}
     >

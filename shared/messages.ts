@@ -7,6 +7,6 @@ export function applyMessageEvent(messages: readonly Message[], event: MessageEv
   const ids = new Set([event.message.id, event.previousId]);
   const index = messages.findIndex(message => ids.has(message.id));
   const result = messages.filter(message => !ids.has(message.id));
-  if (event.message.content.trim()) result.splice(index < 0 ? result.length : Math.min(index, result.length), 0, event.message);
+  if (event.message.content.trim() || event.message.attachments?.length) result.splice(index < 0 ? result.length : Math.min(index, result.length), 0, event.message);
   return result;
 }

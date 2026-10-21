@@ -21,8 +21,8 @@ export function createApp({ config, runtime, conversations, attachments, web }: 
         const bytes = new Uint8Array(await request.arrayBuffer());
         if (bytes.length > MAX_ATTACHMENT_BYTES) return reply(json({ error: "The attachment is too large." }, 413));
         try {
-          const saved = await attachments.save({ bytes, mime: request.headers.get("content-type") ?? undefined });
-          return reply(json({ id: saved.id, mime: saved.mime, bytes: saved.bytes, url: `/api/attachments/${saved.id}` }, 201));
+          const saved = await attachments.save({ bytes, name: url.searchParams.get("name") ?? undefined, mime: request.headers.get("content-type") ?? undefined });
+          return reply(json({ id: saved.id, mime: saved.mime, bytes: saved.bytes, url: `/api/attachments/${encodeURIComponent(saved.id)}` }, 201));
         } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "The attachment was rejected." }, 422)); }
       }
       if (request.method === "GET" && url.pathname.startsWith("/api/attachments/")) {

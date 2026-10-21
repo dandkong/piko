@@ -43,13 +43,14 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
 }
 /** Unknown acknowledgements retry the same request; a new ID is only for a new user action. */
 export async function submitMessage(message: string, requestId: string, signal: AbortSignal,
-  transport: { fetch: (path: string, init?: RequestInit) => Promise<Response>; wait?: typeof waitForRetry }) {
+  transport: { fetch: (path: string, init?: RequestInit) => Promise<Response>; wait?: typeof waitForRetry },
+  attachmentIds?: string[]) {
   for (let attempt = 0; ; attempt++) {
     const controller = new AbortController(); const abort = () => controller.abort();
     const timer = setTimeout(abort, 10000); signal.addEventListener("abort", abort, { once: true });
     try {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      const response = await transport.fetch("/api/chat", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message }) });
+      const response = await transport.fetch("/api/chat", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message, ...(attachmentIds?.length && { attachmentIds }) }) });
       const result = await response.json();
       if (!response.ok) throw new HttpStreamError(result.error ?? "Couldn't send message.", response.status);
       return result;

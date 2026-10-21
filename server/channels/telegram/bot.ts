@@ -31,11 +31,11 @@ export class TelegramBot {
       const caption = "caption" in message ? message.caption : undefined;
       // Whatever the user sends is stored and the path reaches the model; it decides how to inspect the file.
       const attachments = [
-        ...(photo ? [{ fileId: photo.file_id, name: "photo.jpg", mime: "image/jpeg" }] : []),
+        ...(photo ? [{ fileId: photo.file_id, name: `photo-${Date.now()}.jpg`, mime: "image/jpeg" }] : []),
         ...(document ? [{ fileId: document.file_id, name: document.file_name, mime: document.mime_type }] : []),
-        ...(video ? [{ fileId: video.file_id, name: video.file_name ?? "video.mp4", mime: video.mime_type }] : []),
-        ...(audio ? [{ fileId: audio.file_id, name: audio.file_name ?? "audio.mp3", mime: audio.mime_type }] : []),
-        ...(voice ? [{ fileId: voice.file_id, name: "voice.ogg", mime: voice.mime_type ?? "audio/ogg" }] : []),
+        ...(video ? [{ fileId: video.file_id, name: video.file_name ?? `video-${Date.now()}.mp4`, mime: video.mime_type }] : []),
+        ...(audio ? [{ fileId: audio.file_id, name: audio.file_name ?? `audio-${Date.now()}.mp3`, mime: audio.mime_type }] : []),
+        ...(voice ? [{ fileId: voice.file_id, name: `voice-${Date.now()}.ogg`, mime: voice.mime_type ?? "audio/ogg" }] : []),
       ].slice(0, MAX_ATTACHMENTS);
       await this.channel?.handle({ chatId: String(ctx.chat.id), messageId: String(message.message_id),
         actorId: String(ctx.from?.id ?? ""), chatType: ctx.chat.type, text: message.text ?? caption, attachments,
