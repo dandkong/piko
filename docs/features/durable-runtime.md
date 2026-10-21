@@ -23,10 +23,10 @@ bun run dev
 
 首次启动补齐 config、state 和 workspace，只创建缺失文件。未配置模型时仍能打开 API、查看主会话和配置元数据，发送消息会提示配置模型。旧状态不会自动迁移或删除。
 
-敏感凭据只放后端环境或私有 config/.env，JSON 不接受 API Key/Token，auth.json 已退出凭据读取。DeepSeek 示例：
+模型凭据只认 config/auth.json 与 config/models.json 的 `providers.<id>.apiKey`，不读环境变量；部署参数、通道与工具凭据仍在后端环境或私有 config/.env：
 
 ```dotenv
-DEEPSEEK_API_KEY="填写你的 DeepSeek API Key"
+BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 ```
 
 环境与 JSON 不提供同一字段的双入口；分工和旧部署调整见 [应用配置](application-config.md)。
@@ -94,14 +94,14 @@ models.json 支持内建供应商覆盖和自定义模型，只存元数据与�
 }
 ```
 
-在后端环境或 .env 设置 CUSTOM_API_KEY，在 piko.json 的 agent.profiles 选择 custom/对应模型。自定义供应商的变量名是规范化大写 provider ID 加 _API_KEY；模型地址、token 上限、reasoning 和 compat 要符合实际服务。
+把凭据写进 config/models.json 的 providers.custom.apiKey 或 config/auth.json，模型定义写在 providers.custom.models；模型地址、token 上限、reasoning 和 compat 要符合实际服务。模型凭据不读环境变量。
 
 - 自定义 API 支持 openai-completions、openai-responses、anthropic-messages。其他 pi-ai 内建供应商继续使用其原生适配器；不声称 JSON 能注册任意 API 实现。
 - 模型 maxTokens 是能力上限，request.maxTokens 是本次请求的默认输出预算；request.temperature 是采样默认值。模型级 request 可覆盖供应商级。
 - 支持 name、api、baseUrl、reasoning、input、cost、contextWindow、maxTokens、thinkingLevelMap、samplingParams、headersEnv、compat 和 request；modelOverrides 按 ID 覆盖内建模型。
-- JSON 不支持 apiKey 或 header 值字段 headers。headersEnv 只存变量名称，例如 `{"Authorization":"CUSTOM_AUTH_HEADER"}`；实际完整 header 值只放环境，不支持字面值或 env: 前缀的混合解析。keyless 仍是 JSON 中的非敏感行为，用于无鉴权本机服务。
+- 供应商凭据写 `providers.<id>.apiKey`（与 Pi 格式一致）或放进 auth.json；模型级 apiKey 与 header 值字段 headers 仍不接受。headersEnv 只存变量名称，例如 `{"Authorization":"CUSTOM_AUTH_HEADER"}`；实际完整 header 值只放环境，不支持字面值或 env: 前缀的混合解析。keyless 仍是 JSON 中的非敏感行为，用于无鉴权本机服务，且与 apiKey 互斥。
 - 可选 config/.env 与进程环境只管理部署/敏感字段，进程值优先；JSON 行为没有环境覆盖入口，不修改进程全局环境。Expo 的客户端环境独立设置；改动后重启生效。
-- 已有 OAuth 凭据改为私有 .env 的 PIKO_OAUTH_<规范化供应商 ID> 序列化值，由 EnvironmentCredentialStore 配合 pi-ai 刷新、0600 原子写回并同步同一后端的存储读者，不写凭据 JSON。可变 OAuth 不接受进程环境 override，防止重启用到旧 refresh token；Piko 仍没有交互登录/授权页面。
+- auth.json 兼容 Pi 的 `type: "oauth"` 条目，但 Piko 只读不写，刷新与登录仍由 Pi 负责；Piko 仍没有交互登录/授权页面。
 - JSON 使用严格校验，未知字段报错，不静默忽略。解析错误仅报告文件/字段，不把凭据值放进错误响应。
 
 Piko 不再暴露 compaction/retry 配置，不在 Harness 启动时覆盖这两项；直接使用 Durable 默认策略。当前锁定版本默认启用自动压缩和重试（最多额外 3 次），不是删除功能。agent.stream 仍可选配 transport/timeoutMs/maxRetries/maxRetryDelayMs/cacheRetention；这是模型供应商连接选项，不是 Harness 生成重试策略，客户端聊天仍使用 Piko SSE。
@@ -114,11 +114,11 @@ Piko 不再暴露 compaction/retry 配置，不在 Harness 启动时覆盖这两
 # 只返回配置元数据与能力，不返回 API Key
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime
 
-# 选择预设
+# 选择模型与思考强度
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime/selection -Method Post `
-  -ContentType "application/json" -Body '{"profile":"careful"}'
+  -ContentType "application/json" -Body '{"provider":"custom","model":"gpt-6.1-sol","thinking":"high"}'
 
-# 也可直接选 provider/model，或仅修改思考强度
+# 也可仅修改思考强度
 Invoke-RestMethod http://127.0.0.1:8787/api/runtime/selection -Method Post `
   -ContentType "application/json" -Body '{"thinking":"high"}'
 

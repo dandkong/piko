@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import {
   createProvider,
-  envApiKeyAuth,
   getSupportedThinkingLevels,
   type Api,
   type Model,
@@ -28,7 +27,7 @@ import {
   type ModelProfile,
 } from "../config/schema.ts";
 import { readApplicationSettings } from "../config.ts";
-import { EnvironmentCredentialStore } from "./credentials.ts";
+import { StoredCredentialStore } from "./credentials.ts";
 
 const string = Type.String({ minLength: 1 });
 const positive = Type.Integer({ minimum: 1 });
@@ -128,6 +127,8 @@ const providerSchema = object({
   name: Type.Optional(string),
   baseUrl: Type.Optional(string),
   api: Type.Optional(string),
+  /** Inline credential, matching the Pi models.json format; auth.json stays the higher-priority store. */
+  apiKey: Type.Optional(string),
   keyless: Type.Optional(Type.Boolean()),
   headersEnv: Type.Optional(headerEnvironment),
   compat: Type.Optional(compat),
@@ -158,12 +159,14 @@ export async function loadWorkspaceModels(
   const config = readJson(join(paths.config, "models.json"), modelsSchema, {
     providers: {},
   });
+  const credentials = new StoredCredentialStore(join(paths.config, "auth.json"));
   const builtins = injected
     ? undefined
     : builtinModels({
-        credentials: new EnvironmentCredentialStore(home, env),
+        credentials,
+        // Model credentials live in config/auth.json and models.json only, never in the process env.
         authContext: {
-          env: async (name) => env[name],
+          env: async () => undefined,
           fileExists: async (path) =>
             existsSync(
               path.startsWith("~/") ? join(homedir(), path.slice(2)) : path,
@@ -174,7 +177,7 @@ export async function loadWorkspaceModels(
   if (!injected) {
     for (const [id, provider] of Object.entries(config.providers))
       builtins!.setProvider(
-        configureProvider(id, provider, models.getProvider(id), env),
+        configureProvider(id, provider, models.getProvider(id), env, credentials.apiKey(id)),
       );
   }
   const profiles = agent.profiles as Record<string, ModelProfile>;
@@ -212,7 +215,7 @@ export async function requireAvailableModel(
   );
   if (!model)
     throw new Error(
-      `Model ${profile.provider}/${profile.model} is unavailable. Check backend credential environment variables or config/.env.`,
+      `Model ${profile.provider}/${profile.model} is unavailable. Add its key to config/auth.json or models.json providers.`,
     );
   return model;
 }
@@ -222,6 +225,7 @@ function configureProvider(
   config: ProviderConfig,
   builtin: Provider | undefined,
   env: Record<string, string | undefined>,
+  storedKey?: string,
 ): Provider {
   const location = `models.json providers.${id}`;
   const resolveHeaders = (values?: Record<string, string>) => values && Object.fromEntries(
@@ -319,15 +323,29 @@ function configureProvider(
         `${location} model ${model.id}: request.maxTokens exceeds the model maxTokens`,
       );
   }
+  if (config.keyless && config.apiKey)
+    throw new Error(
+      `${location}: choose either keyless or apiKey, not both`,
+    );
   const auth = config.keyless
     ? {
         apiKey: { name: "Local endpoint", resolve: async () => ({ auth: {} }) },
       }
-    : (builtin?.auth ?? {
-        apiKey: envApiKeyAuth(`${id} API key`, [
-          `${id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`,
-        ]),
-      });
+    : storedKey
+      ? {
+          apiKey: {
+            name: `${id} stored API key`,
+            resolve: async () => ({ auth: { apiKey: storedKey } }),
+          },
+        }
+      : config.apiKey
+        ? {
+            apiKey: {
+              name: `${id} API key`,
+              resolve: async () => ({ auth: { apiKey: config.apiKey } }),
+            },
+          }
+        : { apiKey: { name: `${id} API key`, resolve: async () => undefined } };
   const configuredHeaders = {
     ...builtin?.headers,
     ...resolveHeaders(config.headersEnv),

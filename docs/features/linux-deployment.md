@@ -36,7 +36,6 @@ PIKO_HOME=/home/your-user/.piko bun run start
 PIKO_HOST=127.0.0.1
 PIKO_PORT=8787
 PIKO_TELEGRAM_BOT_TOKEN="填写轮换后、未暴露的 token"
-DEEPSEEK_API_KEY="填写模型 API Key"
 BRAVE_SEARCH_API_KEY="填写搜索 API Key"
 ```
 
