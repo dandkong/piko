@@ -1,7 +1,7 @@
 import type { ConversationStore } from "../../chat/conversations";
 import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
-import { MAX_ATTACHMENTS } from "../../../shared/chat";
+import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
@@ -21,6 +21,13 @@ export const TELEGRAM_COMMANDS = [
   { command: "models", description: "Choose a model" }, { command: "thinking", description: "Set thinking level" },
   { command: "compact", description: "Compact context" },
 ];
+function toolIcon(name: string): string {
+  if (name === "read") return "📖";
+  if (name === "bash") return "💻";
+  if (name === "edit") return "📝";
+  if (name === "write") return "📄";
+  return "🛠️";
+}
 const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
   TELEGRAM_COMMANDS.map(item => `/${item.command} — ${item.description}`).join("\n") +
   "\n\nUse /recent to see replies from the app. Model changes and maintenance are available when Piko is idle.";
@@ -37,6 +44,9 @@ export class TelegramChannel {
   private readonly menus: TelegramMenus;
   private pendingReports = new Map<string, Set<string>>();
   private unsubscribeReplies?: () => void;
+  private unsubscribeTools?: () => void;
+  private toolQueue = Promise.resolve();
+  private readonly toolMessages = new Map<string, string>();
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
@@ -52,6 +62,9 @@ export class TelegramChannel {
       const pending = this.pendingReports.get(chatId) ?? new Set<string>(); pending.add(reply.requestId); this.pendingReports.set(chatId, pending);
       this.startDelivery(chatId, new Set(reply.knownMessageIds));
     }).then(unsubscribe => { if (this.accepting) this.unsubscribeReplies = unsubscribe; else unsubscribe(); }));
+    void conversations.subscribeToolActivity(event => this.queueTool(event))
+      .then(unsubscribe => { if (this.accepting) this.unsubscribeTools = unsubscribe; else unsubscribe(); })
+      .catch(error => console.warn("Telegram tool activity subscription failed:", error instanceof Error ? error.message : "failed"));
   }
 
   handleCallback(callback: TelegramCallback): void {
@@ -100,6 +113,29 @@ export class TelegramChannel {
     } catch (error) {
       if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy. Try again when it's ready."); return; }
       throw error;
+    }
+  }
+
+  private queueTool(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): void {
+    this.toolQueue = this.toolQueue.then(() => this.handleToolActivity(event))
+      .catch(error => console.warn(`Telegram tool activity failed (${telegramErrorCode(error)}).`));
+  }
+
+  /** Shows each call while the run is active; the whole round is removed when it settles. */
+  private async handleToolActivity(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): Promise<void> {
+    if (event.type === "tool-clear") { await this.deleteToolMessages(); return; }
+    if (!this.accepting || event.activity.status !== "running") return;
+    const { name, summary } = event.activity;
+    const messageId = await this.api.send(this.identity.userId, `${toolIcon(name)} ${name}${summary ? `: ${summary}` : ""}`, false);
+    this.toolMessages.set(event.activity.callId, messageId);
+  }
+
+  private async deleteToolMessages(): Promise<void> {
+    const ids = [...this.toolMessages.values()].reverse();
+    this.toolMessages.clear();
+    for (const messageId of ids) {
+      try { await this.api.remove(this.identity.userId, messageId); }
+      catch { /* the message may already be gone or too old to delete */ }
     }
   }
 
@@ -172,11 +208,11 @@ export class TelegramChannel {
     void task.then(() => this.tasks.delete(task));
   }
 
-  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); }
+  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); this.unsubscribeTools?.(); }
 
   async drain(timeoutMs = 3000): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    try { await Promise.race([Promise.all([...this.tasks]), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
+    try { await Promise.race([Promise.all([...this.tasks, this.toolQueue]), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
     finally { clearTimeout(timer); this.controller.abort(); }
   }
 }

@@ -9,6 +9,7 @@ import type { ChatUsage } from "../../shared/chat";
 import type { WorkspacePaths } from "../domain/workspace";
 import type { BackgroundReply, InputSource, ChatRuntime, ChatSession, SessionEvent } from "./types";
 import { attachmentPrompt } from "../chat/input";
+import { summarizeToolArgs } from "./tool-activity";
 import { RuntimeBusyError } from "./types";
 import { sessionDirectory } from "./pi-context";
 import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiInputs } from "./pi-history";
@@ -78,6 +79,7 @@ export class DurableChatSession implements ChatSession {
   private readonly contextWindows = new Map<string, number>();
   private selected?: { provider: string; modelId: string };
   private listeners = new Set<(event: SessionEvent) => void>();
+  private readonly toolCalls = new Map<string, { name: string; summary: string }>();
   private maintenance?: Promise<unknown>;
   private disposed = false;
   private closing?: Promise<void>;
@@ -215,6 +217,22 @@ export class DurableChatSession implements ChatSession {
         this.liveBusy = !!event.run;
         this.emit({ type: "refresh" });
       } else {
+        if (event.type === "tool_execution_start") {
+          const summary = summarizeToolArgs(event.toolName, event.args);
+          this.toolCalls.set(event.toolCallId, { name: event.toolName, summary });
+          this.emit({ type: "tool", activity: { callId: event.toolCallId, name: event.toolName, summary, status: "running" } });
+        } else if (event.type === "tool_execution_end") {
+          const call = this.toolCalls.get(event.toolCallId) ?? { name: event.toolName, summary: "" };
+          this.toolCalls.delete(event.toolCallId);
+          const result = event.entry?.model?.[0];
+          const durationMs = result && "durationMs" in result && typeof result.durationMs === "number" ? result.durationMs : undefined;
+          const failed = result && "isError" in result && result.isError === true;
+          this.emit({ type: "tool", activity: { callId: event.toolCallId, name: call.name, summary: call.summary,
+            status: failed ? "error" : "done", ...(durationMs !== undefined && { durationMs }) } });
+        } else if (event.type === "run_end") {
+          this.toolCalls.clear();
+          this.emit({ type: "tool-clear" });
+        }
         if ((event.type === "entry_appended" || event.type === "message_end") && event.entry.id > (this.entries.at(-1)?.id ?? 0)) this.entries.push(event.entry);
         this.output.apply(event);
         if (event.type === "run_start") {

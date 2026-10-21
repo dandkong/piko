@@ -20,8 +20,10 @@ export class ConversationStore {
     return this.opening ??= this.runtime.createSession().then(session => {
       this.session = session;
       this.unsubscribe = session.subscribe(event => {
+        // Tool activity is live-only and channel-specific; it never changes history.
+        if (event.type === "tool" || event.type === "tool-clear") return;
         if (event.type === "error") this.publish(event);
-        if (event.type === "message") {
+        else if (event.type === "message") {
           if (event.previousId) this.messages.delete(event.previousId);
           this.messages.set(event.message.id, event);
         } else this.dirty = true;
@@ -58,6 +60,12 @@ export class ConversationStore {
   }
   async subscribeBackgroundReplies(listener: (reply: BackgroundReply) => Promise<void>) {
     return (await this.get()).subscribeBackgroundReplies(listener);
+  }
+  /** Live tool calls only; they are never part of saved history. */
+  async subscribeToolActivity(listener: (event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>) => void) {
+    return (await this.get()).subscribe(event => {
+      if (event.type === "tool" || event.type === "tool-clear") listener(event);
+    });
   }
   async stop(commandId?: string) { const result = await (await this.get()).abort(commandId); this.dirty = true; await this.flush(); return result; }
   async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {
