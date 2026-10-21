@@ -102,6 +102,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `TactilePressable` | `apps/mobile/src/components/TactilePressable.tsx` | 统一处理悬停、按压、焦点、选中、禁用和缩放 |
 | `IconButton` | `apps/mobile/src/components/IconButton.tsx` | 图标按钮，支持 `card` / `soft` / `plain` / `primary` 和 `sm` / `md` |
 | `TextButton` | `apps/mobile/src/components/TextButton.tsx` | 文本动作，统一内边距、按压和焦点 |
+| `TextInputDialog` / `TextInputDialogContent` | `apps/mobile/src/components/TextInputDialog.tsx` | 通用受控单行文本弹窗；已有 Modal 的菜单切换复用 Content，不叠加原生 Modal |
 | 令牌 | `apps/mobile/src/theme.ts` | `radii`、`controlSizes`、`motion`、`stateColors` |
 
 使用约定：
@@ -111,6 +112,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 列表行、附件 chip 的交互背景由 `TactilePressable` 的 variant / state 控制；自定义 `faceStyle` 不要设置 `backgroundColor`，否则会覆盖悬停、按压和选中色。
 - 底部导航与抽屉页签使用同一套选中背景，不再使用独立滑动胶囊；悬停、按压和选中只保留一层状态背景。
 - 主操作只在真正可提交时使用 `primary`；不可用时退回 `soft` 并置灰。
+- 重命名等单行文本输入复用 `TextInputDialog`，不在列表原地展开输入框。调用方预填当前值、提供保存回调；弹窗统一取消/确认、空白禁用、保存中锁定、错误提示、键盘避让和 Escape 取消。保存成功才关闭，失败保留输入；Enter 可确认。菜单切换输入时复用同一个 Modal 与 `TextInputDialogContent`，避免 iOS 连续呈现两个原生弹窗。
 - 新增颜色、尺寸或动效前先检查 `theme.ts` 是否已有可用令牌。
 
 ## 8. Web 与原生
@@ -140,7 +142,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 
 已接入：
 
-- 顶栏菜单；抽屉关闭、四个页签、底部设置占位/一键新建旁聊、旁聊列表三点菜单/重命名/归档；底部导航。
+- 顶栏菜单；抽屉关闭、四个页签、底部设置占位/一键新建旁聊、旁聊标题左对齐、列表三点菜单/通用弹窗重命名/归档；底部导航。
 - 聊天附件 chip、附件移除、发送/停止、回到底部、重试。
 - 任务页返回、进行中/已完成常驻折叠标题（进行中默认展开、已完成默认收起，收起时箭头向上）、完成勾选、任务行和时间线条目。
 
