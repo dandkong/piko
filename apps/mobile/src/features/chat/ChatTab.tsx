@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import {
   ActivityIndicator,
@@ -10,13 +10,13 @@ import {
   type ListRenderItemInfo,
 } from "react-native";
 import { ArrowDown, RotateCcw } from "lucide-react-native";
-import type { Message } from "../../../../../shared/chat";
+import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { AssistantMessage } from "./AssistantMessage";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
-import { captureHistoryAnchor, restoreHistoryAnchor, type WebHistoryAnchor } from "./history-scroll";
+import { useChatAnchor } from "./useChatAnchor";
 
 export const MESSAGE_GAP = 13;
 
@@ -28,61 +28,47 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
   keyboardLift: SharedValue<number>;
   keyboardLiftAmount: number;
 }) {
-  const { messages, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
+  const { messages, loading, busy, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const listRef = useRef<FlatList<Message>>(null);
   const arrowAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: -keyboardLift.value }],
   }));
   const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
-  const followLatest = useRef(true);
-  const positionedLatest = useRef(false);
-  const lastOffset = useRef(0);
-  const historyAnchor = useRef<WebHistoryAnchor | undefined>(undefined);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const webScroller = () => {
     if (Platform.OS !== "web" || typeof HTMLElement === "undefined") return;
     const node = listRef.current?.getNativeScrollRef();
     return node instanceof HTMLElement ? node : undefined;
   };
-  const fetchOlder = () => void loadOlder(() => {
-    followLatest.current = false;
+  const scrollTo = (offset: number, animated: boolean) => {
     const node = webScroller();
-    if (node) historyAnchor.current = captureHistoryAnchor(node, headerHeight);
-  });
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
-  const scrollToLatest = (animated: boolean) => {
-    const { contentHeight, viewportHeight } = listMetrics.current;
-    // The measured content height includes the list's bottom padding.
-    listRef.current?.scrollToOffset({ offset: Math.max(0, contentHeight - viewportHeight), animated });
-  };
-  useLayoutEffect(() => {
-    // Web may not publish a content-size event when only the overlay inset changes.
-    const frame = requestAnimationFrame(() => {
-      const node = webScroller();
-      if (node) listMetrics.current = { contentHeight: node.scrollHeight, viewportHeight: node.clientHeight };
-      if (messages.length > 0 && followLatest.current && !historyAnchor.current) scrollToLatest(false);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [headerHeight, footerHeight]);
-  useEffect(() => {
-    if (busy) {
-      followLatest.current = true;
-      setAwayFromLatest(false);
+    if (node) {
+      if (animated) node.scrollTo({ top: offset, behavior: "smooth" });
+      else node.scrollTop = offset;
+      return;
     }
-  }, [busy]);
-
-  const oldestId = messages[0]?.id;
-  useLayoutEffect(() => {
-    const anchor = historyAnchor.current;
-    const node = webScroller();
-    if (!anchor || !node) return;
-    return restoreHistoryAnchor(node, anchor, () => {
-      const index = messages.findIndex(message => `chat-message-${message.id}` === anchor.id);
-      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewOffset: anchor.top - node.getBoundingClientRect().top });
-    }, () => {
-      historyAnchor.current = undefined;
-      lastOffset.current = node.scrollTop;
-    });
-  }, [oldestId]);
+    listRef.current?.scrollToOffset({ offset, animated });
+  };
+  const anchor = useChatAnchor({
+    scrollTo,
+    onAwayChange: setAwayFromLatest,
+    indexOf: testId => messages.findIndex(message => `chat-message-${message.id}` === testId),
+    seek: index => listRef.current?.scrollToIndex({ index, animated: false }),
+  });
+  const fetchOlder = () => void loadOlder(() => anchor.detach());
+  useEffect(() => { if (busy) anchor.follow(false); }, [busy]);
+  // Attach before the first page paints: onLayout only arrives after the list has laid out once.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    let frame = 0; let attempts = 0;
+    const attach = () => {
+      const node = webScroller();
+      if (node) { anchor.watch(node); return; }
+      if (++attempts < 240) frame = requestAnimationFrame(attach);
+    };
+    attach();
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const renderMessage = ({ item }: ListRenderItemInfo<Message>) => {
     const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
@@ -110,6 +96,12 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
         <FlatList
           testID="chat-list"
           ref={listRef}
+          // Mount a whole history page at once: batching grows the scroll height in steps and each
+          // step snaps to the bottom again, which reads as jumping on load.
+          initialNumToRender={CHAT_PAGE_SIZE}
+          maxToRenderPerBatch={CHAT_PAGE_SIZE}
+          windowSize={CHAT_PAGE_SIZE * 2 + 1}
+          updateCellsBatchingPeriod={0}
           style={styles.conversation}
           data={messages}
           keyExtractor={(item) => item.id}
@@ -122,36 +114,24 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
           }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          // Native keeps the reader's cell in place when history is prepended; web uses the anchor hook.
           maintainVisibleContentPosition={Platform.OS !== "web" ? { minIndexForVisible: 0 } : undefined}
-          onScrollToIndexFailed={({ index, averageItemLength }) => {
-            if (historyAnchor.current) listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
-          }}
+          onScrollToIndexFailed={({ index, averageItemLength }) => listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })}
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            if (historyAnchor.current) return;
-            const movingUp = contentOffset.y < lastOffset.current - 1;
-            lastOffset.current = contentOffset.y;
-            if (movingUp && contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
-            const nearEnd = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
-            // Initial measurement/auto-scroll may be below the final content height.
-            // Only an upward scroll leaves follow mode; downward layout updates do not.
-            if (nearEnd || movingUp) followLatest.current = nearEnd;
-            setAwayFromLatest(messages.length > 0 && !nearEnd && !followLatest.current);
+            if (contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
+            // Web reads geometry from the DOM observers; native reports it through this event.
+            if (Platform.OS !== "web") anchor.observe(contentOffset.y, contentSize.height, layoutMeasurement.height);
           }}
           scrollEventThrottle={100}
           onContentSizeChange={(_, height) => {
             listMetrics.current.contentHeight = height;
-            if (messages.length > 0 && followLatest.current && !historyAnchor.current) {
-              const animate = positionedLatest.current && !loading && (submitting || busy);
-              scrollToLatest(animate);
-              positionedLatest.current = true;
-            }
+            if (Platform.OS !== "web") anchor.sync(height, listMetrics.current.viewportHeight);
           }}
           onLayout={({ nativeEvent: { layout } }) => {
             listMetrics.current.viewportHeight = layout.height;
-            if (messages.length > 0 && followLatest.current && !historyAnchor.current) {
-              scrollToLatest(false);
-              positionedLatest.current = true;
-            }
+            const node = webScroller();
+            if (node) anchor.watch(node);
+            if (Platform.OS !== "web") anchor.sync(listMetrics.current.contentHeight, layout.height);
           }}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
@@ -200,11 +180,7 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Latest messages"
-              onPress={() => {
-                followLatest.current = true;
-                setAwayFromLatest(false);
-                scrollToLatest(true);
-              }}
+              onPress={() => anchor.follow(true)}
               hitSlop={6}
               style={({ pressed }) => [styles.latestButton, pressed && styles.pressed]}
             >

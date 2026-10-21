@@ -32,7 +32,9 @@ function Shell() {
       headerHeight={headerHeight}
       footerHeight={footerHeight}
       onHeaderHeightChange={setHeaderHeight}
-      onFooterHeightChange={setFooterHeight}
+      // The composer only renders on Chat. Keeping its last height avoids collapsing the chat
+      // inset to zero and growing it again a frame after the tab returns.
+      onFooterHeightChange={value => { if (tab === "Chat") setFooterHeight(value); }}
       keyboardLift={keyboardLift}
       onKeyboardLiftChange={setKeyboardLiftAmount}
       composer={tab === "Chat" ? (
