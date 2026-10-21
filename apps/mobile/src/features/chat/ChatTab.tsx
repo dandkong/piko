@@ -17,6 +17,7 @@ import { AssistantMessage } from "./AssistantMessage";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
 import { useChatAnchor } from "./useChatAnchor";
+import { formatTimestamp, shouldShowTimestamp } from "./time-divider";
 
 export const MESSAGE_GAP = 13;
 
@@ -70,23 +71,29 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const renderMessage = ({ item }: ListRenderItemInfo<Message>) => {
+  const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
     const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
     if (!item.content.trim() && !waitingForText) return null;
+    const previous = messages[index - 1];
+    const divider = shouldShowTimestamp(previous?.createdAt, item.createdAt)
+      ? <Text accessibilityLabel="Message time" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
     return (
-      <View
-        testID={`chat-message-${item.id}`}
-        accessibilityLabel={waitingForText ? "Piko is working" : undefined}
-        style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
-      >
-        {waitingForText ? (
-          <TypingIndicator />
-        ) : item.role === "assistant" ? (
-          <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
-        ) : (
-          <Text selectable style={styles.messageText}>{item.content}</Text>
-        )}
-      </View>
+      <>
+        {divider}
+        <View
+          testID={`chat-message-${item.id}`}
+          accessibilityLabel={waitingForText ? "Piko is working" : undefined}
+          style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
+        >
+          {waitingForText ? (
+            <TypingIndicator />
+          ) : item.role === "assistant" ? (
+            <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
+          ) : (
+            <Text selectable style={styles.messageText}>{item.content}</Text>
+          )}
+        </View>
+      </>
     );
   };
 

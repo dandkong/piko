@@ -34,6 +34,14 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
   },
+  timeDivider: {
+    alignSelf: "center",
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    marginBottom: 8,
+  },
   bubble: {
     paddingHorizontal: 16,
     paddingVertical: 13,
