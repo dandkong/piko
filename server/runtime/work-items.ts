@@ -11,14 +11,9 @@ import { messageText } from "./pi-history";
 import { JobControl, REPORTER_KIND, subagentIds, taskRecords, type ReporterInput, type ReporterResult, type ReporterState, type SubagentController } from "./subagents";
 
 type StoredItem = Omit<WorkItem, "latest"> & { source: InputSource };
+/** Version 2 stores once.at as an ISO 8601 instant; no migration is kept for the old millisecond shape. */
 export const WorkItems = defineDoc<{ items: StoredItem[] }>({
   kind: "piko.work-items", version: 2, scope: "conversation", history: "latest", fork: "initial", initial: () => ({ items: [] }),
-  // Version 1 stored once.at as Unix milliseconds; stored values are ISO 8601 instants now.
-  migrate: value => ({ items: (Array.isArray(value.items) ? value.items : []).map(entry => {
-    const schedule = (entry as { schedule?: { type?: string; at?: unknown } }).schedule;
-    return schedule?.type === "once" && typeof schedule.at === "number"
-      ? Object.assign({}, entry, { schedule: { type: "once", at: new Date(schedule.at).toISOString() } }) : entry;
-  }) as unknown as StoredItem[] }),
 });
 const Receipts = defineDocFamily<{ hash: string; id: string; executionId: string | null }, null>({
   kind: "piko.item-command", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true,
