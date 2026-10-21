@@ -64,7 +64,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 模型、资源与内建扩展
 
-pi-ai 内建供应商目录使用后端环境 API Key；OAuth 通过 Piko EnvironmentCredentialStore 从私有 .env 读取/刷新并原子持久化，不使用凭据 JSON。自定义 JSON 可指定 API、地址、模型能力、请求参数、headersEnv 变量名绑定和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。JSON 默认预设用于初始选择，修改默认预设不会覆盖会话已有选择。
+pi-ai 内建供应商目录使用后端环境 API Key；OAuth 通过 Piko EnvironmentCredentialStore 从私有 .env 读取/刷新并原子持久化，不使用凭据 JSON。自定义 JSON 可指定 API、地址、模型能力、请求参数、headersEnv 变量名绑定和适配兼容项。预设映射 provider/model/thinking；当前选择保存到 durable Agent 文档，重启保留。agent.profiles 只有 main 和 background 两个固定角色位：main 用于初始选择且不覆盖会话已有选择，background 单独决定后台子 Agent 的模型，未配置时后台继承主会话。
 
 Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 

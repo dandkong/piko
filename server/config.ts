@@ -53,9 +53,6 @@ export function readApplicationSettings(home: string): ApplicationSettings {
     const field = error?.instancePath?.slice(1).replaceAll("/", ".") || "configuration";
     throw new Error(`Invalid configuration in piko.json at ${field}: JSON accepts only application behavior, not deployment parameters or credentials.`);
   }
-  const agent = candidate.agent;
-  if (agent.defaultProfile && !Object.hasOwn(agent.profiles, agent.defaultProfile))
-    throw new Error("Invalid configuration in piko.json at agent.defaultProfile: expected an existing agent.profiles entry.");
   return candidate;
 }
 

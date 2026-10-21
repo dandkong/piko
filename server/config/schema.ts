@@ -15,8 +15,11 @@ const profileSchema = object({
 
 /** Piko owns model presets, not Durable's retry or compaction policies. */
 export const agentSchema = object({
-  defaultProfile: Type.Optional(Type.String({ minLength: 1 })),
-  profiles: Type.Record(Type.String(), profileSchema),
+  /** Fixed role slots: main seeds conversations, background runs all delegated work. */
+  profiles: object({
+    main: Type.Optional(profileSchema),
+    background: Type.Optional(profileSchema),
+  }),
   stream: Type.Optional(object({
     transport: Type.Optional(Type.Union([
       Type.Literal("sse"), Type.Literal("websocket"), Type.Literal("websocket-cached"), Type.Literal("auto"),

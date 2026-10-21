@@ -21,7 +21,7 @@ import { ItemFiles } from "../domain/work-items";
 import { internalInput, registerInput } from "./input-origin";
 import { createWorkspaceResources, loadWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
-import { loadWorkspaceModels, requireAvailableModel, type WorkspaceModelConfig } from "./model-config";
+import { loadWorkspaceModels, requireAvailableModel, availableBackground, configuredBackground, type WorkspaceModelConfig } from "./model-config";
 import { readConfigEnvironment } from "../config/files";
 import { readApplicationSettings } from "../config";
 import { createWebTools } from "./web-tools";
@@ -96,13 +96,15 @@ export class DurableChatSession implements ChatSession {
     const config = await loadWorkspaceModels(this.paths.home, this.injected);
     const children = createSubagents({ storage: () => this.storage,
       canReport: () => !this.maintenance && !this.stopping && !this.disposed,
+      background: () => this.background(),
       onReply: async reply => {
         // Queue what a channel still needs to see: scheduled broadcasts and Telegram-origin reports.
         if (!this.replyListeners.size) { if (reply.deliver === "all" || reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
     });
-    const memory = createMemoryCurationExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries });
+    const memory = createMemoryCurationExtension({ workspace: this.paths.workspace, bindings: () => this.inputEntries,
+      background: () => this.background() });
     const extensions = registry(this.paths, children.extension, createWorkItemTools(() => this.itemService), memory.extension);
     await this.open(config, extensions, children, memory.task);
   }
@@ -126,7 +128,7 @@ export class DurableChatSession implements ChatSession {
     try {
       const existing = await harness.conversation(ROOT_CONVERSATION_ID, ctx);
       if (persisted && !existing) throw new Error("Durable root conversation is missing.");
-      const preferred = config.defaultModel;
+      const preferred = config.main;
       const selected = preferred ? await requireAvailableModel(config.models, preferred) : (await config.models.getAvailable())[0];
       const conversation = existing ?? await harness.root(ctx, { agent: {
         cwd: this.paths.workspace,
@@ -144,14 +146,17 @@ export class DurableChatSession implements ChatSession {
         await tx.appendEntry(conversation.id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are historical context. Do not resume or repeat its tools automatically; act only on new user requests or newly delivered background results; do not resume interrupted work.", timestamp: Date.now() }] });
       }, ctx);
       if (existing && selected && !(await conversation.agent(ctx)).model) await conversation.configure({ model: { provider: selected.provider, modelId: selected.id }, thinkingLevel: preferred?.thinking ?? "off" }, ctx);
-      // Built-in registry configuration is rebuilt at startup; children share the current root selection.
+      // Built-in registry configuration is rebuilt at startup; children start from the configured background profile.
       const rootAgent = await conversation.agent(ctx);
+      const background = configuredBackground(config.background);
       await harness.commit(async tx => {
         const ids = await subagentIds(tx);
         const scope = childScope(rootAgent);
         for (const id of ids) {
           const binding = (await tx.doc(ItemContext, id)).binding;
-          await configureAgent(tx, id, { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel,
+          await configureAgent(tx, id, { ...(background
+            ? { model: { provider: background.provider, modelId: background.modelId }, thinkingLevel: background.thinkingLevel }
+            : { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel }),
             cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd,
             extensions: scope.extensions, tools: scope.tools });
         }
@@ -399,18 +404,14 @@ export class DurableChatSession implements ChatSession {
   }
   async configure(selection: RuntimeSelection) { return this.maintain(async () => {
     const agent = await this.conversation.agent(ctx);
-    const profile = "profile" in selection ? (Object.hasOwn(this.config.profiles, selection.profile) ? this.config.profiles[selection.profile] : undefined)
-      : "provider" in selection ? selection
+    const profile = "provider" in selection ? selection
       : agent.model && { provider: agent.model.provider, model: agent.model.modelId, thinking: selection.thinking };
-    if (!profile) throw new Error("Unknown profile or no current model.");
+    if (!profile) throw new Error("No current model to change the thinking level.");
     const model = await requireAvailableModel(this.config.models, profile);
     const thinking = profile.thinking ?? ("provider" in selection ? clampThinkingLevel(model, agent.thinkingLevel) : "off");
     if (!getSupportedThinkingLevels(model).includes(thinking)) throw new Error("This model does not support that thinking level.");
     await this.harness.commit(async tx => {
-      const ids = await subagentIds(tx);
-      const selection = { model: { provider: model.provider, modelId: model.id }, thinkingLevel: thinking };
-      await configureAgent(tx, this.conversation.id, selection);
-      for (const id of ids) await configureAgent(tx, id, selection);
+      await configureAgent(tx, this.conversation.id, { model: { provider: model.provider, modelId: model.id }, thinkingLevel: thinking });
     }, ctx);
     this.selected = { provider: model.provider, modelId: model.id };
   }); }
@@ -422,9 +423,14 @@ export class DurableChatSession implements ChatSession {
     return { runtime: "pi-durable", tools, ...(agent.model && { selection: { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } }),
       models: (await this.config.models.getAvailable()).map(model => ({ provider: model.provider, id: model.id, name: model.name,
         imageInput: model.input.includes("image"), contextWindow: model.contextWindow, thinkingLevels: getSupportedThinkingLevels(model) as ModelThinkingLevel[] })),
-      profiles: this.config.profiles, skills: resources.skills };
+      skills: resources.skills };
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
+
+  /** Background jobs read agent.profiles.background at spawn; credentials are checked then, not at startup. */
+  private background() {
+    return this.config ? availableBackground(this.config.models, this.config.background) : Promise.resolve(undefined);
+  }
   async compact(): Promise<CompactionResult> {
     return this.maintain<CompactionResult>(async () => {
       const task = await this.conversation.compact(undefined, ctx);

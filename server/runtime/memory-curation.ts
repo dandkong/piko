@@ -4,7 +4,7 @@ import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
   type ConversationId, type Harness, type TaskId, type TaskRuntime, type Tx } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { spawnBackgroundChild } from "./background";
+import { spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 
@@ -38,7 +38,8 @@ type CurationTask = ReturnType<typeof createCurationTask>;
 type Runtime = TaskRuntime<CurationInput, CurationCheckpoint, CurationResult, object>;
 function safeError(): string { return "Memory review failed; it can be retried."; }
 
-function createCurationTask(workspace: string, bindings: () => ReadonlyMap<number, string>) {
+function createCurationTask(workspace: string, bindings: () => ReadonlyMap<number, string>,
+  background: () => Promise<BackgroundSelection | undefined>) {
   const fail = async (taskId: TaskId<CurationResult>, runtime: Runtime, ctx: typeof context) => {
     await runtime.commit(async tx => {
       const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
@@ -66,12 +67,13 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
             through: taskRecord.input.throughEntryId, timezone: taskRecord.input.timezone, bindings: bindings(), now: taskRecord.input.requestedAt }); return undefined; }, ctx);
           if (!collected?.messages.length) { await completeWithoutModel(taskRecord, runtime, ctx); return; }
           const agent = await runtime.agent(ctx);
-          if (!agent.model) throw new Error("No model is configured for memory review.");
+          const selection = await background();
+          if (!agent.model && !selection) throw new Error("No model is configured for memory review.");
 
           let childId = taskRecord.state.checkpoint.childId as ConversationId | undefined;
           if (childId === undefined) {
             await runtime.commit(async tx => {
-              childId = await spawnBackgroundChild(tx, taskRecord.id, { model: agent.model, thinkingLevel: agent.thinkingLevel,
+              childId = await spawnBackgroundChild(tx, taskRecord.id, { ...backgroundAgent(selection, agent),
                 extensions: [CodingTools], tools: CURATOR_AGENT_TOOLS, cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS });
               return { status: "running", checkpoint: { phase: "curation", childId: Number(childId) } } as const;
             }, ctx);
@@ -212,7 +214,8 @@ export class MemoryCurationService {
   }
 }
 
-export function createMemoryCurationExtension(options: { workspace: string; bindings: () => ReadonlyMap<number, string> }) {
-  const task = createCurationTask(options.workspace, options.bindings);
+export function createMemoryCurationExtension(options: { workspace: string; bindings: () => ReadonlyMap<number, string>;
+  background: () => Promise<BackgroundSelection | undefined> }) {
+  const task = createCurationTask(options.workspace, options.bindings, options.background);
   return { task, extension: defineExtension({ name: "piko-memory-curation", tasks: [task] }) };
 }

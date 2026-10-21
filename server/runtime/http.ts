@@ -27,13 +27,12 @@ export async function runtimeRequest(request: Request, runtime: ChatRuntime,
       const choice = value as Record<string, unknown>;
       const fields = Object.keys(choice);
       let selection: RuntimeSelection;
-      if (fields.length === 1 && typeof choice.profile === "string" && choice.profile.length > 0 && choice.profile.length < 100) selection = { profile: choice.profile };
-      else if (fields.length === 1 && typeof choice.thinking === "string" && thinking.has(choice.thinking)) selection = { thinking: choice.thinking as ThinkingLevel };
+      if (fields.length === 1 && typeof choice.thinking === "string" && thinking.has(choice.thinking)) selection = { thinking: choice.thinking as ThinkingLevel };
       else if (fields.every(key => ["provider", "model", "thinking"].includes(key)) && typeof choice.provider === "string" && choice.provider.length > 0 && choice.provider.length < 100
         && typeof choice.model === "string" && choice.model.length > 0 && choice.model.length < 250
         && (choice.thinking === undefined || typeof choice.thinking === "string" && thinking.has(choice.thinking))) {
         selection = { provider: choice.provider, model: choice.model, ...(choice.thinking && { thinking: choice.thinking as ThinkingLevel }) };
-      } else return json({ error: "Invalid model, profile or thinking level." }, 422);
+      } else return json({ error: "Invalid model or thinking level." }, 422);
       await change(() => runtime.configure(selection));
     } else return json({ error: "Not found." }, 404);
     return json({ ok: true });

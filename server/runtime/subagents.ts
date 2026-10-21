@@ -7,7 +7,7 @@ import { InputOrigin, registerInput } from "./input-origin";
 import { entriesFromTransaction, messageText } from "./pi-history";
 import { ItemContext, type ItemBinding } from "./item-context";
 import { ItemFiles } from "../domain/work-items";
-import { childScope, spawnBackgroundChild } from "./background";
+import { childScope, spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
 
 export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   kind: "piko.subagent-control", version: 1, scope: "conversation", history: "latest", fork: "initial",
@@ -37,6 +37,7 @@ export type ReporterState = { phase: "deliver" } | { phase: "report"; answer?: E
 export type ReporterResult = { answer?: EntryId; error?: string } | null;
 export type SubagentController = ReturnType<typeof createSubagents>;
 export function createSubagents(options: { storage: () => Storage; canReport: () => boolean;
+  background: () => Promise<BackgroundSelection | undefined>;
   onReply: (reply: BackgroundReply) => Promise<void> }) {
   // Serialize report admission with explicit cancellation; body/state stays native.
   let admission: Promise<unknown> = Promise.resolve();
@@ -139,7 +140,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
     const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     const current = await tx.doc(AgentDoc, ROOT_CONVERSATION_ID);
     const child = await spawnBackgroundChild(tx, anchor, {
-      model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
+      ...backgroundAgent(await options.background(), { model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel }),
       cwd: item ? new ItemFiles(agent.cwd!).directory(item.itemId) : agent.cwd,
       ...childScope(agent),
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });

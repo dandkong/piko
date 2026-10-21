@@ -7,6 +7,7 @@ import {
   getSupportedThinkingLevels,
   type Api,
   type Model,
+  type ModelThinkingLevel,
   type Models,
   type Provider,
   type ProviderStreams,
@@ -28,6 +29,7 @@ import {
 } from "../config/schema.ts";
 import { readApplicationSettings } from "../config.ts";
 import { StoredCredentialStore } from "./credentials.ts";
+import type { BackgroundSelection } from "./background";
 
 const string = Type.String({ minLength: 1 });
 const positive = Type.Integer({ minimum: 1 });
@@ -144,8 +146,10 @@ type ModelConfig = Static<typeof overrideSchema>;
 
 export type WorkspaceModelConfig = {
   models: Models;
-  profiles: Record<string, ModelProfile>;
-  defaultModel?: ModelProfile;
+  /** Initial selection for a new main conversation, or one that never stored a model. */
+  main?: ModelProfile;
+  /** Model for delegation, scheduled runs and memory review. */
+  background?: ModelProfile;
   harnessSettings: Pick<HarnessSettings, "stream">;
 };
 
@@ -180,30 +184,53 @@ export async function loadWorkspaceModels(
         configureProvider(id, provider, models.getProvider(id), env, credentials.apiKey(id)),
       );
   }
-  const profiles = agent.profiles as Record<string, ModelProfile>;
-  for (const [name, profile] of Object.entries(profiles)) {
+  const main = agent.profiles.main;
+  const background = agent.profiles.background;
+  for (const [role, profile] of [["main", main], ["background", background]] as const) {
+    if (!profile) continue;
     const model = models.getModel(profile.provider, profile.model);
     if (!model)
       throw new Error(
-        `Profile ${name}: unknown model ${profile.provider}/${profile.model}`,
+        `Profile ${role}: unknown model ${profile.provider}/${profile.model}`,
       );
     if (!getSupportedThinkingLevels(model).includes(profile.thinking ?? "off"))
       throw new Error(
-        `Profile ${name}: unsupported thinking level ${profile.thinking}`,
+        `Profile ${role}: unsupported thinking level ${profile.thinking}`,
       );
   }
-  const defaultModel = agent.defaultProfile
-    ? profiles[agent.defaultProfile]
-    : undefined;
-  if (defaultModel) await requireAvailableModel(models, defaultModel);
+  if (main) await requireAvailableModel(models, main);
   return {
     models,
-    profiles,
-    defaultModel,
+    main,
+    background,
     harnessSettings: {
       stream: agent.stream as HarnessSettings["stream"],
     },
   };
+}
+
+function select(profile: ModelProfile): BackgroundSelection {
+  return {
+    provider: profile.provider,
+    modelId: profile.model,
+    thinkingLevel: (profile.thinking ?? "off") as ModelThinkingLevel,
+  };
+}
+
+/** Startup applies the configured model to stored children without touching credentials. */
+export function configuredBackground(profile: ModelProfile | undefined): BackgroundSelection | undefined {
+  return profile && select(profile);
+}
+
+/** Spawn fails a background job, not startup, when its provider has no usable credentials. */
+export async function availableBackground(models: Models, profile: ModelProfile | undefined): Promise<BackgroundSelection | undefined> {
+  if (!profile) return undefined;
+  try {
+    const model = await requireAvailableModel(models, profile);
+    return { provider: model.provider, modelId: model.id, thinkingLevel: (profile.thinking ?? "off") as ModelThinkingLevel };
+  } catch (error) {
+    throw new Error(`Background: ${error instanceof Error ? error.message : "model unavailable"}`);
+  }
 }
 
 export async function requireAvailableModel(

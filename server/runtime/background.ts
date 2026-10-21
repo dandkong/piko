@@ -1,4 +1,15 @@
 import { configure, type Agent, type AgentChange, type ConversationId, type TaskId, type Tx } from "@earendil-works/pi-durable";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+
+/** The model a background child starts with; Piko resolves it from agent.profiles.background, not from the main selection. */
+export type BackgroundSelection = { provider: string; modelId: string; thinkingLevel: ModelThinkingLevel };
+
+/** Without a background profile a child keeps inheriting the main conversation's selection. */
+export function backgroundAgent(selection: BackgroundSelection | undefined, parent: Pick<Agent, "model" | "thinkingLevel">) {
+  return selection
+    ? { model: { provider: selection.provider, modelId: selection.modelId }, thinkingLevel: selection.thinkingLevel }
+    : { model: parent.model, thinkingLevel: parent.thinkingLevel };
+}
 
 /** Background children never delegate or manage tasks, and never re-enter the curation task. */
 const EXCLUDED_TOOLS = ["subagent", "work_item"];

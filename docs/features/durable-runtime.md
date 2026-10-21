@@ -37,26 +37,27 @@ BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 {
   "version": 1,
   "agent": {
-    "defaultProfile": "quick",
     "profiles": {
-      "quick": {
+      "main": {
         "provider": "deepseek",
         "model": "deepseek-flash",
         "thinking": "off"
       },
-      "careful": {
-        "provider": "deepseek",
-        "model": "deepseek-flash",
-        "thinking": "high"
+      "background": {
+        "provider": "custom",
+        "model": "your-background-model",
+        "thinking": "off"
       }
     }
   }
 }
 ```
 
+`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话（以及尚无模型保存的旧会话）的初始选择；`background` 供后台子 Agent 使用，普通委派、定时任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。已有主会话的选择保存在 Durable Agent 文档中，重启后仍是上次切换的结果，改 JSON 不会覆盖它。
+
 上述 ID 来自锁定的 pi-ai 1.1.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
 
-第一次创建原生会话使用 agent.defaultProfile；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留。修改 defaultProfile 后若需切换当前会话，再调用 selection API。最初没有模型的会话在重启后可以启用新配置。
+第一次创建原生会话使用 agent.profiles.main；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留；修改 main 不会自动切换当前会话，需要时再调用 selection API 直接选 provider/model。最初没有模型的会话在重启后可以启用新配置。
 
 通用思考值为 off/minimal/low/medium/high/xhigh/max；只接受所选模型实际支持的值，能力列表见 thinkingLevels。例如本版本 deepseek-flash 支持 off/low/high/max。Piko 不把所有思考值强行映射到每个供应商。
 
@@ -139,7 +140,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
-目前不提供 `/reload` 命令或 HTTP 接口。模型配置与凭据修改后重启后端生效；Piko 内建 Durable Extension 随服务端代码部署。重启保留原生历史与当前模型/思考选择，不会因为 defaultProfile 改变而覆盖已有选择。
+目前不提供 `/reload` 命令或 HTTP 接口。模型配置与凭据修改后重启后端生效；Piko 内建 Durable Extension 随服务端代码部署。重启保留原生历史与当前模型/思考选择，不会因为 agent.profiles.main 改变而覆盖已有选择。
 
 | 修改内容 | 当前生效方式 |
 | --- | --- |
@@ -147,14 +148,14 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
 | 工作区 .agents/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
-| config/piko.json、models.json | 重启后端；默认预设不自动切换已有会话 |
+| config/piko.json、models.json | 重启后端；profiles.main 不自动切换已有会话，profiles.background 在重启时同步到子会话 |
 | config/.env 中的 OAuth 凭据 | 手工修改需重启；运行时 OAuth 刷新由串行原子写入发布新凭据 |
 | config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
 | 工作区其他 md、JSONL 和 Durable 原生文档 | 普通文件按需读取，重启保留存储和文档状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启。编辑 piko/models JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，后台子 Agent 始终跟随 `agent.profiles.background`。编辑 piko/models JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 
