@@ -1,6 +1,6 @@
 # 工作区与主会话模型
 
-状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.1.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与运行时见 [Durable 配置](durable-runtime.md)。
+状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.3.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与运行时见 [Durable 配置](durable-runtime.md)。
 
 ## 范围与初始化
 
@@ -72,7 +72,7 @@ core.md 与工作区 AGENTS.md 上限各 8,000 字节，MEMORY.md 上限 4,000 �
 
 技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 1.1.0 的 read 尚不能读取图片，附件仍是禁用占位。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。cwd 不是沙箱；目前没有操作审批 UI。durable 的 read 已能读取图片，附件存储与上传接口见 [附件与图片读取](attachments.md)，RN 选图仍是占位。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
 
 ## 中断与损坏恢复
 

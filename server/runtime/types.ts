@@ -12,7 +12,7 @@ export interface ChatSession {
   readonly isStreaming: boolean;
   snapshot(options?: { limit: number }): Promise<ConversationResponse>;
   history(before?: string, limit?: number): Promise<HistoryPage>;
-  submit(text: string, requestId: string, source?: InputSource): Promise<{ submission: SubmissionReceipt; duplicate: boolean }>;
+  submit(text: string, requestId: string, source?: InputSource, attachments?: readonly string[]): Promise<{ submission: SubmissionReceipt; duplicate: boolean }>;
   subscribeBackgroundReplies(listener: (reply: BackgroundReply) => Promise<void>): () => void;
   submission(requestId: string): Promise<SubmissionReceipt | undefined>;
   subscribe(listener: (event: SessionEvent) => void): () => void;

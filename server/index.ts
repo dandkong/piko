@@ -5,8 +5,9 @@ import { createPiRuntime } from "./runtime/pi";
 import { initializeWorkspace } from "./domain/workspace";
 import { acquireBackendLock } from "./domain/backend-lock";
 import { TelegramBot } from "./channels/telegram/bot";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
+import { AttachmentStore } from "./attachments";
 
 // A production entry serves the prebuilt website; API development remains independent of Expo exports.
 const web = process.argv.includes("--web")
@@ -17,6 +18,11 @@ const paths = initializeWorkspace(piko.paths);
 const releaseLock = acquireBackendLock(paths.state);
 process.on("exit", releaseLock);
 const runtime = createPiRuntime(paths);
+// Telegram and app uploads share one store, outside the workspace; history references these paths.
+const attachments = new AttachmentStore(join(paths.state, "attachments"));
+void attachments.sweep(30 * 24 * 60 * 60 * 1000)
+  .then(removed => { if (removed) console.log(`Removed ${removed} expired attachment(s).`); })
+  .catch(() => console.warn("Piko attachment cleanup failed."));
 const conversations = new ConversationStore(runtime);
 // Open and validate native state, withdrawing inherited work before accepting requests.
 await conversations.get();
@@ -26,7 +32,7 @@ const server = Bun.serve({
   port: config.port,
   // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
   idleTimeout: 60,
-  fetch: createApp({ config, runtime, conversations, web }),
+  fetch: createApp({ config, runtime, conversations, attachments, web }),
 });
 
 let telegram: TelegramBot | undefined;
@@ -54,7 +60,7 @@ process.on("SIGINT", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });
 // Fatal Telegram failures exit cleanly with a failure code so the service manager can restart.
 if (piko.channels.telegram.enabled) {
-  try { telegram = new TelegramBot(piko.channels.telegram, conversations, runtime, undefined, () => { void shutdown(true); }); }
+  try { telegram = new TelegramBot(piko.channels.telegram, conversations, runtime, attachments, undefined, () => { void shutdown(true); }); }
   catch { console.warn("Telegram initialization failed; restarting service."); void shutdown(true); }
 }
 // Startup is independent of HTTP readiness and is observed even if shutdown races it.

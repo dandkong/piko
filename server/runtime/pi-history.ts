@@ -69,6 +69,12 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
   return { ...result, entries };
 }
 
+/** Attachment paths are model input, not chat copy: show a marker instead of the raw block. */
+const ATTACHED = /^<attached>\n[\s\S]*?\n<\/attached>\n?/;
+function displayText(content: string): string {
+  return content.replace(ATTACHED, "").trim() || "📎 附件";
+}
+
 export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>(), hidden = new Set<number>()) {
   const messages: Message[] = [];
   for (const entry of entries) {
@@ -78,7 +84,8 @@ export function projectPiHistory(entries: readonly EntryRecord[], inputs = new M
         if (message.role !== "user" && message.role !== "assistant") continue;
         const content = messageText(message.content);
         const requestId = message.role === "user" ? inputs.get(entry.id) : undefined;
-        if (content.trim()) messages.push({ id: "pi-" + entry.id, role: message.role, content,
+        const shown = message.role === "user" ? displayText(content) : content;
+        if (content.trim()) messages.push({ id: "pi-" + entry.id, role: message.role, content: shown,
           createdAt: message.timestamp, ...(requestId && { requestId }) });
       }
     } else if (entry.kind === "piko.result" && data(entry).display === true) {

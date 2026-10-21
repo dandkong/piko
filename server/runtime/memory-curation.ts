@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
   type ConversationId, type Harness, type TaskId, type TaskRuntime } from "@earendil-works/pi-durable";
-import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
+import { curatorTools, type CodingExtension } from "./coding-tools";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
@@ -16,9 +16,6 @@ export function memoryCurationIsDue(idleSince: number | null, now: number, busy:
 const MEMORY_CURATION_POLL_MS = 15_000;
 const MEMORY_CURATION_RETRY_MS = 30 * 60_000;
 const CURATOR_AGENT_INSTRUCTIONS = "You are Piko's memory curator. Edit the workspace memory files directly with the read/write/edit tools, and verify tool results before reporting changes. The workspace is not a security sandbox.";
-// The curator edits files directly; a shell is not needed to maintain two Markdown paths.
-const CURATOR_AGENT_TOOLS = (CodingTools.tools ?? []).filter(tool => tool.name !== "bash");
-
 export type MemoryCurationState = {
   initialized: boolean;
   cursor: number;
@@ -39,7 +36,7 @@ type Runtime = TaskRuntime<CurationInput, CurationCheckpoint, CurationResult, ob
 function safeError(): string { return "Memory review failed; it can be retried."; }
 
 function createCurationTask(workspace: string, bindings: () => ReadonlyMap<number, string>,
-  background: () => Promise<BackgroundSelection | undefined>) {
+  background: () => Promise<BackgroundSelection | undefined>, coding: CodingExtension) {
   const fail = async (taskId: TaskId<CurationResult>, runtime: Runtime, ctx: typeof context) => {
     await runtime.commit(async tx => {
       const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
@@ -74,7 +71,7 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
           if (childId === undefined) {
             await runtime.commit(async tx => {
               childId = await spawnBackgroundChild(tx, taskRecord.id, { ...backgroundAgent(selection, agent),
-                extensions: [CodingTools], tools: CURATOR_AGENT_TOOLS, cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS });
+                extensions: [coding], tools: curatorTools(coding), cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS });
               return { status: "running", checkpoint: { phase: "curation", childId: Number(childId) } } as const;
             }, ctx);
           }
@@ -215,7 +212,7 @@ export class MemoryCurationService {
 }
 
 export function createMemoryCurationExtension(options: { workspace: string; bindings: () => ReadonlyMap<number, string>;
-  background: () => Promise<BackgroundSelection | undefined> }) {
-  const task = createCurationTask(options.workspace, options.bindings, options.background);
+  background: () => Promise<BackgroundSelection | undefined>; coding: CodingExtension }) {
+  const task = createCurationTask(options.workspace, options.bindings, options.background, options.coding);
   return { task, extension: defineExtension({ name: "piko-memory-curation", tasks: [task] }) };
 }

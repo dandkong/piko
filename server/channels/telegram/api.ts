@@ -11,6 +11,8 @@ export interface TelegramTransport {
   answerCallback(callbackId: string, text?: string, alert?: boolean): Promise<void>;
   remove(chatId: string, messageId: string): Promise<void>;
   typing(chatId: string): Promise<void>;
+  /** Bytes of a photo or image document; the channel stores them and gives the model a path. */
+  download(fileId: string): Promise<Uint8Array>;
 }
 
 /** Only descriptions of known formatting failures permit fallback, never transport ambiguity. */
@@ -84,5 +86,13 @@ export class TelegramApi implements TelegramTransport {
 
   async typing(chatId: string): Promise<void> {
     await this.bot.api.sendChatAction(chatId, "typing", {}, this.signal);
+  }
+
+  async download(fileId: string): Promise<Uint8Array> {
+    const file = await telegramRequest(() => this.bot.api.getFile(fileId, this.signal), this.controller.signal);
+    if (!file.file_path) throw new Error("Telegram did not return a file path.");
+    const response = await fetch(`https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`, { signal: this.controller.signal });
+    if (!response.ok) throw new Error(`Telegram file download failed (${response.status}).`);
+    return new Uint8Array(await response.arrayBuffer());
   }
 }

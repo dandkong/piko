@@ -4,6 +4,8 @@ import type { ChatRuntime } from "../../runtime/types";
 import { TelegramApi, telegramErrorCode } from "./api";
 import { TelegramChannel, TELEGRAM_COMMANDS } from "./channel";
 import type { TelegramConfig } from "../../config";
+import type { AttachmentStore } from "../../attachments";
+import { MAX_ATTACHMENTS } from "../../../shared/chat";
 
 export class TelegramBot {
   private readonly bot: Bot;
@@ -14,16 +16,31 @@ export class TelegramBot {
   private starting?: Promise<void>;
   private stopping = false;
   constructor(private readonly config: TelegramConfig, private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
-    bot?: Bot, private readonly onFailure?: () => void) {
+    private readonly attachments: AttachmentStore, bot?: Bot, private readonly onFailure?: () => void) {
     this.bot = bot ?? new Bot(config.token, { client: { timeoutSeconds: 10 } });
     this.api = new TelegramApi(this.bot);
     // A failed update is logged without taking down grammY's polling loop.
     this.bot.catch(error => console.warn(`Telegram update failed (${telegramErrorCode(error.error)}).`));
     this.bot.on("message", async ctx => {
-      await this.channel?.handle({ chatId: String(ctx.chat.id), messageId: String(ctx.msg.message_id),
-        actorId: String(ctx.from?.id ?? ""), chatType: ctx.chat.type, text: ctx.msg.text,
-        topic: ctx.msg.message_thread_id !== undefined || ctx.msg.is_topic_message,
-        business: ctx.msg.business_connection_id !== undefined || ctx.msg.guest_query_id !== undefined });
+      const message = ctx.msg;
+      const photo = "photo" in message ? message.photo?.at(-1) : undefined;
+      const document = "document" in message ? message.document : undefined;
+      const video = "video" in message ? message.video : undefined;
+      const audio = "audio" in message ? message.audio : undefined;
+      const voice = "voice" in message ? message.voice : undefined;
+      const caption = "caption" in message ? message.caption : undefined;
+      // Whatever the user sends is stored and the path reaches the model; it decides how to inspect the file.
+      const attachments = [
+        ...(photo ? [{ fileId: photo.file_id, name: "photo.jpg", mime: "image/jpeg" }] : []),
+        ...(document ? [{ fileId: document.file_id, name: document.file_name, mime: document.mime_type }] : []),
+        ...(video ? [{ fileId: video.file_id, name: video.file_name ?? "video.mp4", mime: video.mime_type }] : []),
+        ...(audio ? [{ fileId: audio.file_id, name: audio.file_name ?? "audio.mp3", mime: audio.mime_type }] : []),
+        ...(voice ? [{ fileId: voice.file_id, name: "voice.ogg", mime: voice.mime_type ?? "audio/ogg" }] : []),
+      ].slice(0, MAX_ATTACHMENTS);
+      await this.channel?.handle({ chatId: String(ctx.chat.id), messageId: String(message.message_id),
+        actorId: String(ctx.from?.id ?? ""), chatType: ctx.chat.type, text: message.text ?? caption, attachments,
+        topic: message.message_thread_id !== undefined || message.is_topic_message,
+        business: message.business_connection_id !== undefined || message.guest_query_id !== undefined });
     });
     this.bot.on("callback_query:data", ctx => {
       const message = ctx.callbackQuery.message;
@@ -47,7 +64,7 @@ export class TelegramBot {
     await this.bot.api.setMyCommands(TELEGRAM_COMMANDS, {}, signal);
     if (this.stopping) return;
     this.channel = new TelegramChannel({ botId: String(this.bot.botInfo.id), username: this.bot.botInfo.username!, userId: this.config.userId },
-      this.conversations, this.runtime, this.api);
+      this.conversations, this.runtime, this.api, this.attachments);
     // grammY owns the cursor, webhook removal and persistent polling retries.
     this.polling = this.bot.start({ timeout: 5, allowed_updates: ["message", "callback_query"],
       onStart: () => { console.log("Piko Telegram private-chat channel started."); },

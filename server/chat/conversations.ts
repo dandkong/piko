@@ -51,9 +51,9 @@ export class ConversationStore {
   }
   async snapshot(options?: { limit: number }): Promise<ConversationResponse> { return (await this.get()).snapshot(options); }
   async history(before?: string) { return (await this.get()).history(before, CHAT_PAGE_SIZE); }
-  async submit(message: string, requestId: string, source?: InputSource) {
-    message = normalizeMessage(message);
-    const result = await (await this.get()).submit(message, requestId, source);
+  async submit(message: string, requestId: string, source?: InputSource, attachments?: readonly string[]) {
+    message = normalizeMessage(message, !!attachments?.length);
+    const result = await (await this.get()).submit(message, requestId, source, attachments);
     this.dirty = true; await this.flush(); return result;
   }
   async subscribeBackgroundReplies(listener: (reply: BackgroundReply) => Promise<void>) {

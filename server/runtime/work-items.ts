@@ -237,12 +237,12 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
           title: item.title, status: item.status, revision: item.revision, schedule: item.schedule, ...(item.scheduleText && { scheduleText: item.scheduleText }),
           nextDueAt: item.nextDueAt, ...(item.latest && { latest: { status: item.latest.status, startedAt: item.latest.startedAt,
             ...(item.latest.preview && { preview: item.latest.preview }), ...(item.latest.error && { error: item.latest.error }) } }) }));
-        return { content: [{ type: "text", text: JSON.stringify(summary) }] };
+        return { output: [{ type: "text", text: JSON.stringify(summary) }] };
       }
       if (args.action === "get") {
         const detail = await service().detail(itemId(args.id));
         // Latest executions are enough to report status or target stop; full history stays in the app.
-        return { content: [{ type: "text", text: JSON.stringify({ item: detail.item, executions: detail.executions.slice(0, 5) }) }] };
+        return { output: [{ type: "text", text: JSON.stringify({ item: detail.item, executions: detail.executions.slice(0, 5) }) }] };
       }
       const source = await api.commit(tx => service().source(tx, api.callId), context);
       const requestId = `piko:item-tool:${api.taskId}`;
@@ -256,7 +256,7 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
       else if (args.action === "stop") command = { action: "stop", requestId, id: itemId(args.id), executionId: executionId(args.executionId) };
       else command = { action: "status", requestId, id: itemId(args.id), revision: args.revision!, status: args.action === "archive" ? "archived" : "active" };
       const result = await service().command(command, source, context.abortSignal);
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      return { output: [{ type: "text", text: JSON.stringify(result) }] };
     },
   })] });
 }

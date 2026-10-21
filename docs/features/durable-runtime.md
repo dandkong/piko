@@ -1,8 +1,8 @@
 # Durable 配置与运行时
 
-状态：服务端已接入 pi-durable / pi-ai 1.1.0，配套 chord 同为 1.1.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。TG 已提供模型/思考强度按钮与压缩命令；RN 配置管理界面尚未实现，可编辑 JSON 并调用控制 API。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
+状态：服务端已接入 pi-durable / pi-ai 1.3.0，配套 chord 同为 1.3.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。TG 已提供模型/思考强度按钮与压缩命令；RN 配置管理界面尚未实现，可编辑 JSON 并调用控制 API。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
-1.1.0 的原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
+原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
 
 ## 实时事件与历史
 
@@ -55,7 +55,7 @@ BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 
 `agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话（以及尚无模型保存的旧会话）的初始选择；`background` 供后台子 Agent 使用，普通委派、定时任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。已有主会话的选择保存在 Durable Agent 文档中，重启后仍是上次切换的结果，改 JSON 不会覆盖它。
 
-上述 ID 来自锁定的 pi-ai 1.1.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
+上述 ID 来自锁定的 pi-ai 1.3.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
 
 第一次创建原生会话使用 agent.profiles.main；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留；修改 main 不会自动切换当前会话，需要时再调用 selection API 直接选 provider/model。最初没有模型的会话在重启后可以启用新配置。
 
@@ -134,7 +134,7 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 ## 更新的生效时机
 
-当前锁定 durable 1.1.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
+当前锁定 durable 1.3.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
 
 运行时及 HTTP 现在明确返回 `status: compacted | skipped | cancelled`；skipped 的 reason 为 no_summary 或 stale。只有摘要实际应用后才报告 compacted；未生成摘要、摘要过时无法应用、取消分别反馈，任务失败、丢失结果或其他应用错误报告失败。TG `/compact` 同步这些结果，可选模型详情读取失败不影响已确认的结果。后台自动压缩是否需要展示提醒仍待设计。
 
@@ -184,7 +184,7 @@ Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发�
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 1.1.0 仍拒绝图片，未另写替代工具；模型 imageInput 仅表示模型能力。Tasks 任务展示、结果时间线和内部记忆整理已接入；附件、RN 配置管理、工具轨迹和全局产物管理尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 返回图片块，图片由 Photon 处理器缩放/转码；非视觉模型接收占位诊断，附件存储见 [附件与图片读取](attachments.md)。Tasks 任务展示、结果时间线和内部记忆整理已接入；附件、RN 配置管理、工具轨迹和全局产物管理尚未接入。
 
 类型检查覆盖 API 与移动端；程序不提供文件回滚或哈希冲突保护，真机后台与真实长对话仍需使用验证。
 

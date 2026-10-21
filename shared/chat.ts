@@ -1,6 +1,8 @@
 export type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: number; requestId?: string };
 export type SubmissionReceipt = { id: string; requestId?: string; status: "queued" | "placed" | "done" | "unanswered"; error?: string };
 export const CHAT_PAGE_SIZE = 50;
+/** Images a single message may carry; each one is read by the model as a separate file. */
+export const MAX_ATTACHMENTS = 4;
 export type HistoryPage = { messages: Message[]; nextBefore?: string };
 /** Prompt size of the last model call; a reference point, not a live token count. */
 export type ChatUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; contextWindow?: number; ratio?: number };

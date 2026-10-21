@@ -177,10 +177,10 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       id: Type.Optional(Type.String({ pattern: "^[0-9]+$" })), task: Type.Optional(Type.String({ minLength: 1, maxLength: 24000 })), followUp: Type.Optional(Type.Boolean()) }),
     replay: "unsafe",
     execute: async (args, api, ctx) => {
-      if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, content: [{ type: "text", text: "Nested delegation is unavailable." }] };
+      if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, output: [{ type: "text", text: "Nested delegation is unavailable." }] };
       const ids = await api.commit(tx => subagentIds(tx), ctx);
       const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
-      if (args.id !== undefined && id === undefined) return { isError: true, content: [{ type: "text", text: "Unknown subagent." }] };
+      if (args.id !== undefined && id === undefined) return { isError: true, output: [{ type: "text", text: "Unknown subagent." }] };
       if (args.action === "status") {
         const states = await api.commit(async tx => {
           const records = await taskRecords(tx);
@@ -192,15 +192,15 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           }
           return lines.join("\n") || "No delegated work.";
         }, ctx);
-        return { content: [{ type: "text", text: states }] };
+        return { output: [{ type: "text", text: states }] };
       }
       if (args.action === "stop") {
         const targets = id === undefined ? ids : [id];
         await invalidate(api, targets, ctx);
         for (const child of targets) await (await api.conversation(child, ctx))!.abort(ctx);
-        return { content: [{ type: "text", text: "Delegated work stopped." }] };
+        return { output: [{ type: "text", text: "Delegated work stopped." }] };
       }
-      if (!args.task?.trim()) return { isError: true, content: [{ type: "text", text: "A task is required." }] };
+      if (!args.task?.trim()) return { isError: true, output: [{ type: "text", text: "A task is required." }] };
       const agent = await api.agent(ctx);
       const result = await api.commit(async tx => {
         const source = await originOfToolCall(tx, api.callId, ctx);
@@ -219,7 +219,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
         return child;
       }, ctx);
-      return { content: [{ type: "text", text: `Background job ${result} accepted. Continue your work; its result will arrive privately.` }], details: { conversationId: result } };
+      return { output: [{ type: "text", text: `Background job ${result} accepted. Continue your work; its result will arrive privately.` }], details: { conversationId: result } };
     },
   });
   extension = defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter], tools: [tool] });

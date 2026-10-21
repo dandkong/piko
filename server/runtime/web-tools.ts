@@ -19,7 +19,7 @@ export function createWebTools(env: Record<string, string | undefined>, options:
     }),
     replay: "unsafe",
     outputLimits: { maxBytes: 64 * 1024, maxLines: 2000 },
-    execute: async (args, _api, context) => ({ content: [{ type: "text", text: await searchWeb(args, { apiKey, fetch: options.fetch }, context.abortSignal) }] }),
+    execute: async (args, _api, context) => ({ output: [{ type: "text", text: await searchWeb(args, { apiKey, fetch: options.fetch }, context.abortSignal) }] }),
   });
   const extract = defineTool({
     name: "web_extract",
@@ -33,7 +33,7 @@ export function createWebTools(env: Record<string, string | undefined>, options:
     outputLimits: { maxBytes: 512 * 1024, maxLines: 100100 },
     execute: async (args, _api, context) => {
       const page = await extractWebPage(args, options, context.abortSignal);
-      return { content: [{ type: "text", text: extractedPageMarkdown(page) }],
+      return { output: [{ type: "text", text: extractedPageMarkdown(page) }],
         details: JSON.parse(JSON.stringify({ url: page.url, maxChars: args.maxChars ?? 10000, page })) };
     },
   });

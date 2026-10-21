@@ -1,12 +1,16 @@
 import type { ConversationStore } from "../../chat/conversations";
 import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
+import { MAX_ATTACHMENTS } from "../../../shared/chat";
+import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, selectionText, type TelegramCallback } from "./menus";
 
 export type TelegramMessage = {
   chatId: string; messageId: string; actorId: string; chatType: string; text?: string;
+  /** Photos and image documents; the channel downloads them into the shared attachment store. */
+  attachments?: { fileId: string; name?: string; mime?: string }[];
   topic?: boolean; business?: boolean;
 };
 
@@ -35,7 +39,8 @@ export class TelegramChannel {
   private unsubscribeReplies?: () => void;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
-    private readonly api: TelegramTransport, private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
+    private readonly api: TelegramTransport, private readonly store: AttachmentStore,
+    private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
     this.track(conversations.subscribeBackgroundReplies(async reply => {
       if (!this.accepting) return;
@@ -61,8 +66,9 @@ export class TelegramChannel {
   async handle(message: TelegramMessage): Promise<void> {
     if (!this.accepting || message.actorId !== this.identity.userId || message.chatType !== "private" ||
       message.topic || message.business) return;
-    if (message.text === undefined) { this.feedback(message, "Please send a text message."); return; }
-    const text = message.text.trim();
+    const text = message.text?.trim() ?? "";
+    const incoming = message.attachments ?? [];
+    if (!text && !incoming.length) { this.feedback(message, "Please send a text or a file."); return; }
     if (text.startsWith("/")) {
       const match = /^\/([a-zA-Z_]+)(?:@([\w]+))?(?:\s.*)?$/.exec(text);
       if (!match || match[2] && match[2].toLowerCase() !== this.identity.username.toLowerCase()) {
@@ -77,10 +83,17 @@ export class TelegramChannel {
       } else this.track(this.command(message, match[1].toLowerCase()));
       return;
     }
-    try { normalizeMessage(message.text); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
+    const paths: string[] = [];
+    if (incoming.length) {
+      try {
+        for (const item of incoming.slice(0, MAX_ATTACHMENTS)) paths.push((await this.store.save({
+          bytes: await this.api.download(item.fileId), name: item.name, mime: item.mime })).path);
+      } catch { this.feedback(message, "Couldn't read that file. Send it again under 20 MB."); return; }
+    }
+    try { normalizeMessage(text, paths.length > 0); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
     try {
       const baseline = await this.conversations.snapshot();
-      const result = await this.conversations.submit(message.text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId });
+      const result = await this.conversations.submit(text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId }, paths);
       if (result.duplicate) return;
       const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
       this.startDelivery(message.chatId, known);

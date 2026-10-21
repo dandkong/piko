@@ -1,0 +1,53 @@
+# 附件与图片读取
+
+状态：服务端已实现共享附件存储、Telegram 图片接入和原生 `read` 图片返回；RN 选图/上传 UI 尚未接入。
+
+## 共享存储
+
+Telegram 下载和 App 上传落到同一目录，不在工作区内：
+
+```text
+PIKO_HOME/state/attachments/<uuid>.<ext>
+```
+
+- 接收任意文件：图片、PDF、Office 文档、音视频等，模型自己决定如何检查
+- 文件名由服务端生成（UUID + 可识别后缀），后缀取自原始文件名，取不到时按嗅探类型或客户端 MIME 推断；路径永远不由客户端提供
+- 单文件上限 20 MB；图片按字节嗅探类型，其他类型以后缀为准
+- 启动时清理 30 天未修改的文件。路径已经写入会话历史，清理后旧消息里的 `read` 会失败，这是保留期的真实代价
+- 附件属于运行时数据，不参与工作区备份语义；`PIKO_HOME` 备份时一并复制
+
+实现见 `server/attachments.ts`（`save` / `read` / `lookup` / `sweep`）。
+
+## 入口
+
+| 来源 | 获取字节 | 说明 |
+| --- | --- | --- |
+| Telegram | photo 取最大尺寸；document / video / audio / voice 全部接收；`getFile` 后下载到共享存储 | 相册不合并，每条消息分别处理；caption 作为文字 |
+| App | `POST /api/attachments`，请求体是原始字节，Content-Type 作为后缀提示 | 返回 `{ id, mime, bytes, url }`；`GET /api/attachments/:id` 供展示，非图片按附件下载 |
+
+`POST /api/chat` 接受可选的 `attachmentIds`（最多 4 个）。服务端解析为绝对路径后交给运行时，通道本身不拼提示词。
+
+## 模型看到什么
+
+只有一个注入点 `server/chat/input.ts` 的 `attachmentPrompt`：
+
+```text
+<attached>
+/home/dand/.piko/state/attachments/<uuid>.jpg
+</attached>
+用户文字
+```
+
+两个通道因此得到完全相同的表示。UI 与 TG `/recent` 在投影时把这段去掉，只显示 `📎 附件` 或后续文字；模型仍看到完整路径。模型用 `read` 打开路径：
+
+- `read` 返回文本，或一个 `ImageContent` 块；图片由 Photon 处理器做方向校正、转码和缩放
+- 其他类型不做预处理：模型可以 `read` 文本类文件，或用 bash 的 `file`、`head`、`unzip -l`、`ffprobe` 等自行探测；Piko 不在工具层做类型分派
+- 当前模型没有 `image` 输入能力时，上游给出占位文本和诊断，Piko 不静默降级成“看过图了”
+- 附件内容进入上下文后占用 token；单条消息最多 4 个，建议按需发送
+
+## 尚未实现
+
+- RN 选图、上传与聊天内缩略图（服务端接口已就绪）
+- Telegram 相册合并（`media_group_id`）
+- 附件元数据展示（原始文件名、尺寸）和手动清理入口
+- 按文件类型提取正文（PDF/Office）；当前交给模型自行探测
