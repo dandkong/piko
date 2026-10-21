@@ -2,6 +2,7 @@ import type { ConversationStore } from "../../chat/conversations";
 import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
+import { toolIcon } from "../../runtime/tool-activity";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
@@ -21,13 +22,6 @@ export const TELEGRAM_COMMANDS = [
   { command: "models", description: "Choose a model" }, { command: "thinking", description: "Set thinking level" },
   { command: "compact", description: "Compact context" },
 ];
-function toolIcon(name: string): string {
-  if (name === "read") return "📖";
-  if (name === "bash") return "💻";
-  if (name === "edit") return "📝";
-  if (name === "write") return "📄";
-  return "🛠️";
-}
 const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
   TELEGRAM_COMMANDS.map(item => `/${item.command} — ${item.description}`).join("\n") +
   "\n\nUse /recent to see replies from the app. Model changes and maintenance are available when Piko is idle.";

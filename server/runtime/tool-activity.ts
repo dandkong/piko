@@ -12,19 +12,50 @@ function pick(args: Record<string, unknown>, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/** Emoji per built-in tool; unknown tools get a generic wrench. */
+export function toolIcon(name: string): string {
+  switch (name) {
+    case "read": return "📖";
+    case "write": return "📄";
+    case "edit": return "📝";
+    case "bash": return "💻";
+    case "web_search": return "🔍";
+    case "web_extract": return "🌐";
+    case "subagent": return "🤖";
+    case "work_item": return "🗓️";
+    default: return "🛠️";
+  }
+}
+
 /** What the call is about, derived from arguments; never includes file contents. */
 export function summarizeToolArgs(toolName: string, args: unknown): string {
   if (!args || typeof args !== "object" || Array.isArray(args)) return "";
-  const record = args as Record<string, unknown>;
-  if (toolName === "read" || toolName === "write") return singleLine(pick(record, "path")) ?? "";
-  if (toolName === "bash") return singleLine(pick(record, "command")) ?? "";
+  // Every tool shares one bound: branches may build longer text from several fields.
+  return singleLine(summarize(toolName, args as Record<string, unknown>), LIMIT) ?? "";
+}
+
+function summarize(toolName: string, record: Record<string, unknown>): string {
+  if (toolName === "read" || toolName === "write") return pick(record, "path") ?? "";
+  if (toolName === "bash") return pick(record, "command") ?? "";
   if (toolName === "edit") {
-    const path = singleLine(pick(record, "path"));
+    const path = pick(record, "path");
     const edits = Array.isArray(record.edits) ? record.edits.length : undefined;
     return path ? `${path}${edits ? ` (${edits} edit${edits === 1 ? "" : "s"})` : ""}` : "";
   }
-  if (toolName === "web_search") return singleLine(pick(record, "query")) ?? "";
-  if (toolName === "web_extract") return singleLine(pick(record, "url")) ?? "";
+  if (toolName === "web_search") return pick(record, "query") ?? "";
+  if (toolName === "web_extract") return pick(record, "url") ?? "";
+  if (toolName === "subagent") {
+    const action = pick(record, "action") ?? "call";
+    const id = pick(record, "id");
+    const task = singleLine(pick(record, "task"), 70);
+    return [action, id && `#${id}`, task].filter(Boolean).join(" ");
+  }
+  if (toolName === "work_item") {
+    const action = pick(record, "action") ?? "call";
+    const id = pick(record, "id");
+    const detail = singleLine(pick(record, "title") ?? pick(record, "prompt"), 70);
+    return [action, id && `#${id.slice(0, 8)}`, detail].filter(Boolean).join(" ");
+  }
   const entries = Object.entries(record).slice(0, 2).filter(([, value]) => typeof value === "string");
-  return singleLine(entries.map(([key, value]) => `${key}=${String(value)}`).join(", ")) ?? "";
+  return entries.map(([key, value]) => `${key}=${String(value)}`).join(", ");
 }
