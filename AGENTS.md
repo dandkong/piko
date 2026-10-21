@@ -8,6 +8,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 
 - 启动、环境与检查命令见 [README](README.md)。
 - 产品体验与范围见 [产品约定](docs/PRODUCT.md)。
+- 所有可交互控件的状态、尺寸、颜色、动效与组件用法见 [交互与视觉规范](docs/INTERACTION.md)，新增和修改 UI 必须遵循。
 - 依赖方向、工作区与领域模型见 [架构约定](docs/ARCHITECTURE.md)。
 - 当前进度与开发顺序见 [路线图](ROADMAP.md)。
 - 具体功能方案放在 `docs/features/`；已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
@@ -17,7 +18,8 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 
 ## 已确定的方向
 
-- 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。一级模块只保留 Chat、Posts（主动帖子）、Artifacts（产物）、Tasks（任务），不建设 Ideas。聊天列表铺满可用屏幕，头部、输入框与导航悬浮；上下使用同一浅色渐隐样式但独立控制覆盖范围；头部覆盖实测内容并向下延伸 12px，底部覆盖输入框/导航并在输入框上方延伸 32px。渐隐只负责视觉，列表首尾根据头像胶囊底边和输入框顶边实测，并与消息间距统一为 13px；头像不加底板，名字与状态保留上下结构并包在自适应胶囊内，正常空闲隐藏状态。
+- 客户端交互采用统一的“轻触”规范：导航选中用浅灰、提交/创建用浅蓝，同一区域最多一个主操作；按钮共享尺寸、状态矩阵和动效，不使用水波纹或弹跳。具体规则与组件见 [交互与视觉规范](docs/INTERACTION.md)，后续设计不得另起一套按钮样式。
+- 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。一级模块只保留 Chat（主聊天）、Tasks（任务）、Posts（主动帖子）、Artifacts（产物），不建设 Ideas。聊天列表铺满可用屏幕，头部、输入框与导航悬浮；上下使用同一浅色渐隐样式但独立控制覆盖范围；头部覆盖实测内容并向下延伸 12px，底部覆盖输入框/导航并在输入框上方延伸 32px。渐隐只负责视觉，列表首尾根据头像胶囊底边和输入框顶边实测，并与消息间距统一为 13px；头像不加底板，名字与状态保留上下结构并包在自适应胶囊内，正常空闲隐藏状态。
 - 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、全局工作区资源和基本工具，移除嵌套委派与任务管理；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
 - 定时任务已接入：一个任务对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载任务记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 只读展示未归档任务与结果时间线，创建、执行、恢复和归档在对话里完成；定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [定时任务](docs/features/scheduled-work-items.md)。
 - side chat 后续复用同一 Harness 的原生 conversation 与关系，交互、上下文共享和结论回传仍待设计。
@@ -46,7 +48,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 保留用户现有改动；未经请求不改变键盘、滚动、布局等已确认交互。
 - 使用 Bun，维护根目录和客户端各自的依赖与锁文件；依赖版本以 package.json / 锁文件为准。
 - Android / iOS 工程由 Expo 生成且已忽略，原生配置通过 `app.json` 或配置插件保存；不提交构建产物、本机路径、凭据和用户工作区内容。
-- 动效使用 Reanimated；现有 OpenMuse 素材与 UI 授权保留在 `THIRD_PARTY_NOTICES.md`。
+- 动效使用 Reanimated；现有 OpenMuse 素材与 UI 授权保留在 `THIRD_PARTY_NOTICES.md`。按钮和行交互优先复用 `TactilePressable`、`IconButton`、`TextButton`，按 [交互与视觉规范](docs/INTERACTION.md) 处理悬停、按压、焦点、选中和禁用状态。
 - 代码改动按影响运行 `bun run typecheck`；涉及打包再做对应平台导出。仓库不保留测试套件，关键状态、持久化、路径边界和恢复行为以真实运行或临时脚本人工验证，并在文档中说明验证状态。
 - 文档改动检查链接、命令和实现状态即可；原生键盘、网络和后台行为需要设备验证，未验证的范围明确说明。
 - 四个页签均已启用：Chat 与 Tasks 可用，Posts 为示例内容，Artifacts 仅标题占位。

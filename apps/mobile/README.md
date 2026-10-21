@@ -7,6 +7,7 @@
 ## 客户端开发约定
 
 - `App.tsx` 负责初始化；`src/components/AppShell.tsx` 管理通用布局；`src/theme.ts` 管理视觉基础。
+- 按钮、行、chip 和图标控件的状态、尺寸与动效统一遵循 [交互与视觉规范](../../docs/INTERACTION.md)；优先复用 `TactilePressable`、`IconButton`、`TextButton`，不要为单个控件另写按压样式。
 - 页面按功能放进 `src/features/`，临时交互状态留在 Hook，持久业务状态归服务端。Chat 的页面、输入框、API 与 SSE transport 位于 `src/features/chat/`。
 - 动效使用 Reanimated 和匹配 Expo SDK 的 Worklets，Babel preset 自动配置插件。`TypingIndicator.tsx` 提供等待动效，启用减少动效时保持静止，卸载后停止循环。
 - 左上菜单打开悬浮导航抽屉，四个页签与底部导航共用 `src/navigation.ts` 的配置；抽屉下方旁聊区目前是空态。抽屉左下设置、右下新建旁聊、通知和附件尚未接入；不展示不可用的功能页面。

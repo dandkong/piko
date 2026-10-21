@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Platform, Pressable, Text, TextInput, type TextStyle, View } from "react-native";
+import { Platform, Text, TextInput, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
 import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
 import { colors } from "../../theme";
+import { IconButton } from "../../components/IconButton";
+import { TactilePressable } from "../../components/TactilePressable";
 import { styles } from "./styles";
 import { handleComposerKeyDown } from "./composerKeyboard";
 import type { PendingAttachment } from "./useChat";
@@ -61,25 +63,31 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
             <View key={item.id} style={styles.composerAttachment}>
               <Paperclip size={13} strokeWidth={1.8} color={colors.muted} />
               <Text numberOfLines={1} style={styles.composerAttachmentName}>{item.name || item.id}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${item.name || item.id}`}
-                hitSlop={6} onPress={() => onRemoveAttachment(item.id)}>
+              <TactilePressable
+                accessibilityLabel={`Remove ${item.name || item.id}`}
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={() => onRemoveAttachment(item.id)}
+                scaleTo={0.9}
+                style={styles.attachmentRemoveHit}
+                faceStyle={styles.attachmentRemove}
+                variant="plain"
+              >
                 <X size={13} strokeWidth={2} color={colors.muted} />
-              </Pressable>
+              </TactilePressable>
             </View>
           ))}
         </View>
       )}
       <View style={styles.composerRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Add attachment"
-          accessibilityState={{ disabled: loading || attaching }}
+        <IconButton
           disabled={loading || attaching}
+          label="Add attachment"
           onPress={onAttach}
-          style={styles.composerButton}
+          variant="plain"
         >
-          <Plus size={23} strokeWidth={1.5} color={loading || attaching ? "#9CB5C5" : colors.text} />
-        </Pressable>
+          <Plus size={22} strokeWidth={1.8} color={colors.text} />
+        </IconButton>
         <TextInput
           ref={inputRef}
           value={draft}
@@ -106,22 +114,16 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
           }}
           accessibilityLabel="Message Piko"
         />
-        <Pressable
-          accessibilityLabel={showStop ? "Stop reply" : "Send message"}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: sendDisabled }}
+        <IconButton
           disabled={sendDisabled}
+          label={showStop ? "Stop reply" : "Send message"}
           onPress={showStop ? onStop : () => onSend()}
-          style={({ pressed }) => [
-            styles.composerButton,
-            busy || draft.trim() || attachments.length ? styles.sendReady : styles.sendIdle,
-            pressed && styles.pressed,
-          ]}
+          variant={showStop ? "soft" : canSend ? "primary" : "soft"}
         >
           {showStop ? <Square size={18} color={colors.text} fill={colors.text} strokeWidth={0} /> : (
-            <ArrowUp size={25} strokeWidth={1.8} color={draft.trim() || attachments.length ? colors.text : "#9CB5C5"} />
+            <ArrowUp size={22} strokeWidth={1.8} color={colors.text} />
           )}
-        </Pressable>
+        </IconButton>
       </View>
     </View>
   );

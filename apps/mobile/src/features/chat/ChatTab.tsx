@@ -13,6 +13,8 @@ import { ArrowDown, RotateCcw } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
+import { IconButton } from "../../components/IconButton";
+import { TextButton } from "../../components/TextButton";
 import { AssistantMessage } from "./AssistantMessage";
 import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
@@ -174,15 +176,16 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
                 <View style={styles.errorNotice}>
                   <Text style={styles.errorText}>{error}</Text>
                   {messages.length > 0 && (
-                    <Pressable
-                      accessibilityRole="button"
+                    <TextButton
                       disabled={busy}
+                      label="Try again"
                       onPress={retry}
-                      style={styles.retryButton}
+                      style={styles.retryButtonLayout}
+                      variant="plain"
                     >
                       <RotateCcw size={14} color={colors.text} />
                       <Text style={styles.retryButtonText}>Try again</Text>
-                    </Pressable>
+                    </TextButton>
                   )}
                 </View>
               )}
@@ -191,15 +194,13 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
         />
         {awayFromLatest && (
           <Animated.View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }, arrowAnimatedStyle]}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Latest messages"
+            <IconButton
+              label="Latest messages"
               onPress={() => anchor.follow(true)}
-              hitSlop={6}
-              style={({ pressed }) => [styles.latestButton, pressed && styles.pressed]}
+              style={styles.latestButtonShadow}
             >
               <ArrowDown size={22} strokeWidth={1.8} color={colors.text} />
-            </Pressable>
+            </IconButton>
           </Animated.View>
         )}
       </View>

@@ -2,7 +2,7 @@
 
 **给日常留一点空间。由 Pi 驱动。**
 
-Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及胶囊导航。当前一级模块为 Chat / Posts / Artifacts / Tasks，四个页签均已启用（Posts 为示例内容，Artifacts 仅占位）。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+Piko 是一个本地优先的个人助理原型，前端使用 Expo + React Native，运行于 Web、iOS 和 Android。首页和底部导航参考 OpenMuse：居中的水豚头像、近白背景、浅蓝聊天气泡，以及胶囊导航。当前一级模块为 Chat / Tasks / Posts / Artifacts，四个页签均已启用（Posts 为示例内容，Artifacts 仅占位）。UI 和素材授权见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 Agent 运行时使用 pi-durable 1.3.0，模型适配使用 pi-ai 1.3.0，Bun 提供 HTTP API 和 SSE 流式传输。会话、模型设置和凭据留在服务端；聊天中已启用 read、write、edit、bash 四个原生工具、内置 web_search/web_extract，并支持后台子 Agent 委派与定时任务。一个任务保存一个 Prompt、可选定时和固定目录；子 Agent 完成后由主 Agent 整理回复。搜索凭据由部署者在后端环境配置，日常使用无需选择服务商。
 
@@ -11,6 +11,7 @@ Agent 运行时使用 pi-durable 1.3.0，模型适配使用 pi-ai 1.3.0，Bun �
 | 文档 | 内容 |
 | --- | --- |
 | [产品约定](docs/PRODUCT.md) | 主会话、工作区、side chat 的待定交互与功能边界 |
+| [交互与视觉规范](docs/INTERACTION.md) | 按钮层级、状态、尺寸、动效和统一组件 |
 | [架构约定](docs/ARCHITECTURE.md) | 当前实现、Pi / Piko 职责、工作区资源与核心模型 |
 | [路线图](ROADMAP.md) | 当前进度、开发顺序和阶段验收 |
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |

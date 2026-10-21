@@ -1,12 +1,14 @@
 import { Menu } from "lucide-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Keyboard, Platform, StyleSheet, Text, View } from "react-native";
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, type SharedValue, withTiming } from "react-native-reanimated";
 import { navigation, type AppTab } from "../navigation";
-import { colors } from "../theme";
+import { colors, motion } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
+import { IconButton } from "./IconButton";
+import { TactilePressable } from "./TactilePressable";
 
 const KEYBOARD_COMPOSER_GAP = 10;
 export type { AppTab };
@@ -124,16 +126,14 @@ function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightCha
       onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
       style={[styles.header, { top: topInset }]}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open navigation"
-        accessibilityState={{ expanded: menuOpen, disabled: !onOpenMenu }}
-        disabled={!onOpenMenu}
+      <IconButton
+        accessibilityState={{ expanded: menuOpen }}
+        label="Open navigation"
         onPress={onOpenMenu}
-        style={({ pressed }) => [styles.headerButton, { left: 20, top: 16 }, pressed && styles.headerButtonPressed]}
+        style={styles.headerButton}
       >
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
-      </Pressable>
+      </IconButton>
       <View pointerEvents="none" style={styles.identity}>
         <Mascot size={wide ? 58 : 49} />
         <View testID="chat-identity-capsule" style={styles.identityCapsule}>
@@ -150,7 +150,7 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
   const [trackWidth, setTrackWidth] = useState(0);
   const position = useSharedValue(index);
   useEffect(() => {
-    position.value = withTiming(index, { duration: 260, easing: Easing.out(Easing.cubic) });
+    position.value = withTiming(index, { duration: motion.selection, easing: Easing.out(Easing.cubic) });
   }, [index, position]);
   const pillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: position.value * (trackWidth / navigation.length) }],
@@ -165,19 +165,21 @@ function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: bo
           const active = label === activeTab;
           const enabled = !!onTabChange;
           return (
-            <Pressable
+            <TactilePressable
               key={label}
               accessibilityRole="tab"
               accessibilityLabel={label}
               accessibilityHint={enabled ? hint : "Coming soon"}
-              accessibilityState={{ selected: active, disabled: !enabled }}
-              aria-selected={active}
+              accessibilityState={{ selected: active }}
               disabled={!enabled}
               onPress={() => onTabChange?.(label)}
+              scaleTo={0.92}
               style={styles.tab}
+              faceStyle={styles.tabFace}
+              variant="plain"
             >
               <Icon size={23} strokeWidth={1.8} color={colors.text} />
-            </Pressable>
+            </TactilePressable>
           );
         })}
       </View>
@@ -250,17 +252,8 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     position: "absolute",
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 22,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  headerButtonPressed: {
-    opacity: 0.7,
+    left: 20,
+    top: 16,
   },
   tabBarWrap: {
     paddingHorizontal: 22,
@@ -287,6 +280,11 @@ const styles = StyleSheet.create({
     height: 47,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 28,
+  },
+  tabFace: {
+    width: "100%",
+    height: "100%",
     borderRadius: 28,
   },
   activePill: {

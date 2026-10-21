@@ -20,12 +20,12 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { navigation, type AppTab } from "../../navigation";
-import { colors } from "../../theme";
+import { colors, motion, radii } from "../../theme";
+import { IconButton } from "../../components/IconButton";
+import { TactilePressable } from "../../components/TactilePressable";
 
 const PANEL_MAX_WIDTH = 340;
 const PANEL_INSET = 10;
-const OPEN_DURATION = 260;
-const CLOSE_DURATION = 200;
 
 /** Floating navigation panel: tabs mirror the bottom bar and side chats stay independent. */
 export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpenSettings, onNewSideChat }: {
@@ -49,7 +49,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
   useEffect(() => {
     if (!mounted) return;
     progress.value = withTiming(open ? 1 : 0, {
-      duration: open ? OPEN_DURATION : CLOSE_DURATION,
+      duration: open ? motion.drawerIn : motion.drawerOut,
       easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
     }, finished => {
       if (finished && !open) runOnJS(setMounted)(false);
@@ -104,15 +104,9 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
       >
         <View style={styles.header}>
           <Text style={styles.title}>Piko</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close navigation"
-            hitSlop={8}
-            onPress={onClose}
-            style={({ pressed }) => [styles.close, pressed && styles.pressed]}
-          >
+          <IconButton label="Close navigation" onPress={onClose} size="sm">
             <X size={18} strokeWidth={1.8} color={colors.muted} />
-          </Pressable>
+          </IconButton>
         </View>
 
         <ScrollView
@@ -125,20 +119,23 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
             {navigation.map(({ label, icon: Icon, hint }) => {
               const active = label === activeTab;
               return (
-                <Pressable
+                <TactilePressable
                   key={label}
                   accessibilityRole="tab"
                   accessibilityLabel={label}
                   accessibilityHint={hint}
                   accessibilityState={{ selected: active }}
-                  aria-selected={active}
                   onPress={() => onSelectTab(label)}
-                  style={({ pressed }) => [styles.tabRow, active && styles.tabRowActive, pressed && styles.pressed]}
+                  scaleTo={1}
+                  selected={active}
+                  style={styles.tabRowHit}
+                  faceStyle={styles.tabRow}
                   testID={`drawer-tab-${label}`}
+                  variant="plain"
                 >
                   <Icon size={22} strokeWidth={1.8} color={colors.text} />
                   <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
-                </Pressable>
+                </TactilePressable>
               );
             })}
           </View>
@@ -153,28 +150,21 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
         </ScrollView>
 
         <View style={styles.footer}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-            accessibilityHint={onOpenSettings ? "Open settings" : "Coming soon"}
-            accessibilityState={{ disabled: !onOpenSettings }}
-            disabled={!onOpenSettings}
+          <IconButton
+            hint={onOpenSettings ? "Open settings" : "Coming soon"}
+            label="Settings"
             onPress={onOpenSettings}
-            style={({ pressed }) => [styles.footerButton, pressed && styles.pressed]}
           >
             <Settings size={20} strokeWidth={1.8} color={colors.text} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New side chat"
-            accessibilityHint={onNewSideChat ? "Create a side chat" : "Coming soon"}
-            accessibilityState={{ disabled: !onNewSideChat }}
-            disabled={!onNewSideChat}
+          </IconButton>
+          <IconButton
+            hint={onNewSideChat ? "Create a side chat" : "Coming soon"}
+            label="New side chat"
             onPress={onNewSideChat}
-            style={({ pressed }) => [styles.footerButton, styles.footerPrimary, pressed && styles.pressed]}
+            variant={onNewSideChat ? "primary" : "card"}
           >
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />
-          </Pressable>
+          </IconButton>
         </View>
       </Animated.View>
     </View>
@@ -193,7 +183,7 @@ const styles = StyleSheet.create({
   panel: {
     position: "absolute",
     left: PANEL_INSET,
-    borderRadius: 30,
+    borderRadius: radii.panel,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
@@ -217,16 +207,6 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     color: colors.text,
   },
-  close: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: colors.canvas,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
   scroll: {
     flex: 1,
   },
@@ -245,16 +225,18 @@ const styles = StyleSheet.create({
   tabList: {
     gap: 2,
   },
+  tabRowHit: {
+    width: "100%",
+  },
   tabRow: {
+    width: "100%",
     minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "flex-start",
     gap: 14,
     paddingHorizontal: 14,
-    borderRadius: 18,
-  },
-  tabRowActive: {
-    backgroundColor: "#F0F1F2",
+    borderRadius: radii.card,
   },
   tabLabel: {
     fontSize: 17,
@@ -264,9 +246,6 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     fontWeight: "600",
-  },
-  pressed: {
-    opacity: 0.7,
   },
   divider: {
     height: 1,
@@ -299,18 +278,5 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderTopWidth: 1,
     borderTopColor: colors.line,
-  },
-  footerButton: {
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 23,
-    backgroundColor: colors.canvas,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  footerPrimary: {
-    backgroundColor: colors.card,
   },
 });

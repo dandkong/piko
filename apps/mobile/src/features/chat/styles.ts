@@ -80,12 +80,8 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  retryButtonLayout: {
     alignSelf: "flex-start",
-    gap: 8,
-    paddingVertical: 7,
   },
   latestButtonOverlay: {
     position: "absolute",
@@ -95,15 +91,8 @@ export const styles = StyleSheet.create({
     zIndex: 1,
     alignItems: "center",
   },
-  latestButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
+  latestButtonShadow: {
     borderRadius: 22,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
     shadowColor: "#18384B",
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -154,6 +143,17 @@ export const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
   },
+  attachmentRemoveHit: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentRemove: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
   attachmentRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -164,7 +164,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: 5,
     maxWidth: 220,
-    backgroundColor: "#F3F5F6",
+    minHeight: 32,
     borderRadius: 12,
     paddingHorizontal: 9,
     paddingVertical: 5,
@@ -184,21 +184,5 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 2,
     paddingTop: 10,
     paddingBottom: 10,
-  },
-  composerButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 24,
-  },
-  sendReady: {
-    backgroundColor: colors.blue,
-  },
-  sendIdle: {
-    backgroundColor: "#F3F5F6",
-  },
-  pressed: {
-    transform: [{ scale: 0.98 }],
   },
 });

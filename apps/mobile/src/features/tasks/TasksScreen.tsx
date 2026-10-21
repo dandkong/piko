@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import type { ItemExecution, WorkItem, WorkItemCommand, WorkItemDetail } from "../../../../../shared/work-items";
 import { colors } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
+import { TactilePressable } from "../../components/TactilePressable";
+import { TextButton } from "../../components/TextButton";
 import { AssistantMessage } from "../chat/AssistantMessage";
 import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
 
@@ -88,23 +90,40 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
 
   return <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
     <ScreenHeader title={item?.title ?? "任务"} action={selected
-      ? <Pressable accessibilityRole="button" onPress={() => openItem()} style={styles.back}><Text style={styles.backText}>返回</Text></Pressable>
+      ? <TextButton label="返回" onPress={() => openItem()}><Text style={styles.backText}>返回</Text></TextButton>
       : undefined} />
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
     {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>目前没有未归档的任务。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
     {!selected && visibleItems.map(value => <ScreenCard key={value.id} style={styles.row}>
-      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false, disabled: busy || value.latest?.status === "running" }}
-        accessibilityLabel="归档" disabled={busy || value.latest?.status === "running"}
-        onPress={() => archive(value)} style={styles.check} />
-      <Pressable accessibilityRole="button" disabled={busy} onPress={() => openItem(value.id)} style={styles.cardBody}>
+      <TactilePressable
+        accessibilityLabel="归档"
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: false }}
+        disabled={busy || value.latest?.status === "running"}
+        hitSlop={11}
+        onPress={() => archive(value)}
+        scaleTo={0.9}
+        style={styles.checkHit}
+        faceStyle={styles.check}
+        variant="plain"
+      />
+      <TactilePressable
+        accessibilityRole="button"
+        disabled={busy}
+        onPress={() => openItem(value.id)}
+        scaleTo={1}
+        style={styles.cardBodyHit}
+        faceStyle={styles.cardBody}
+        variant="plain"
+      >
         <Text style={styles.name}>{value.title}</Text>
         <Text style={styles.meta}>{scheduleLabel(value)}</Text>
         {value.latest && <Text numberOfLines={2} style={[styles.preview, value.latest.status === "failed" && styles.error]}>
           {value.latest.status === "completed" ? value.latest.preview ?? "上次已完成" : statusNames[value.latest.status]}
         </Text>}
-      </Pressable>
+      </TactilePressable>
     </ScreenCard>)}
 
     {item && <>
@@ -114,7 +133,14 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
       </ScreenCard>
 
       {detail.executions.map(run => <ScreenCard key={run.id}>
-        <Pressable accessibilityRole="button" onPress={() => toggle(run)} style={styles.entry}>
+        <TactilePressable
+          accessibilityRole="button"
+          onPress={() => toggle(run)}
+          scaleTo={1}
+          style={styles.entryHit}
+          faceStyle={styles.entry}
+          variant="plain"
+        >
           <View style={styles.entryHeader}>
             <Text style={styles.meta}>{dayTime(run.startedAt)}</Text>
             {run.status !== "completed" && <Text style={[styles.meta, run.status === "failed" && styles.error]}>{statusNames[run.status]}</Text>}
@@ -123,7 +149,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
             ? <>{answers[run.id] === undefined ? <Text style={styles.meta}>正在读取…</Text> : answers[run.id] ? <AssistantMessage content={answers[run.id]} /> : <Text style={styles.meta}>这次没有留下回答。</Text>}
               {!!run.error && <Text style={styles.error}>{run.error}</Text>}</>
             : <Text numberOfLines={2} style={styles.preview}>{run.preview ?? (run.status === "running" ? "正在做…" : statusNames[run.status])}</Text>}
-        </Pressable>
+        </TactilePressable>
       </ScreenCard>)}
       {!detail.executions.length && <Text style={styles.empty}>还没做过。任务存在不代表已经执行过。</Text>}
     </>}
@@ -131,12 +157,14 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
 }
 
 const styles = StyleSheet.create({
-  back: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: "#F3F4F5" },
-  backText: { fontSize: 13, color: colors.text },
+  backText: { fontSize: 14, color: colors.text },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  entry: { gap: 10 },
-  cardBody: { flex: 1, gap: 8 },
-  check: { width: 22, height: 22, marginTop: 2, borderRadius: 7, borderWidth: 1.5, borderColor: "#C4C9CC", alignItems: "center", justifyContent: "center" },
+  entryHit: { width: "100%" },
+  entry: { alignItems: "stretch", justifyContent: "flex-start", gap: 10, padding: 4, margin: -4, borderRadius: 12 },
+  cardBodyHit: { flex: 1 },
+  cardBody: { alignItems: "stretch", justifyContent: "flex-start", gap: 8, padding: 4, margin: -4, borderRadius: 12 },
+  checkHit: { width: 22, height: 22, marginTop: 2 },
+  check: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: "#C4C9CC", alignItems: "center", justifyContent: "center" },
   name: { fontSize: 16, fontWeight: "600", color: colors.text },
   body: { fontSize: 15, lineHeight: 23, color: colors.text },
   meta: { fontSize: 13, color: colors.muted, lineHeight: 20 },
