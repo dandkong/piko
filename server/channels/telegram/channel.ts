@@ -20,6 +20,11 @@ export const TELEGRAM_COMMANDS = [
 const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
   TELEGRAM_COMMANDS.map(item => `/${item.command} — ${item.description}`).join("\n") +
   "\n\nUse /recent to see replies from the app. Model changes and maintenance are available when Piko is idle.";
+/** Compact token counts for status output. */
+function tokens(value: number): string {
+  return value >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(1))}M`
+    : value >= 1_000 ? `${Number((value / 1_000).toFixed(1))}k` : String(value);
+}
 export class TelegramChannel {
   private accepting = true;
   private readonly controller = new AbortController();
@@ -116,7 +121,9 @@ export class TelegramChannel {
     else if (command === "status") {
       const snapshot = await this.conversations.snapshot();
       text = `Status: ${snapshot.busy ? "Replying" : "Ready"}` + (snapshot.interruption ? `\n${snapshot.interruption}` : "") +
-        (snapshot.latest?.status === "unanswered" ? `\nLast input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}` : "");
+        (snapshot.latest?.status === "unanswered" ? `\nLast input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}` : "") +
+        (snapshot.usage ? `\nContext: ${tokens(snapshot.usage.input + snapshot.usage.cacheRead + snapshot.usage.cacheWrite)}` +
+          (snapshot.usage.contextWindow ? ` / ${tokens(snapshot.usage.contextWindow)} (${Math.round((snapshot.usage.ratio ?? 0) * 100)}%)` : "") : "");
       const description = await this.runtime.describe();
       text += `\n${selectionText(description)}\nSkills: ${description.skills.length}`;
     } else if (command === "models" || command === "thinking") {

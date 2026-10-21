@@ -6,6 +6,7 @@ import { createRegistry, defineDoc, defineDocFamily, InboxDoc, LiveDoc, Harness,
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
+import type { ChatUsage } from "../../shared/chat";
 import type { WorkspacePaths } from "../domain/workspace";
 import type { BackgroundReply, InputSource, ChatRuntime, ChatSession, SessionEvent } from "./types";
 import { RuntimeBusyError } from "./types";
@@ -72,6 +73,8 @@ export class DurableChatSession implements ChatSession {
   private replyListeners = new Set<(reply: BackgroundReply) => Promise<void>>();
   private pendingReplies: BackgroundReply[] = [];
   private previousIds = new Map<string, string>();
+  private readonly contextWindows = new Map<string, number>();
+  private selected?: { provider: string; modelId: string };
   private listeners = new Set<(event: SessionEvent) => void>();
   private maintenance?: Promise<unknown>;
   private disposed = false;
@@ -154,6 +157,8 @@ export class DurableChatSession implements ChatSession {
         }
       }, ctx);
       this.storage = storage; this.harness = harness; this.conversation = conversation; this.config = config; this.extensions = extensions;
+      this.selected = selected && { provider: selected.provider, modelId: selected.id };
+      for (const model of await config.models.getAvailable()) this.contextWindows.set(`${model.provider}/${model.id}`, model.contextWindow);
       this.itemService = new DurableWorkItems(harness, this.paths.workspace, children, async () => {
         if (this.disposed) throw new Error("Piko is shutting down.");
         if (this.maintenance || this.stopping) throw new RuntimeBusyError();
@@ -229,6 +234,24 @@ export class DurableChatSession implements ChatSession {
     const record = await this.harness.commit(tx => tx.submissionByRequest(this.conversation.id, requestId), ctx);
     return record && receipt(record);
   }
+  /** Prompt size reported by the last model call, paired with the configured context window. */
+  private usage(): ChatUsage | undefined {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry.kind !== "pi.assistant") continue;
+      const messages = entry.model ?? [];
+      for (let part = messages.length - 1; part >= 0; part -= 1) {
+        const message = messages[part];
+        if (message.role !== "assistant" || !message.usage) continue;
+        const value = message.usage;
+        const contextWindow = this.selected && this.contextWindows.get(`${this.selected.provider}/${this.selected.modelId}`);
+        return { input: value.input, output: value.output, cacheRead: value.cacheRead, cacheWrite: value.cacheWrite,
+          totalTokens: value.totalTokens,
+          ...(contextWindow && { contextWindow, ratio: (value.input + value.cacheRead + value.cacheWrite) / contextWindow }) };
+      }
+    }
+    return undefined;
+  }
   async history(before?: string, limit?: number) {
     return this.harness.commit(async tx => {
       const { entries: _entries, ...page } = await historyPageFromTransaction(tx, this.inputEntries, before, limit);
@@ -272,8 +295,9 @@ export class DurableChatSession implements ChatSession {
       this.hiddenEntries = state.hidden;
       messages = this.messages;
     }
+    const usage = this.usage();
     return { messages: [...messages, ...state.queued], ...(state.page && { history: { nextBefore: state.page.nextBefore } }), busy: this.isStreaming, previousIds: Object.fromEntries(this.previousIds),
-      ...(state.latest && { latest: receipt(state.latest) }), ...(state.interruption && { interruption: state.interruption }) };
+      ...(state.latest && { latest: receipt(state.latest) }), ...(state.interruption && { interruption: state.interruption }), ...(usage && { usage }) };
   }
   async submit(text: string, requestId: string, source: InputSource = { channel: "app" }) {
     if (requestId.startsWith("piko:")) throw new Error("Reserved input identity.");
@@ -388,6 +412,7 @@ export class DurableChatSession implements ChatSession {
       await configureAgent(tx, this.conversation.id, selection);
       for (const id of ids) await configureAgent(tx, id, selection);
     }, ctx);
+    this.selected = { provider: model.provider, modelId: model.id };
   }); }
   async describe(): Promise<RuntimeDescription> {
     const agent = await this.conversation.agent(ctx);

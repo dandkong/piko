@@ -23,9 +23,7 @@ const sameModel = (a?: ModelSelection, b?: ModelSelection) => !!a && !!b && a.pr
 export function selectionText(description: RuntimeDescription): string {
   const selection = description.selection;
   if (!selection) return "Model: Not set\nThinking: Not set";
-  const model = description.models.find(item => item.provider === selection.provider && item.id === selection.model);
-  return `Model: ${selection.provider}/${selection.model}\nThinking: ${selection.thinking ?? "off"}` +
-    (model?.contextWindow ? `\nContext limit: ${model.contextWindow.toLocaleString("en-US")} tokens` : "");
+  return `Model: ${selection.provider}/${selection.model}\nThinking: ${selection.thinking ?? "off"}`;
 }
 
 /** Ephemeral, source-bound menus. Indices refer to this menu's snapshot, never a reordered catalog. */
