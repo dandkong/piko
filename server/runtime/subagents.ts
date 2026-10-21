@@ -237,7 +237,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
     return child;
   }
   const tool = defineTool({
-    name: SUBAGENT_TOOL, description: "Delegate independent work in the background. spawn creates a fresh conversation without main chat history, so include the necessary task context; send corrects active work; status checks jobs; stop cancels one job or all jobs. Results return privately when ready. Never wait here for completion.",
+    name: SUBAGENT_TOOL, description: "Delegate independent work in the background. spawn creates a fresh conversation without main chat history, so include the necessary task context; send corrects active work; status reports one job and requires its id; stop cancels one job or all jobs. Results return privately when ready. Never wait here for completion.",
     parameters: Type.Object({ action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("status"), Type.Literal("stop")]),
       id: Type.Optional(Type.String({ pattern: "^[0-9]+$" })), task: Type.Optional(Type.String({ minLength: 1, maxLength: 24000 })), followUp: Type.Optional(Type.Boolean()) }),
     replay: "unsafe",
@@ -247,16 +247,16 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
       if (args.id !== undefined && id === undefined) return { isError: true, output: [{ type: "text", text: "Unknown subagent." }] };
       if (args.action === "status") {
+        if (id === undefined) return { isError: true, output: [{ type: "text", text: "status needs a subagent id." }] };
         const states = await api.commit(async tx => {
           const records = await taskRecords(tx);
           const lines: string[] = [];
-          for (const child of id === undefined ? ids : [id]) {
+          for (const child of [id]) {
             const live = await tx.doc(LiveDoc, child);
             const epoch = (await tx.doc(JobControl, child)).epoch;
             const status = await jobState(tx, records, child, epoch, !!live.run || awaitingDelivery(records, child, epoch));
             lines.push(`${child}: ${status.state}${status.detail ? ` · ${status.detail}` : ""}`);
-            // A specific id gets the last few steps; the overview stays one line per job.
-            for (const step of await recentActivity(tx, child, id === undefined ? 1 : ACTIVITY_STEPS)) lines.push(`  ${step}`);
+            for (const step of await recentActivity(tx, child, ACTIVITY_STEPS)) lines.push(`  ${step}`);
           }
           return lines.join("\n") || "No delegated work.";
         }, ctx);
