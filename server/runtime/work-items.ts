@@ -225,7 +225,7 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
     { description: "null=manual; once=run once at the given instant; cron=recurring." });
   return defineExtension({ name: "piko-work-items", tools: [defineTool({
     name: "work_item", replay: "unsafe",
-    description: "Manage persistent tasks. list: active tasks without prompts; includeArchived also returns archived tasks. get: full definition and the latest 5 executions. create/update: save a complete definition; update replaces title, prompt and schedule, so call get first. schedule null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone. scheduleText is shown to the user verbatim and is required whenever schedule is not null. run: start a fresh background assistant now; it does not change the schedule; one execution per task and at most two task executions globally. archive: stop future triggers; stop its running execution first. restore: re-enable future triggers only. stop: cancel any running execution for the task without changing its schedule. Results return privately to you like ordinary subagents; after a task result, your reply may be sent to every channel. Summarize results for the user. Never claim a schedule ran merely because it exists.",
+    description: "Manage persistent tasks. list: active tasks without prompts; includeArchived also returns archived tasks, which the app shows as completed. get: full definition and the latest 5 executions. create/update: save a complete definition; update replaces title, prompt and schedule, so call get first. schedule null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone. scheduleText is shown to the user verbatim and is required whenever schedule is not null. run: start a fresh background assistant now; it does not change the schedule; one execution per task and at most two task executions globally. archive: stop future triggers and mark the task completed in the app; stop its running execution first. restore: re-enable future triggers only. stop: cancel any running execution for the task without changing its schedule. Results return privately to you like ordinary subagents; after a task result, your reply may be sent to every channel. Summarize results for the user. Never claim a schedule ran merely because it exists.",
     parameters: Type.Object({
       action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value)),
         { description: "list, get, create, update, run, archive, restore or stop." }),
@@ -235,7 +235,7 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
       schedule: Type.Optional(schedule),
       scheduleText: Type.Optional(Type.String({ maxLength: 120,
         description: "Short human-readable schedule label shown verbatim; required whenever schedule is not null. Do not include a time zone or cron syntax." })),
-      includeArchived: Type.Optional(Type.Boolean({ description: "list only: include archived tasks." })),
+      includeArchived: Type.Optional(Type.Boolean({ description: "list only: include archived tasks; the app shows them as completed." })),
     }),
     execute: async (args, api, context) => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) throw new WorkItemError("Only the main assistant can manage items.", 403);
