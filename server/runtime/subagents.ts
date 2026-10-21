@@ -91,7 +91,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         const binding = (await runtime.snapshot(ItemContext, task.input.child, ctx))?.binding;
         if (binding) {
           const root = await runtime.agent(ctx);
-          try { await new ItemFiles(root.cwd!).prepare(binding.itemId, String(task.input.child)); }
+          try { await new ItemFiles(root.cwd!).prepare(binding.itemId); }
           catch (error) {
             await runtime.commit(() => ({ status: "running", checkpoint: { phase: "report", error: error instanceof Error ? error.message : "Cannot prepare the item directory." } }), ctx);
             return;
@@ -136,7 +136,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           const binding = (await tx.doc(ItemContext, task.input.child)).binding;
           // Provenance paragraph: scheduled work carries its item, plain delegation carries its job id.
           const heading = binding
-            ? `Scheduled work item ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. Outputs are in items/${binding.itemId}/outputs/${task.input.child}/ in the main workspace.\n\n`
+            ? `Scheduled work item ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. This is the item's persistent directory under items/${binding.itemId}/ in the main workspace.\n\n`
             : `Background subagent ${task.input.child}.\n\n`;
           // Scheduled work is broadcast to every channel; ordinary delegation only answers where it started.
           prepared.payload = { requestId, knownMessageIds, body: heading + body, deliver: binding ? "all" : "origin" };
@@ -166,7 +166,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       ...childScope(agent),
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
     if (item) (await tx.doc(ItemContext, child)).binding = item;
-    const task = item ? `${message}\n\nThis is work item ${JSON.stringify(item.title)} (${item.itemId}), execution ${child}. ${item.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(item.scheduledAt).toISOString()}.`} Started at ${new Date(item.startedAt).toISOString()}. Your working directory is this item's persistent directory. Use MEMORY.md for reusable findings and progress, and outputs/${child}/ for this execution's files. Read earlier outputs only when needed. Update item memory conservatively; do not modify global guidance or global memory. Report findings and output paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
+    const task = item ? `${message}\n\nThis is work item ${JSON.stringify(item.title)} (${item.itemId}), execution ${child}. ${item.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(item.scheduledAt).toISOString()}.`} Started at ${new Date(item.startedAt).toISOString()}. Your working directory is this item's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
     await tx.createTask(Reporter, { child, message: task, epoch: 0, source, followUp: false },
       { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     return child;

@@ -56,8 +56,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
     ├── projects/
     ├── artifacts/
     └── items/<id>/
-        ├── MEMORY.md
-        └── outputs/<executionId>/
+        └── MEMORY.md              # 任务总览；执行产物直接写在同一目录
 ```
 
 初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。当前使用固定 state/durable，不迁移旧 SQLite 或 durable-sessions 布局，也不读取其聊天历史。清理旧数据须先停止后端，配置和工作区不随数据库清理删除。

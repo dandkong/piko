@@ -79,10 +79,9 @@ export class ItemFiles {
     if (!isWithin(base, await realpath(path)) || await realpath(path) !== resolve(path)) throw new WorkItemError("Path escapes its declared item location.");
     return info;
   }
-  async prepare(id: string, execution?: string) {
+  async prepare(id: string) {
     // Check each existing parent before mkdir; never follow a pre-existing directory link.
     const paths = [join(this.workspace, "items"), this.directory(id)];
-    if (execution) paths.push(join(this.directory(id), "outputs"), join(this.directory(id), "outputs", executionId(execution)));
     for (const path of paths) {
       try { await mkdir(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
       await this.checked(path, true);
