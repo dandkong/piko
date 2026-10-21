@@ -8,6 +8,7 @@ import { entriesFromTransaction, messageText } from "./pi-history";
 import { ItemContext, type ItemBinding } from "./item-context";
 import { ItemFiles } from "../domain/work-items";
 import { childScope, spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
+import { summarizeToolArgs, toolIcon, singleLine } from "./tool-activity";
 
 export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   kind: "piko.subagent-control", version: 1, scope: "conversation", history: "latest", fork: "initial",
@@ -32,10 +33,74 @@ export async function subagentIds(tx: Tx): Promise<ConversationId[]> {
   return result;
 }
 
+const ACTIVITY_STEPS = 5;
+const ACTIVITY_TEXT_LIMIT = 160;
+
+/** Last assistant text and tool calls of a child, oldest first; bounds both per-step text and step count. */
+export async function recentActivity(tx: Tx, child: ConversationId, limit: number): Promise<string[]> {
+  const groups: string[][] = [];
+  let count = 0;
+  let cursor: Cursor | undefined;
+  do {
+    const page = await tx.scanEntries({ conversationId: child, order: "descending" }, 50, cursor);
+    for (const entry of page.items) {
+      if (entry.kind !== "pi.assistant") continue;
+      const steps: string[] = [];
+      for (const message of entry.model ?? []) {
+        if (message.role !== "assistant" || !("content" in message) || !Array.isArray(message.content)) continue;
+        for (const block of message.content) {
+          if (block.type === "text") {
+            const text = singleLine(block.text, ACTIVITY_TEXT_LIMIT);
+            if (text) steps.push(text);
+          } else if (block.type === "toolCall") {
+            const summary = summarizeToolArgs(block.name, block.arguments);
+            steps.push(`${toolIcon(block.name)} ${block.name}${summary ? `: ${summary}` : ""}`);
+          }
+        }
+      }
+      if (steps.length) { groups.push(steps); count += steps.length; }
+      if (count >= limit) break;
+    }
+    cursor = page.next;
+  } while (cursor && count < limit);
+  const chrono = groups.reverse().flat();
+  // The committed transcript can lag the in-flight answer; show the partial last.
+  const live = await tx.doc(LiveDoc, child);
+  const partial = live.generation?.message;
+  if (partial?.content) {
+    const text = partial.content.filter(block => block.type === "text").map(block => block.text).join(" ");
+    const line = singleLine(text, ACTIVITY_TEXT_LIMIT);
+    if (line) chrono.push(`(replying) ${line}`);
+  }
+  return chrono.slice(-limit);
+}
+
 export type ReporterInput = { child: ConversationId; message: string; epoch: number; source: InputSource; followUp: boolean };
 export type ReporterState = { phase: "deliver" } | { phase: "report"; answer?: EntryId; error?: string };
 export type ReporterResult = { answer?: EntryId; error?: string } | null;
 export type SubagentController = ReturnType<typeof createSubagents>;
+/** How the child's latest job ended: a run that is gone is stopped, failed, interrupted or finished. */
+export async function jobState(tx: Tx, records: TaskRecord<unknown, unknown, unknown>[], child: ConversationId, epoch: number, working: boolean) {
+  if (working) return { state: "working" as const };
+  const binding = (await tx.doc(ItemContext, child)).binding;
+  if (binding?.interrupted) return { state: "interrupted" as const };
+  const reporter = records.filter(record => record.kind === REPORTER_KIND
+    && (record.input as ReporterInput).child === child).at(-1);
+  if (!reporter) return { state: "finished" as const };
+  const input = reporter.input as ReporterInput;
+  const submission = await tx.submissionByRequest(child, `piko:subagent-input:${reporter.id}`);
+  const outcome = reporter.state.status === "terminal" || reporter.state.status === "completing"
+    ? reporter.state.outcome : undefined;
+  const checkpoint = reporter.state.status === "terminal" || reporter.state.status === "completing"
+    ? undefined : reporter.state.checkpoint as ReporterState | undefined;
+  if (epoch !== input.epoch || (submission?.status === "unanswered" && submission.reason === "aborted") || outcome?.status === "aborted")
+    return { state: "stopped" as const };
+  const failure = checkpoint?.phase === "report" ? checkpoint.error
+    : submission?.status === "unanswered" ? (typeof submission.detail === "string" ? submission.detail : submission.reason)
+    : outcome?.status === "failed" || outcome?.status === "faulted" ? outcome.error.message : undefined;
+  return failure ? { state: "failed" as const, detail: singleLine(failure, 80) } : { state: "finished" as const };
+}
+
 export function createSubagents(options: { storage: () => Storage; canReport: () => boolean;
   background: () => Promise<BackgroundSelection | undefined>;
   onReply: (reply: BackgroundReply) => Promise<void> }) {
@@ -188,7 +253,10 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           for (const child of id === undefined ? ids : [id]) {
             const live = await tx.doc(LiveDoc, child);
             const epoch = (await tx.doc(JobControl, child)).epoch;
-            lines.push(`${child}: ${live.run || awaitingDelivery(records, child, epoch) ? "working" : "finished"}`);
+            const status = await jobState(tx, records, child, epoch, !!live.run || awaitingDelivery(records, child, epoch));
+            lines.push(`${child}: ${status.state}${status.detail ? ` · ${status.detail}` : ""}`);
+            // A specific id gets the last few steps; the overview stays one line per job.
+            for (const step of await recentActivity(tx, child, id === undefined ? 1 : ACTIVITY_STEPS)) lines.push(`  ${step}`);
           }
           return lines.join("\n") || "No delegated work.";
         }, ctx);

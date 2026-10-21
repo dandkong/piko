@@ -1,7 +1,7 @@
 /** One Telegram/UI line per call: whitespace collapsed, bounded length. */
 const LIMIT = 100;
 
-function singleLine(value: string | undefined, limit = LIMIT): string | undefined {
+export function singleLine(value: string | undefined, limit = LIMIT): string | undefined {
   if (!value) return undefined;
   const text = value.replace(/\s+/g, " ").trim();
   return text ? (text.length > limit ? `${text.slice(0, limit - 3)}...` : text) : undefined;

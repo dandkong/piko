@@ -24,7 +24,7 @@
 | --- | --- |
 | spawn | task 必填；创建新子会话，立即返回原生会话 ID，不等待结果 |
 | send | id、task 必填；补充正在运行的子任务，默认 steer；followUp:true 则下一回合处理 |
-| status | 返回原生执行状态；可指定 id，否则查询已有子任务 |
+| status | 返回执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`；指定 id 时附最近 5 步（工具调用摘要 + 助手输出，单步截断），不指定时每个子任务附最近 1 步 |
 | stop | 指定 id 取消该子任务；省略 id 停止当时所有子任务，不停止主 Agent |
 
 普通用户输入仍进入主会话，维持 steer all，不广播给所有子 Agent。报告以内部 input、whenBusy:followUp 回传：主 Agent 空闲时唤起处理，忙碌时等待当前回答结束。报告不是新的用户指令，不强制生成完成通知。
