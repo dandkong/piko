@@ -10,11 +10,13 @@ import { AssistantMessage } from "../chat/AssistantMessage";
 import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
 
 type Command = WorkItemCommand extends infer T ? T extends WorkItemCommand ? Omit<T, "requestId"> : never : never;
+type FinishedExecution = ItemExecution & { status: Exclude<ItemExecution["status"], "running"> };
+const isFinished = (run: ItemExecution): run is FinishedExecution => run.status !== "running";
 const dayTime = (value: number | string) => new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const statusNames = { running: "正在做", completed: "已完成", failed: "失败", stopped: "已停止", interrupted: "被重启打断" };
+const statusNames: Record<FinishedExecution["status"], string> = { completed: "已完成", failed: "失败", stopped: "已停止", interrupted: "已中断" };
 const scheduleLabel = (item: WorkItem) => item.scheduleText ?? (!item.schedule ? "手动" : item.schedule.type === "once" ? dayTime(item.schedule.at) : "定期");
 
-/** The assistant's standing commitments: what it will do, when, and how the last run went. */
+/** The assistant's standing commitments: the task list stays lean, and detail shows finished records. */
 export function TasksScreen({ topInset, bottomInset }: { topInset: number; bottomInset: number }) {
   const [items, setItems] = useState<WorkItem[]>([]);
   const [selected, setSelected] = useState<string>();
@@ -42,7 +44,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
         setDetail(current?.item.status === "archived" ? undefined : current);
         if (current?.item.status === "archived") setSelected(undefined);
         setError("");
-      } catch (failure) { if (active) setError(failure instanceof Error ? failure.message : "暂时读不到任务。"); }
+      } catch { if (active) setError("暂时加载不了任务。"); }
       finally { if (active) setLoading(false); }
     })();
     return () => { active = false; controller.abort(); };
@@ -59,7 +61,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     try {
       const result = await loadExecution(item, execution.id);
       if (selection.current === item) setAnswers(previous => ({ ...previous, [execution.id]: result.answer }));
-    } catch (failure) { if (selection.current === item) setError(failure instanceof Error ? failure.message : "暂时读不到这次结果。"); }
+    } catch { if (selection.current === item) setError("暂时加载不了这次记录。"); }
   }, [answers]);
   const toggle = (execution: ItemExecution) => {
     const next = open === execution.id ? undefined : execution.id;
@@ -77,7 +79,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
       if (!mounted.current) return;
       pending.current = undefined;
       setRefresh(count => count + 1);
-    } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "操作没有成功。"); }
+    } catch { if (mounted.current) setError("操作没有成功，请稍后再试。"); }
     finally { sending.current = false; if (mounted.current) setBusy(false); }
   };
   const archive = (item: WorkItem) => {
@@ -87,6 +89,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
 
   const item = detail?.item;
   const visibleItems = items.filter(value => value.status !== "archived");
+  const records = detail?.executions.filter(isFinished) ?? [];
 
   return <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
     <ScreenHeader title={item?.title ?? "任务"} action={selected
@@ -95,7 +98,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
-    {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>目前没有未归档的任务。在聊天里告诉 Piko 你想让它定期做什么，比如“每天早上帮我整理一下昨天的工作”。</Text>}
+    {!selected && !loading && !visibleItems.length && <Text style={styles.empty}>还没有任务。在聊天里告诉 Piko 你想让它做什么。</Text>}
     {!selected && visibleItems.map(value => <ScreenCard key={value.id} style={styles.row}>
       <TactilePressable
         accessibilityLabel="归档"
@@ -120,19 +123,16 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
       >
         <Text style={styles.name}>{value.title}</Text>
         <Text style={styles.meta}>{scheduleLabel(value)}</Text>
-        {value.latest && <Text numberOfLines={2} style={[styles.preview, value.latest.status === "failed" && styles.error]}>
-          {value.latest.status === "completed" ? value.latest.preview ?? "上次已完成" : statusNames[value.latest.status]}
-        </Text>}
       </TactilePressable>
     </ScreenCard>)}
 
     {item && <>
       <ScreenCard>
         <Text style={styles.body}>{item.prompt}</Text>
-        <Text style={styles.meta}>{scheduleLabel(item)}{item.nextDueAt !== null ? ` · 下次 ${dayTime(item.nextDueAt)}` : ""}</Text>
+        <Text style={styles.meta}>{scheduleLabel(item)}</Text>
       </ScreenCard>
 
-      {detail.executions.map(run => <ScreenCard key={run.id}>
+      {records.map(run => <ScreenCard key={run.id}>
         <TactilePressable
           accessibilityRole="button"
           onPress={() => toggle(run)}
@@ -146,12 +146,13 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
             {run.status !== "completed" && <Text style={[styles.meta, run.status === "failed" && styles.error]}>{statusNames[run.status]}</Text>}
           </View>
           {open === run.id
-            ? <>{answers[run.id] === undefined ? <Text style={styles.meta}>正在读取…</Text> : answers[run.id] ? <AssistantMessage content={answers[run.id]} /> : <Text style={styles.meta}>这次没有留下回答。</Text>}
-              {!!run.error && <Text style={styles.error}>{run.error}</Text>}</>
-            : <Text numberOfLines={2} style={styles.preview}>{run.preview ?? (run.status === "running" ? "正在做…" : statusNames[run.status])}</Text>}
+            ? answers[run.id] === undefined ? <Text style={styles.meta}>正在加载…</Text>
+              : answers[run.id] ? <AssistantMessage content={answers[run.id]} />
+                : <Text style={styles.meta}>没有回答。</Text>
+            : <Text numberOfLines={2} style={styles.preview}>{run.preview ?? (run.status === "completed" ? "没有回答。" : statusNames[run.status])}</Text>}
         </TactilePressable>
       </ScreenCard>)}
-      {!detail.executions.length && <Text style={styles.empty}>还没做过。任务存在不代表已经执行过。</Text>}
+      {!records.length && <Text style={styles.empty}>还没有记录。</Text>}
     </>}
   </Screen>;
 }

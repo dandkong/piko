@@ -11,7 +11,6 @@ export const radii = { chip: 12, control: 16, card: 18, panel: 30 } as const;
 export const motion = {
   pressIn: 90,
   pressOut: 160,
-  selection: 240,
   drawerIn: 260,
   drawerOut: 200,
 } as const;

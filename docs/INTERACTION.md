@@ -77,7 +77,6 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | 按下 | 90ms | cubic-out |
 | 松开 | 160ms | cubic-out |
 | 悬停 / 状态色 | 即时切换 | — |
-| 页签选中胶囊 | 220–260ms | cubic-out |
 | 抽屉进入 / 退出 | 260ms / 200ms | cubic-out |
 
 - 按压缩放：图标按钮 0.94，Primary 0.95，底部导航图标 0.92，chip 0.98；整行不缩放。
@@ -110,6 +109,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 图标按钮优先用 `IconButton`，不要直接写 `Pressable` 圆角样式。
 - 整行可点用 `TactilePressable` + `variant="plain"`，`scaleTo={1}`，不要在行上做缩放。
 - 列表行、附件 chip 的交互背景由 `TactilePressable` 的 variant / state 控制；自定义 `faceStyle` 不要设置 `backgroundColor`，否则会覆盖悬停、按压和选中色。
+- 底部导航与抽屉页签使用同一套选中背景，不再使用独立滑动胶囊；悬停、按压和选中只保留一层状态背景。
 - 主操作只在真正可提交时使用 `primary`；不可用时退回 `soft` 并置灰。
 - 新增颜色、尺寸或动效前先检查 `theme.ts` 是否已有可用令牌。
 
