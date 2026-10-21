@@ -75,7 +75,7 @@ export async function recentActivity(tx: Tx, child: ConversationId, limit: numbe
   return chrono.slice(-limit);
 }
 
-export type ReporterInput = { child: ConversationId; message: string; epoch: number; source: InputSource; followUp: boolean };
+export type ReporterInput = { child: ConversationId; message: string; epoch: number; source: InputSource };
 export type ReporterState = { phase: "deliver" } | { phase: "report"; answer?: EntryId; error?: string };
 export type ReporterResult = { answer?: EntryId; error?: string } | null;
 export type SubagentController = ReturnType<typeof createSubagents>;
@@ -165,7 +165,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         const handle = await admit(async () => {
           if (((await runtime.snapshot(JobControl, task.input.child, ctx))?.epoch ?? 0) !== task.input.epoch) return undefined;
           return child.submit({ type: "input", content: task.input.message,
-            whenBusy: task.input.followUp ? "followUp" : "steer", requestId: `piko:subagent-input:${task.id}` }, ctx);
+            whenBusy: "steer", requestId: `piko:subagent-input:${task.id}` }, ctx);
         });
         if (!handle) {
           await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx); return;
@@ -232,14 +232,20 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
     if (item) (await tx.doc(ItemContext, child)).binding = item;
     const task = item ? `${message}\n\nThis is work item ${JSON.stringify(item.title)} (${item.itemId}), execution ${child}. ${item.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(item.scheduledAt).toISOString()}.`} Started at ${new Date(item.startedAt).toISOString()}. Your working directory is this item's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
-    await tx.createTask(Reporter, { child, message: task, epoch: 0, source, followUp: false },
+    await tx.createTask(Reporter, { child, message: task, epoch: 0, source },
       { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     return child;
   }
   const tool = defineTool({
-    name: SUBAGENT_TOOL, description: "Delegate independent work in the background. spawn creates a fresh conversation without main chat history, so include the necessary task context; send corrects active work; status reports one job and requires its id; stop cancels one job or all jobs. Results return privately when ready. Never wait here for completion.",
-    parameters: Type.Object({ action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("status"), Type.Literal("stop")]),
-      id: Type.Optional(Type.String({ pattern: "^[0-9]+$" })), task: Type.Optional(Type.String({ minLength: 1, maxLength: 24000 })), followUp: Type.Optional(Type.Boolean()) }),
+    name: SUBAGENT_TOOL, description: "Delegate independent work to a background subagent. spawn (task required) starts a fresh conversation without this chat's history; include all context it needs, and it returns the job id immediately. send (id and task required) continues an existing job: it steers the current run when busy, or starts a new run when idle. status (id required) returns one job's state and latest steps. stop (id required) cancels one job. Results return privately when ready; never wait for completion.",
+    parameters: Type.Object({
+      action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("status"), Type.Literal("stop")],
+        { description: "spawn starts a job; send continues an existing job; status inspects one job; stop cancels one job." }),
+      id: Type.Optional(Type.String({ pattern: "^[0-9]+$",
+        description: "Numeric job id returned by spawn. Required for send, status and stop; pass it without '#'." })),
+      task: Type.Optional(Type.String({ minLength: 1, maxLength: 24000,
+        description: "Required for spawn and send. For spawn, the full task with all needed context; for send, the instruction to add to the job. Maximum 24000 characters." })),
+    }),
     replay: "unsafe",
     execute: async (args, api, ctx) => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, output: [{ type: "text", text: "Nested delegation is unavailable." }] };
@@ -263,10 +269,10 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         return { output: [{ type: "text", text: states }] };
       }
       if (args.action === "stop") {
-        const targets = id === undefined ? ids : [id];
-        await invalidate(api, targets, ctx);
-        for (const child of targets) await (await api.conversation(child, ctx))!.abort(ctx);
-        return { output: [{ type: "text", text: "Delegated work stopped." }] };
+        if (id === undefined) return { isError: true, output: [{ type: "text", text: "stop needs a subagent id." }] };
+        await invalidate(api, [id], ctx);
+        await (await api.conversation(id, ctx))!.abort(ctx);
+        return { output: [{ type: "text", text: `Background job ${id} stopped.` }] };
       }
       if (!args.task?.trim()) return { isError: true, output: [{ type: "text", text: "A task is required." }] };
       const agent = await api.agent(ctx);
@@ -277,13 +283,11 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         if (args.action === "send") {
           if (child === undefined) throw new Error("send needs a subagent id.");
           if ((await tx.doc(ItemContext, child)).binding) throw new Error("Item executions use a fixed prompt snapshot. Edit the item or start a new execution instead.");
-          const active = await tx.doc(LiveDoc, child);
           epoch = (await tx.doc(JobControl, child)).epoch;
-          if (!active.run && !awaitingDelivery(await taskRecords(tx), child, epoch)) throw new Error("That job has finished. Spawn a new job.");
         } else {
           return spawn(tx, agent, args.task!, source);
         }
-        await tx.createTask(Reporter, { child, message: args.task!, epoch, source, followUp: args.followUp ?? false },
+        await tx.createTask(Reporter, { child, message: args.task!, epoch, source },
           { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
         return child;
       }, ctx);
