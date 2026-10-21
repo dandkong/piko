@@ -127,7 +127,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 所有按钮必须有 `accessibilityLabel`；图标按钮不能只靠图形表意。
 - 状态通过 `accessibilityState` 暴露：`disabled`、`selected`、`expanded`、`busy`。
 - 键盘 Enter/Space 应能触发；焦点顺序与视觉顺序一致。
-- 抽屉：面板外点击、Escape、Android 返回键均可关闭；关闭按钮始终可达。
+- 抽屉：宽度为屏幕的 76%，最多 300；面板外点击、Escape、Android 返回键均可关闭；关闭按钮始终可达。旁聊三点菜单的图标与文字整体左对齐。
 - 禁用控件仍保留在可访问性树中，并向读屏说明当前不可用。
 
 ## 10. 修改规则

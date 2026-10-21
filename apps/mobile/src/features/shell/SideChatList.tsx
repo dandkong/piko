@@ -95,5 +95,5 @@ const styles = StyleSheet.create({
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
   menu: { position: "absolute", width: 164, padding: 6, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card,
     backgroundColor: colors.card, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 8 },
-  menuItem: { minHeight: 48, flexDirection: "row", alignItems: "center", paddingHorizontal: 12, gap: 10, borderRadius: radii.control },
+  menuItem: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", paddingHorizontal: 12, gap: 10, borderRadius: radii.control },
 });

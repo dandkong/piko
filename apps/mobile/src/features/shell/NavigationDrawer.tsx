@@ -25,7 +25,7 @@ import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { SideChatList, type SideChatActions } from "./SideChatList";
 
-const PANEL_MAX_WIDTH = 340;
+const PANEL_MAX_WIDTH = 300;
 const PANEL_INSET = 10;
 
 /** Floating navigation panel: tabs mirror the bottom bar and side chats stay independent. */
@@ -38,7 +38,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const panelWidth = Math.min(PANEL_MAX_WIDTH, width * 0.84);
+  const panelWidth = Math.min(PANEL_MAX_WIDTH, width * 0.76);
   const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(open);
 
