@@ -33,9 +33,14 @@ export class TelegramChannel {
     private readonly api: TelegramTransport, private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
     this.track(conversations.subscribeBackgroundReplies(async reply => {
-      if (!this.accepting || reply.source.channel !== "telegram" || reply.source.botId !== this.identity.botId || reply.source.chatId !== this.identity.userId) return;
-      const pending = this.pendingReports.get(reply.source.chatId) ?? new Set<string>(); pending.add(reply.requestId); this.pendingReports.set(reply.source.chatId, pending);
-      this.startDelivery(reply.source.chatId, new Set(reply.knownMessageIds));
+      if (!this.accepting) return;
+      // Scheduled work broadcasts to every channel; ordinary background work answers where it started.
+      const chatId = reply.deliver === "all" ? this.identity.userId
+        : reply.source.channel === "telegram" && reply.source.botId === this.identity.botId && reply.source.chatId === this.identity.userId
+          ? reply.source.chatId : undefined;
+      if (!chatId) return;
+      const pending = this.pendingReports.get(chatId) ?? new Set<string>(); pending.add(reply.requestId); this.pendingReports.set(chatId, pending);
+      this.startDelivery(chatId, new Set(reply.knownMessageIds));
     }).then(unsubscribe => { if (this.accepting) this.unsubscribeReplies = unsubscribe; else unsubscribe(); }));
   }
 

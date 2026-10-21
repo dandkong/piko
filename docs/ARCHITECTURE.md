@@ -25,7 +25,6 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/items/、server/domain/work-items.ts | 任务 HTTP 校验、时间规则与任务目录边界；原生文档与调度适配留在 runtime/work-items.ts |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
-| tests/ | 协议、原生状态、并发、恢复、配置与通道验证 |
 
 页面 → Hook/API → HTTP/SSE；路由/通道 → 会话业务 → 运行时接口 → Pi 适配器。SDK 类型留在 server/runtime，Telegram SDK 留在通道目录。Durable 是唯一 Agent 运行时和持久化来源；Piko 没有 SQLite、Workspace/Thread 表或 Run 状态副本，不引入 pi-server / pi-client。
 
@@ -117,7 +116,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 不通过客户端 ID 创建会话，不提供主会话删除、旧 /api/main 或按 Run 观察接口。
 
-DurableChatSession 统一串行输入、停止与维护预留，ConversationStore 只转发和合并输出，不维护第二套接纳锁、维护状态或后台回传缓存。运行时接口的描述、配置、压缩、停止与关闭都是必需能力；测试等待执行完成和离线历史检查仅在 tests/fixtures 中提供。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
+DurableChatSession 统一串行输入、停止与维护预留，ConversationStore 只转发和合并输出，不维护第二套接纳锁、维护状态或后台回传缓存。运行时接口的描述、配置、压缩、停止与关闭都是必需能力。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
@@ -135,7 +134,7 @@ SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再�
 
 ## Telegram 通道
 
-TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。TG 来源可重新开启投递观察，RN 来源不额外推 TG。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
+TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。普通子 Agent 只回复来源通道（RN 来源不推 TG）；定时任务结果推送到所有通道。App 是聚合视图，始终能看到全部记录。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
 
 RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每条助手消息有独立 Rich Markdown 消息，条内流式编辑；补充输入不重发旧回复。TG 加入 RN 正在执行的工作只观察未完成及后续消息，纯 RN 工作默认不推送 TG。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
 

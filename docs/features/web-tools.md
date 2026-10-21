@@ -46,8 +46,4 @@ Skill、bash 与文件工具继续按服务账号权限执行，访问控制和�
 
 两个工具均为 replay: unsafe；沿用 Piko 重启撤销不确定工作、不自动重跑外部调用的策略。成功结果由 Durable 保存到原生工具记录，不建立第二份持久结果库。
 
-## 验证
-
-自动化覆盖参数与默认值、输出格式/截断、Key 隔离、未配置、HTTP/JSON/网络失败、响应限额、取消和超时，以及 Durable 实际工具轮、环境变量启动快照、原生记录/重启、不确定执行停止、主/子 Agent 工具共享和用户插件目录忽略。测试使用 mock HTTP 与 faux 模型，不访问付费服务或真实用户会话。
-
 参考：[Durable 配置与运行时](durable-runtime.md)、[应用配置](application-config.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](linux-deployment.md)。

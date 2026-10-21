@@ -94,7 +94,8 @@ export class DurableChatSession implements ChatSession {
     const children = createSubagents({ storage: () => this.storage,
       canReport: () => !this.maintenance && !this.stopping && !this.disposed,
       onReply: async reply => {
-        if (!this.replyListeners.size) { if (reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
+        // Queue what a channel still needs to see: scheduled broadcasts and Telegram-origin reports.
+        if (!this.replyListeners.size) { if (reply.deliver === "all" || reply.source.channel === "telegram") this.pendingReplies.push(reply); return; }
         await Promise.allSettled([...this.replyListeners].map(listener => listener(reply)));
       },
     });

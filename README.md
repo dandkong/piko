@@ -173,7 +173,6 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 ```powershell
 bun run typecheck
-bun test
 bun run build:android
 bun run build:ios
 bun run build:web

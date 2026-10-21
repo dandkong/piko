@@ -93,6 +93,6 @@ sudo systemctl start piko
 
 ## 验证范围
 
-Windows 类型检查、92 项自动化测试和生产 Web 导出已通过。Ubuntu 26.04 WSL + Bun 1.4.3 中通过 27 项相关测试，覆盖原生持久化、工具、压缩、Web/API/SSE 与重连；调整本机路径后的 systemd 模板校验、正式进程启动、同源 API、SIGTERM 退出和锁释放通过。Linux 测试使用独立临时目录，没有使用个人模型或真实 TG 凭据。真实 TG 网络、设备浏览器、外部代理认证及 systemd 开机行为仍需部署环境验证。
+Windows 类型检查与生产 Web 导出已通过；Ubuntu 26.04 WSL + Bun 1.4.3 中完成 systemd 模板校验、正式进程启动、同源 API、SIGTERM 退出和锁释放验证。真实 TG 网络、设备浏览器、外部代理认证及 systemd 开机行为仍需部署环境验证。
 
 参考：[Expo Web 导出](https://docs.expo.dev/workflow/web/)、[Bun 文件响应](https://bun.sh/docs/guides/http/stream-file)、[systemd StateDirectory](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)。

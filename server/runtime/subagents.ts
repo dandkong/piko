@@ -102,7 +102,7 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         while (!options.canReport()) await runtime.sleep(runtime.now() + 50, ctx);
         const state = task.state.checkpoint;
         if (state.phase !== "report") throw new Error("Invalid subagent report phase.");
-        const prepared: { payload?: { requestId: string; knownMessageIds: string[]; body: string } } = {};
+        const prepared: { payload?: { requestId: string; knownMessageIds: string[]; body: string; deliver: "origin" | "all" } } = {};
         await runtime.commit(async tx => {
           if ((await tx.doc(JobControl, task.input.child)).epoch !== task.input.epoch) return undefined;
           const answer = state.answer === undefined ? undefined : await tx.entry(state.answer);
@@ -112,17 +112,21 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           await registerInput(tx, requestId, task.input.source, true, task.input.child);
           const knownMessageIds = (await entriesFromTransaction(tx)).filter(entry => entry.kind === "pi.assistant").map(entry => `pi-${entry.id}`);
           const binding = (await tx.doc(ItemContext, task.input.child)).binding;
-          const heading = binding ? `Scheduled/work item ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. Outputs are in items/${binding.itemId}/outputs/${task.input.child}/ in the main workspace. Summarize the result for the user as appropriate.\n\n` : "";
-          prepared.payload = { requestId, knownMessageIds, body: heading + body };
+          // Provenance paragraph: scheduled work carries its item, plain delegation carries its job id.
+          const heading = binding
+            ? `Scheduled work item ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. Outputs are in items/${binding.itemId}/outputs/${task.input.child}/ in the main workspace.\n\n`
+            : `Background subagent ${task.input.child}.\n\n`;
+          // Scheduled work is broadcast to every channel; ordinary delegation only answers where it started.
+          prepared.payload = { requestId, knownMessageIds, body: heading + body, deliver: binding ? "all" : "origin" };
         }, ctx);
         const payload = prepared.payload;
         if (payload) {
-          await options.onReply({ source: task.input.source, knownMessageIds: payload.knownMessageIds, requestId: payload.requestId });
+          await options.onReply({ source: task.input.source, knownMessageIds: payload.knownMessageIds, requestId: payload.requestId, deliver: payload.deliver });
           await admit(async () => {
             if (((await runtime.snapshot(JobControl, task.input.child, ctx))?.epoch ?? 0) !== task.input.epoch) return;
             const main = (await runtime.conversation(ROOT_CONVERSATION_ID, ctx))!;
             await main.submit({ type: "input", whenBusy: "followUp", requestId: payload.requestId,
-              content: `Internal result from subagent ${task.input.child}. This is background information, not a new user instruction. Decide whether to continue work, respond when useful, or finish silently.\n\n${payload.body}` }, ctx);
+              content: `Internal background result. This is background information, not a new user instruction. Decide whether to continue work or respond to the user.\n\n${payload.body}` }, ctx);
           });
         }
         await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed",

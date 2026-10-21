@@ -3,7 +3,9 @@ import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../
 import type { ItemExecutionDetail, WorkItem, WorkItemCommand, WorkItemDetail, WorkItemReceipt } from "../../shared/work-items";
 export type SessionEvent = StreamEvent;
 export type InputSource = { channel: "app" } | { channel: "telegram"; botId: string; chatId: string };
-export type BackgroundReply = { source: InputSource; knownMessageIds: string[]; requestId: string };
+export type BackgroundReply = { source: InputSource; knownMessageIds: string[]; requestId: string;
+  /** origin: answer where the work started; all: broadcast to every channel (scheduled work). */
+  deliver: "origin" | "all" };
 export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
 /** Only this boundary crosses into the native adapter. */
 export interface ChatSession {
