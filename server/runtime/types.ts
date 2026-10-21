@@ -1,3 +1,4 @@
+import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
 import type { ConversationResponse, HistoryPage, SubmissionReceipt, StreamEvent } from "../../shared/chat";
 import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { ItemExecutionDetail, WorkItem, WorkItemCommand, WorkItemDetail, WorkItemReceipt } from "../../shared/work-items";
@@ -28,10 +29,15 @@ export interface WorkItemsRuntime {
 export interface ChatRuntime {
   workItems(): Promise<WorkItemsRuntime>;
   isModelReady(): Promise<boolean>;
-  createSession(): Promise<ChatSession>;
-  describe(): Promise<RuntimeDescription>;
-  configure(selection: RuntimeSelection): Promise<void>;
-  compact(): Promise<CompactionResult>;
-  stop(commandId?: string): Promise<boolean>;
+  sideChats: {
+    list(): Promise<SideChat[]>;
+    create(requestId: string, title: string): Promise<SideChat>;
+    update(id: string, change: UpdateSideChat): Promise<SideChat>;
+  };
+  createSession(conversationId?: string): Promise<ChatSession>;
+  describe(conversationId?: string): Promise<RuntimeDescription>;
+  configure(selection: RuntimeSelection, conversationId?: string): Promise<void>;
+  compact(conversationId?: string): Promise<CompactionResult>;
+  stop(commandId?: string, conversationId?: string): Promise<boolean>;
   dispose(): Promise<void>;
 }

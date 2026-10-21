@@ -22,7 +22,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。一级模块只保留 Chat（主聊天）、Tasks（任务）、Posts（主动帖子）、Artifacts（产物），不建设 Ideas。聊天列表铺满可用屏幕，头部、输入框与导航悬浮；上下使用同一浅色渐隐样式但独立控制覆盖范围；头部覆盖实测内容并向下延伸 12px，底部覆盖输入框/导航并在输入框上方延伸 32px。渐隐只负责视觉，列表首尾根据头像胶囊底边和输入框顶边实测，并与消息间距统一为 13px；头像不加底板，名字与状态保留上下结构并包在自适应胶囊内，正常空闲隐藏状态。
 - 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、全局工作区资源和基本工具，移除嵌套委派与任务管理；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
 - 定时任务已接入：一个任务对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载任务记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 按进行中/已完成分组展示任务与结果时间线，完成状态可在页面切换；创建、执行与恢复在对话里完成，归档即完成，不设第三状态。定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [定时任务](docs/features/scheduled-work-items.md)。
-- side chat 后续复用同一 Harness 的原生 conversation 与关系，交互、上下文共享和结论回传仍待设计。
+- 旁聊已接入同一 Harness 的 ownerless conversation，支持新建/列表/切换/改名/归档与恢复、独立历史和停止；共享工作区记忆/技能/通用工具，不继承主会话上下文、不自动回传、不提取旁聊记忆、不提供事项或委派工具。Harness 生命周期与每个聊天控制器分离；Telegram 仍只使用 root。见 [旁聊](docs/features/side-chats.md)。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
 - 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。

@@ -1,6 +1,6 @@
 import { createApp } from "./app";
 import { loadPikoConfig } from "./config";
-import { ConversationStore } from "./chat/conversations";
+import { ConversationStores } from "./chat/stores";
 import { createPiRuntime } from "./runtime/pi";
 import { initializeWorkspace } from "./domain/workspace";
 import { acquireBackendLock } from "./domain/backend-lock";
@@ -23,7 +23,8 @@ const attachments = new AttachmentStore(join(paths.state, "attachments"));
 void attachments.sweep(30 * 24 * 60 * 60 * 1000)
   .then(removed => { if (removed) console.log(`Removed ${removed} expired attachment(s).`); })
   .catch(() => console.warn("Piko attachment cleanup failed."));
-const conversations = new ConversationStore(runtime);
+const chats = new ConversationStores(runtime);
+const conversations = chats.main;
 // Open and validate native state, withdrawing inherited work before accepting requests.
 await conversations.get();
 const server = Bun.serve({
@@ -32,7 +33,7 @@ const server = Bun.serve({
   port: config.port,
   // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
   idleTimeout: 60,
-  fetch: createApp({ config, runtime, conversations, attachments, web }),
+  fetch: createApp({ config, runtime, conversations, chats, attachments, web }),
 });
 
 let telegram: TelegramBot | undefined;
@@ -49,7 +50,7 @@ async function shutdown(failed = false) {
   stopping = true;
   server.stop(true);
   // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
-  for (const close of [() => telegram?.stopInput(), () => conversations.close(), () => telegram?.close(),
+  for (const close of [() => telegram?.stopInput(), () => chats.close(), () => telegram?.close(),
     () => runtime.dispose(), () => releaseLock()]) {
     try { await close(); }
     catch { failed = true; console.error("A Piko resource failed to close."); }

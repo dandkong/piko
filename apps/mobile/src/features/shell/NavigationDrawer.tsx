@@ -23,24 +23,25 @@ import { navigation, type AppTab } from "../../navigation";
 import { colors, motion, radii } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
+import { SideChatList, type SideChatActions } from "./SideChatList";
 
 const PANEL_MAX_WIDTH = 340;
 const PANEL_INSET = 10;
 
 /** Floating navigation panel: tabs mirror the bottom bar and side chats stay independent. */
-export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpenSettings, onNewSideChat }: {
+export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpenSettings, ...sideChatActions }: SideChatActions & {
   open: boolean;
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   onClose: () => void;
   onOpenSettings?: () => void;
-  onNewSideChat?: () => void;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const panelWidth = Math.min(PANEL_MAX_WIDTH, width * 0.84);
   const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(open);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (open) setMounted(true);
@@ -117,7 +118,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <Text style={styles.sectionLabel}>选项卡</Text>
           <View style={styles.tabList}>
             {navigation.map(({ label, icon: Icon, hint }) => {
-              const active = label === activeTab;
+              const active = label === activeTab && !(label === "Chat" && sideChatActions.activeSideChatId);
               return (
                 <TactilePressable
                   key={label}
@@ -143,10 +144,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <View style={styles.divider} />
 
           <Text style={styles.sectionLabel}>旁聊</Text>
-          <View style={styles.empty} testID="drawer-side-chats-empty">
-            <Text style={styles.emptyTitle}>还没有旁聊</Text>
-            <Text style={styles.emptyHint}>旁聊会独立于主聊天，稍后开放。</Text>
-          </View>
+          <SideChatList {...sideChatActions} creating={creating} onCreated={() => setCreating(false)} />
         </ScrollView>
 
         <View style={styles.footer}>
@@ -158,10 +156,10 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
             <Settings size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
           <IconButton
-            hint={onNewSideChat ? "Create a side chat" : "Coming soon"}
+            hint="Create an independent side chat"
             label="New side chat"
-            onPress={onNewSideChat}
-            variant={onNewSideChat ? "primary" : "card"}
+            onPress={sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy ? () => setCreating(true) : undefined}
+            variant={creating ? "soft" : "primary"}
           >
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>

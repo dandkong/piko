@@ -7,7 +7,7 @@ import { pickAttachments } from "./pickAttachments";
 import { mergeHistorySnapshot, prependHistoryPage } from "../../../../../shared/history";
 import { applyMessageEvent } from "../../../../../shared/messages";
 import { HttpStreamError } from "./transport";
-function randomUUID() {
+export function randomUUID() {
   const bytes = getRandomBytes(16);
   bytes[6] = (bytes[6]! & 0x0f) | 0x40;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
@@ -16,7 +16,8 @@ function randomUUID() {
 }
 export type PendingAttachment = MessageAttachment & { name: string };
 
-export function useChat() {
+/** The owner is keyed by conversation ID and stays mounted across switches; network observation is active-only. */
+export function useChat(conversationId?: string, observing = true) {
   const [history, setHistory] = useState<HistoryPage>({ messages: [] }); const [draft, setDraft] = useState("");
   const messages = history.messages;
   const historyRef = useRef(history); historyRef.current = history;
@@ -49,7 +50,7 @@ export function useChat() {
     return () => { mounted.current = false; listener.remove(); submitController.current?.abort(); olderController.current?.abort(); };
   }, []);
   useEffect(() => {
-    if (!foreground) return;
+    if (!foreground || !observing) return;
     const controller = new AbortController(); let active = true; let checkedHealth = false;
     void (async () => {
       try { const health = await checkHealth(); if (!active) return; modelReady.current = health.modelReady; checkedHealth = true; }
@@ -65,22 +66,22 @@ export function useChat() {
               .catch(() => { if (active) { checkedHealth = false; setConnected(false); } });
           }
         },
-        onEvent: event => { if (!active) return; observedVersion.current++; if (event.type === "snapshot") apply(event.conversation); else if (event.type === "message") setHistory(current => ({ ...current, messages: applyMessageEvent(current.messages, event) })); else if (event.type === "error") setError(event.message); } });
+        onEvent: event => { if (!active) return; observedVersion.current++; if (event.type === "snapshot") apply(event.conversation); else if (event.type === "message") setHistory(current => ({ ...current, messages: applyMessageEvent(current.messages, event) })); else if (event.type === "error") setError(event.message); } }, conversationId);
     })();
     return () => { active = false; controller.abort(); };
-  }, [foreground, apply]);
+  }, [foreground, observing, apply, conversationId]);
   const refresh = useCallback(async () => {
     const version = observedVersion.current;
-    const snapshot = await loadConversation();
+    const snapshot = await loadConversation(undefined, conversationId);
     if (version === observedVersion.current) apply(snapshot);
-  }, [apply]);
+  }, [apply, conversationId]);
   const loadOlder = useCallback(async (beforePrepend?: () => void) => {
     const before = historyRef.current.nextBefore;
     if (!before || olderController.current || loading) return;
     const controller = new AbortController(); olderController.current = controller;
     setLoadingOlder(true); setOlderError("");
     try {
-      const page = await loadHistory(before, controller.signal);
+      const page = await loadHistory(before, controller.signal, conversationId);
       if (!mounted.current || controller.signal.aborted) return;
       if (historyRef.current.nextBefore === before && page.messages.length) beforePrepend?.();
       setHistory(current => prependHistoryPage(current, page, before));
@@ -90,7 +91,7 @@ export function useChat() {
       olderController.current = undefined;
       if (mounted.current) setLoadingOlder(false);
     }
-  }, [loading]);
+  }, [loading, conversationId]);
   const attach = useCallback(async () => {
     if (sending.current || loading || attaching) return;
     setError("");
@@ -118,19 +119,19 @@ export function useChat() {
     pending.current = input; lastMessage.current = input.message; sending.current = true; setSubmitting(true); setDraft(""); setAttachments([]); setError("");
     setHistory(current => ({ ...current, messages: [...current.messages.filter(item => item.requestId !== input.id), { id: `input-${input.id}`, role: "user", content: input.message, createdAt: input.createdAt, requestId: input.id, ...(input.attachments.length && { attachments: input.attachments }) }] }));
     const controller = new AbortController(); submitController.current = controller;
-    try { await submit(input.message, input.id, controller.signal, input.attachments.map(item => item.id)); if (mounted.current) await refresh(); }
+    try { await submit(input.message, input.id, controller.signal, input.attachments.map(item => item.id), conversationId); if (mounted.current) await refresh(); }
     catch (cause) {
       if (!mounted.current || isAbortError(cause)) return;
       if (cause instanceof HttpStreamError && cause.status < 500) { pending.current = null; setDraft(input.message); setAttachments(input.attachments); setHistory(current => ({ ...current, messages: current.messages.filter(item => item.requestId !== input.id) })); }
       setError(cause instanceof Error ? cause.message : "Couldn't send message.");
     } finally { sending.current = false; if (mounted.current) setSubmitting(false); }
-  }, [draft, stopping, loading, refresh, attachments, attaching]);
+  }, [draft, stopping, loading, refresh, attachments, attaching, conversationId]);
   const stop = useCallback(async () => {
     if (stopping) return; setStopping(true); stopId.current ??= randomUUID();
-    try { await stopConversation(stopId.current); stopId.current = undefined; await refresh(); }
+    try { await stopConversation(stopId.current, conversationId); stopId.current = undefined; await refresh(); }
     catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Couldn't stop reply."); }
     finally { if (mounted.current) setStopping(false); }
-  }, [stopping, refresh]);
+  }, [stopping, refresh, conversationId]);
   const retry = useCallback(async () => {
     if (submitting || stopping) return;
     if (pending.current) await send(pending.current.message, true);

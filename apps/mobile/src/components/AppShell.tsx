@@ -13,9 +13,10 @@ import { TactilePressable } from "./TactilePressable";
 const KEYBOARD_COMPOSER_GAP = 10;
 export type { AppTab };
 
-export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
+export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange, title = "Piko" }: {
   children: ReactNode;
   composer: ReactNode;
+  title?: string;
   drawer?: ReactNode;
   menuOpen?: boolean;
   onOpenMenu?: () => void;
@@ -69,6 +70,7 @@ export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wid
           <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
           <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
           <AgentHeader
+            title={title}
             wide={wide}
             topInset={insets.top}
             status={status}
@@ -111,7 +113,8 @@ function Mascot({ size }: { size: number }) {
   );
 }
 
-function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightChange }: {
+function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightChange, title }: {
+  title: string;
   wide: boolean;
   topInset: number;
   status: string;
@@ -137,7 +140,7 @@ function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightCha
       <View pointerEvents="none" style={styles.identity}>
         <Mascot size={wide ? 58 : 49} />
         <View testID="chat-identity-capsule" style={styles.identityCapsule}>
-          <Text style={styles.name}>Piko</Text>
+          <Text numberOfLines={1} style={[styles.name, { maxWidth: wide ? 360 : 180 }]}>{title}</Text>
           {status ? <Text testID="chat-activity-status" numberOfLines={1} accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
         </View>
       </View>

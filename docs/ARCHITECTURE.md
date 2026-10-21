@@ -20,7 +20,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/chat/ | 文本校验、会话观察与输出合并；不重复管理运行时互斥或后台结果缓存 |
 | server/channels/telegram/ | 私聊身份、命令、轮询确认与回复呈现 |
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
-| server/runtime/ | Durable/pi-ai 适配、输入/维护统一接纳、后台回传缓存、配置、内建工具、资源与历史投影 |
+| server/runtime/ | pi.ts 持有唯一 Harness/服务；pi-session.ts 绑定单个 Conversation，处理输入/维护接纳、观察与历史；其余负责配置、内建工具、资源与后台工作 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
 | server/items/、server/domain/work-items.ts | 任务 HTTP 校验、时间规则与任务目录边界；原生文档与调度适配留在 runtime/work-items.ts |
 | server/resources/ | 核心指导、内建技能与用户模板 |
@@ -32,7 +32,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [定时任务](features/scheduled-work-items.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；用户 Side chat 交互尚未实现。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [定时任务](features/scheduled-work-items.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；旁聊使用独立 ownerless conversation，共享记忆/技能/通用工具，不继承主聊天上下文、不自动回传、不提取旁聊记忆、不开放事项/委派工具；见 [旁聊](features/side-chats.md)。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
 
 默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 
@@ -82,7 +82,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | 对象 | 来源与用途 |
 | --- | --- |
 | Workspace | 应用配置中的规范化路径；原生 Agent.cwd 关联工作区 |
-| Conversation | Harness 的 root 和 owned 后台子会话；未来 side chat 复用原生关系 |
+| Conversation | Harness 的 root、ownerless 用户旁聊与 owned 后台子会话 |
 | Submission | 原生 requestId 去重；queued / placed / done / unanswered |
 | Task、InboxDoc、LiveDoc | 原生执行、待应用输入和当前生成状态 |
 | Message | 完整原始 entries 的展示投影，不另存正文 |
@@ -91,7 +91,8 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
 | piko.work-items / piko.item-command / piko.item-context | 原生文档保存任务定义、时间游标、管理请求回执与子会话归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
-| StreamEvent | 当前快照与实时更新；不保存事件重放缓存或传输游标 |
+| piko.side-chat / piko.side-chat-creates | 旁聊名称/创建/归档元数据与创建请求回执，不复制聊天或执行状态 |
+| StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
 
@@ -113,9 +114,9 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | GET /api/runtime | 模型、思考、预设、技能与内建工具状态 |
 | POST /api/runtime/selection、compact、cancel | 模型选择、压缩和停止；选择/压缩要求空闲 |
 
-不通过客户端 ID 创建会话，不提供主会话删除、旧 /api/main 或按 Run 观察接口。
+原生会话 ID 由 Durable 分配，不由客户端提供；不提供主会话删除、旧 /api/main 或按 Run 观察接口。旁聊元数据使用 `/api/side-chats`，聊天链路使用 `/api/side-chats/:id/chat`，复用主会话的快照、分页、SSE、提交回执和停止语义；详见 [旁聊 API](features/side-chats.md#http)。
 
-DurableChatSession 统一串行输入、停止与维护预留，ConversationStore 只转发和合并输出，不维护第二套接纳锁、维护状态或后台回传缓存。运行时接口的描述、配置、压缩、停止与关闭都是必需能力。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
+每个 DurableChatSession 只绑定一个 Conversation，统一串行该会话的输入、停止与维护预留，ConversationStore 只转发和合并输出，不维护第二套接纳锁、维护状态或后台回传缓存。运行时接口的描述、配置、压缩、停止与关闭都是必需能力。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
@@ -139,4 +140,4 @@ RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每�
 
 ## 后续方向（未实现）
 
-任务调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时任务](features/scheduled-work-items.md)。Side chat、独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。
+任务调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时任务](features/scheduled-work-items.md)。旁聊首版已接入，见 [旁聊](features/side-chats.md)；独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。

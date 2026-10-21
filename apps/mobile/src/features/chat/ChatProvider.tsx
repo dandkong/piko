@@ -4,9 +4,9 @@ import { useChat } from "./useChat";
 type ChatStore = ReturnType<typeof useChat>;
 const ChatContext = createContext<ChatStore | undefined>(undefined);
 
-/** One chat subscription for the whole shell: the composer and the conversation share it. */
-export function ChatProvider({ children }: { children: ReactNode }) {
-  const chat = useChat();
+/** Key this provider by conversation ID. Hidden providers retain drafts, pending inputs and scroll state. */
+export function ChatProvider({ children, conversationId, active = true }: { children: ReactNode; conversationId?: string; active?: boolean }) {
+  const chat = useChat(conversationId, active);
   return <ChatContext.Provider value={chat}>{children}</ChatContext.Provider>;
 }
 

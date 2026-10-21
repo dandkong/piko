@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时任务](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 按进行中/已完成展示任务与结果时间线，并支持勾选完成。每日/长期记忆整理已接入；Side chat、工具进度和全局产物管理尚未实现。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[定时任务](scheduled-work-items.md) 已在同一 Harness 接入，Tasks 按进行中/已完成展示任务与结果时间线，并支持勾选完成。每日/长期记忆整理已接入；[旁聊](side-chats.md) 已复用同一 Harness 接入独立用户聊天，不参与主会话的记忆提取。全局产物管理尚未实现。
 
 默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；加载见 [应用配置](application-config.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 
@@ -90,6 +90,6 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 后续与验证
 
-原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；任务调度、后台委派及已完成结果的回传恢复已接入；可靠投递 outbox、权限及 side chat 交互尚未实现。
+原生文档、任务、conversation 与 write submission 可承接未来产品状态和被动结果；任务调度、后台委派及已完成结果的回传恢复已接入；[旁聊交互](side-chats.md) 已接入；可靠投递 outbox 和权限尚未实现。
 
 真实设备网络、前后台、键盘和长对话仍需使用验证。

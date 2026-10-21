@@ -28,15 +28,15 @@ export async function entriesFromTransaction(tx: Tx, conversationId = ROOT_CONVE
   return entries.sort((a, b) => a.id - b.id);
 }
 
-export async function readPiInputs(session: Session, storage: Storage): Promise<Map<number, string>> {
-  return session.commit(() => inputsFromStorage(storage), context);
+export async function readPiInputs(session: Session, storage: Storage, conversationId = ROOT_CONVERSATION_ID): Promise<Map<number, string>> {
+  return session.commit(() => inputsFromStorage(storage, conversationId), context);
 }
 
 /** Call on the native commit line so submission bindings and entries share a consistent read. */
-export async function inputsFromStorage(storage: Storage): Promise<Map<number, string>> {
+export async function inputsFromStorage(storage: Storage, conversationId = ROOT_CONVERSATION_ID): Promise<Map<number, string>> {
   const bindings = new Map<number, string>(); let cursor: Cursor | undefined;
   do {
-    const page = await storage.scanSubmissions({ conversationId: ROOT_CONVERSATION_ID }, 500, cursor, context);
+    const page = await storage.scanSubmissions({ conversationId }, 500, cursor, context);
     for (const record of page.items) if (record.type === "input" && record.requestId && record.entry !== undefined) bindings.set(record.entry, record.requestId);
     cursor = page.next;
   } while (cursor);
@@ -46,18 +46,18 @@ export async function inputsFromStorage(storage: Storage): Promise<Map<number, s
  * Bounds use immutable entry IDs, so new writes cannot shift an older-page cursor.
  * Bindings are an in-memory projection of native submissions, never a second store.
  */
-export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<number, string>, before?: string, limit = CHAT_PAGE_SIZE) {
+export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<number, string>, before?: string, limit = CHAT_PAGE_SIZE, conversationId = ROOT_CONVERSATION_ID) {
   const entries: EntryRecord[] = [];
   const messages: Message[] = [];
   let cursor: Cursor | undefined;
   do {
-    const page = await tx.scanEntries({ conversationId: ROOT_CONVERSATION_ID, order: "descending",
+    const page = await tx.scanEntries({ conversationId, order: "descending",
       ...(before && { maxEntryId: (Number(before) - 1) as EntryRecord["id"] }) }, 100, cursor);
     for (const entry of page.items) {
       entries.push(entry);
       if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && entry.kind !== "piko.result") continue;
       const requestId = inputs.get(entry.id);
-      if (requestId && await internalInput(tx, requestId)) continue;
+      if (requestId && await internalInput(tx, requestId, conversationId)) continue;
       const projected = projectPiHistory([entry], requestId ? new Map([[entry.id, requestId]]) : undefined).messages;
       messages.push(...projected.reverse());
       if (messages.length > limit) break;

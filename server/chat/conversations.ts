@@ -12,12 +12,12 @@ export class ConversationStore {
   private dirty = false;
   private messages = new Map<string, Extract<StreamEvent, { type: "message" }>>();
   private timer?: ReturnType<typeof setTimeout>;
-  constructor(readonly runtime: ChatRuntime) {}
+  constructor(readonly runtime: ChatRuntime, readonly conversationId?: string) {}
   get size() { return this.session ? 1 : 0; }
   isStreaming() { return this.session?.isStreaming ?? false; }
   async get(): Promise<ChatSession> {
     if (this.closing) throw new Error("Piko is shutting down.");
-    return this.opening ??= this.runtime.createSession().then(session => {
+    return this.opening ??= this.runtime.createSession(this.conversationId).then(session => {
       this.session = session;
       this.unsubscribe = session.subscribe(event => {
         // Tool activity is live-only and channel-specific; it never changes history.
@@ -94,6 +94,6 @@ export class ConversationStore {
     const session = this.session ?? (this.opening && await this.opening);
     await session?.abort(); await this.pump;
     this.closing = true; clearTimeout(this.timer); this.unsubscribe?.(); this.listeners.clear();
-    await this.runtime.dispose();
+    await session?.dispose();
   }
 }

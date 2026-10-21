@@ -307,13 +307,13 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
 }
 
 /** Mark inherited uncertain work before enabling the scheduler; completed report phases may resume. */
-export async function prepareRestart(harness: Harness) {
+export async function prepareRestart(harness: Harness, userConversations: ConversationId[] = [ROOT_CONVERSATION_ID]) {
   const inspection = await harness.inspect(context);
   const preserved = inspection.tasks.filter(item => item.record.kind === REPORTER_KIND && !item.record.abortRequested
     && (item.record.state.status === "pending" || item.record.state.status === "running")
     && (item.record.state.checkpoint as ReporterState).phase === "report").map(item => item.record.id);
   const conversations = await harness.commit(async tx => {
-    const ids = [ROOT_CONVERSATION_ID, ...await subagentIds(tx)];
+    const ids = [...new Set([...userConversations, ...await subagentIds(tx)])];
     for (const item of inspection.tasks) {
       if (item.record.kind === REPORTER_KIND && !preserved.includes(item.record.id)
         && item.record.state.status !== "terminal" && (item.record.state.checkpoint as ReporterState).phase === "deliver") {
@@ -329,5 +329,6 @@ export async function prepareRestart(harness: Harness) {
     return ids;
   }, context);
   for (const item of inspection.tasks) if (!preserved.includes(item.record.id)) await harness.abortTask(item.record.id, context);
-  return { interrupted: inspection.tasks.some(item => !preserved.includes(item.record.id)), conversations };
+  return { interrupted: inspection.tasks.some(item => !preserved.includes(item.record.id)), conversations,
+    interruptedIds: [...new Set(inspection.tasks.filter(item => !preserved.includes(item.record.id)).map(item => item.record.conversationId))] };
 }
