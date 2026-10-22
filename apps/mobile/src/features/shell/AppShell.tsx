@@ -1,5 +1,5 @@
 import { Menu } from "lucide-react-native";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Image,
   Pressable,
@@ -14,11 +14,15 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Animated, {
+  Easing,
   useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { navigation, type AppTab } from "../../navigation";
-import { colors } from "../../theme";
+import { colors, motion, stateColors } from "../../theme";
 import {
   EdgeFade,
   FOOTER_FADE_OVERHANG,
@@ -75,7 +79,10 @@ export function AppShell({
     transform: [{ translateY: -keyboardLift.value }],
   }));
   return (
-    <SafeAreaView style={styles.safeArea} edges={[]}>
+    <SafeAreaView
+      style={[styles.safeArea, wide && styles.safeAreaWide]}
+      edges={[]}
+    >
       <View style={styles.keyboardArea}>
         <View style={styles.shell}>
           {transition.mounted && drawer}
@@ -234,12 +241,42 @@ function BottomTabs({
   activeTab: AppTab;
   onTabChange?: (tab: AppTab) => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const index = Math.max(
+    0,
+    navigation.findIndex((item) => item.label === activeTab),
+  );
+  const [trackWidth, setTrackWidth] = useState(0);
+  const position = useSharedValue(index);
+  useEffect(() => {
+    position.value = withTiming(index, {
+      duration: reduceMotion ? 0 : motion.tabSlide,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [index, position, reduceMotion]);
+  const tabWidth = trackWidth / navigation.length;
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: position.value * tabWidth }],
+  }));
   return (
     <View
       onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
       style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}
     >
-      <View style={styles.tabBar}>
+      <View
+        style={styles.tabBar}
+        onLayout={({ nativeEvent: { layout } }) =>
+          setTrackWidth(Math.max(0, layout.width - 10))
+        }
+      >
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.activePill,
+            { width: trackWidth / navigation.length },
+            pillStyle,
+          ]}
+        />
         {navigation.map(({ label, icon: Icon, hint }) => {
           const active = label === activeTab;
           const enabled = !!onTabChange;
@@ -254,6 +291,7 @@ function BottomTabs({
               onPress={() => onTabChange?.(label)}
               scaleTo={0.92}
               selected={active}
+              stateFill={false}
               style={styles.tab}
               faceStyle={styles.tabFace}
               variant="plain"
@@ -271,6 +309,10 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  /** Wide screens keep the phone column, with the desk visible at the sides. */
+  safeAreaWide: {
+    backgroundColor: colors.desk,
   },
   shell: {
     flex: 1,
@@ -372,6 +414,14 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: "#F8F8F8",
+  },
+  activePill: {
+    position: "absolute",
+    top: 5,
+    left: 5,
+    height: 47,
+    borderRadius: 28,
+    backgroundColor: stateColors.selected,
   },
   tab: {
     flex: 1,

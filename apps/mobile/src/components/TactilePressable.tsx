@@ -27,6 +27,8 @@ type Props = {
   scaleTo?: number;
   disabled?: boolean;
   selected?: boolean;
+  /** Opt out of hover/press/selected backgrounds when a sibling owns the fill. */
+  stateFill?: boolean;
   onPress?: () => void;
   accessibilityRole?: PressableProps["accessibilityRole"];
   accessibilityLabel?: string;
@@ -45,6 +47,7 @@ export function TactilePressable({
   scaleTo = 0.96,
   disabled = false,
   selected,
+  stateFill = true,
   onPress,
   accessibilityRole,
   accessibilityLabel,
@@ -88,19 +91,20 @@ export function TactilePressable({
       : variant === "soft" ? styles.soft
         : variant === "primary" ? styles.primary
           : styles.plain;
+  const interactiveState = pressed
+    ? selected ? styles.selectedPressed
+      : variant === "primary" ? styles.primaryPressed
+        : variant === "soft" ? styles.softPressed
+          : styles.pressed
+    : hovered
+      ? selected ? styles.selectedHover
+        : variant === "primary" ? styles.primaryHover
+          : variant === "soft" ? styles.softHover
+            : styles.hover
+      : selected ? styles.selected : null;
   const stateStyle = isDisabled
     ? styles.disabled
-    : pressed
-      ? selected ? styles.selectedPressed
-        : variant === "primary" ? styles.primaryPressed
-          : variant === "soft" ? styles.softPressed
-            : styles.pressed
-      : hovered
-        ? selected ? styles.selectedHover
-          : variant === "primary" ? styles.primaryHover
-            : variant === "soft" ? styles.softHover
-              : styles.hover
-        : selected ? styles.selected : null;
+    : stateFill ? interactiveState : null;
   const focusStyle = focusVisible ? styles.focus : null;
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
