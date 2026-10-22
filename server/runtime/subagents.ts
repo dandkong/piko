@@ -237,36 +237,53 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
   }
   type Command = { action: "spawn"; task: string; id?: never }
     | { action: "send"; id: string; task: string }
-    | { action: "status" | "stop"; id: string; task?: never };
+    | { action: "status" | "stop"; id: string; task?: never }
+    | { action: "list"; id?: never; task?: never };
+  const output = (value: object): ToolExecutionResult => ({ output: [{ type: "text", text: JSON.stringify(value) }] });
+  const failure = (error: string): ToolExecutionResult => ({ ...output({ status: "error", error }), isError: true });
   // Separate model-facing schemas share the same native execution and cancellation paths.
   const execute = async (args: Command, api: ToolExecutionApi, ctx: Context): Promise<ToolExecutionResult> => {
-      if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, output: [{ type: "text", text: "Nested delegation is unavailable." }] };
-      const ids = await api.commit(tx => subagentIds(tx), ctx);
-      const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
-      if (args.id !== undefined && id === undefined) return { isError: true, output: [{ type: "text", text: "Unknown subagent." }] };
-      if (args.action === "status") {
-        if (id === undefined) return { isError: true, output: [{ type: "text", text: "status needs a subagent id." }] };
-        const states = await api.commit(async tx => {
+      if (api.conversationId !== ROOT_CONVERSATION_ID) return failure("Only the main assistant can manage subagents.");
+      if (args.action === "list") {
+        const subagents = await api.commit(async tx => {
           const records = await taskRecords(tx);
-          const lines: string[] = [];
-          for (const child of [id]) {
+          const values = [];
+          for (const child of await subagentIds(tx)) {
+            // Work-item executions belong to work_item_list/get, not ordinary delegation discovery.
+            if ((await tx.doc(ItemContext, child)).binding) continue;
+            const first = records.find(record => record.kind === REPORTER_KIND && (record.input as ReporterInput).child === child);
             const live = await tx.doc(LiveDoc, child);
             const epoch = (await tx.doc(JobControl, child)).epoch;
-            const status = await jobState(tx, records, child, epoch, !!live.run || awaitingDelivery(records, child, epoch));
-            lines.push(`${child}: ${status.state}${status.detail ? ` · ${status.detail}` : ""}`);
-            for (const step of await recentActivity(tx, child, ACTIVITY_STEPS)) lines.push(`  ${step}`);
+            const state = await jobState(tx, records, child, epoch, !!live.run || awaitingDelivery(records, child, epoch));
+            values.push({ id: String(child), task: singleLine(first && (first.input as ReporterInput).message, ACTIVITY_TEXT_LIMIT) ?? "",
+              status: state.state });
           }
-          return lines.join("\n") || "No delegated work.";
+          return values;
         }, ctx);
-        return { output: [{ type: "text", text: states }] };
+        return output({ subagents });
+      }
+      const ids = await api.commit(tx => subagentIds(tx), ctx);
+      const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
+      if (args.id !== undefined && id === undefined) return failure("Unknown subagent.");
+      if (args.action === "status") {
+        if (id === undefined) return failure("A subagent id is required.");
+        const state = await api.commit(async tx => {
+          const records = await taskRecords(tx);
+          const live = await tx.doc(LiveDoc, id);
+          const epoch = (await tx.doc(JobControl, id)).epoch;
+          const status = await jobState(tx, records, id, epoch, !!live.run || awaitingDelivery(records, id, epoch));
+          return { id: String(id), status: status.state, ...(status.detail && { detail: status.detail }),
+            recentSteps: await recentActivity(tx, id, ACTIVITY_STEPS) };
+        }, ctx);
+        return output(state);
       }
       if (args.action === "stop") {
-        if (id === undefined) return { isError: true, output: [{ type: "text", text: "stop needs a subagent id." }] };
+        if (id === undefined) return failure("A subagent id is required.");
         await invalidate(api, [id], ctx);
         await (await api.conversation(id, ctx))!.abort(ctx);
-        return { output: [{ type: "text", text: `Background job ${id} stopped.` }] };
+        return output({ id: String(id), status: "stopped" });
       }
-      if (!args.task?.trim()) return { isError: true, output: [{ type: "text", text: "A task is required." }] };
+      if (!args.task?.trim()) return failure("Non-empty instructions are required.");
       const agent = await api.agent(ctx);
       const result = await api.commit(async tx => {
         const source = await originOfToolCall(tx, api.callId, ctx);
@@ -283,12 +300,16 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
         return child;
       }, ctx);
-      return { output: [{ type: "text", text: `Background job ${result} accepted. Continue your work; its result will arrive privately.` }], details: { conversationId: result } };
+      return output({ id: String(result), status: "accepted" });
   };
-  const id = Type.String({ pattern: "^[0-9]+$", description: "Job id returned by subagent_spawn; pass it without '#'." });
+  const id = Type.String({ pattern: "^[0-9]+$", description: "Job id from subagent_list or subagent_spawn; pass it without '#'." });
   const task = Type.String({ minLength: 1, maxLength: 24000,
     description: "Self-contained instructions with all context needed; the child does not inherit this chat's history." });
   const tools = [
+    defineTool({ name: "subagent_list", replay: "unsafe",
+      description: "List ordinary subagents with ids, brief tasks and current states. Excludes work-item executions; no history or steps. Do not poll.",
+      parameters: Type.Object({}),
+      execute: (_args, api, ctx) => execute({ action: "list" }, api, ctx) }),
     defineTool({ name: "subagent_spawn", replay: "unsafe",
       description: "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately. Continue working; do not poll.",
       parameters: Type.Object({ task }),

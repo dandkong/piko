@@ -18,16 +18,25 @@
 
 ## 委派与回传
 
-主 Agent 使用四个独立工具，各自的必填参数直接体现在 schema 中，不再暴露 action 分发工具；不增加 HTTP 管理 API 或 TG 命令：
+主 Agent 使用五个独立工具，各自的必填参数直接体现在 schema 中，不再暴露 action 分发工具；不增加 HTTP 管理 API 或 TG 命令：
 
 | 工具 | 必填参数与行为 |
 | --- | --- |
+| `subagent_list` | 无参数；返回普通委派的 id、简短初始任务、当前状态，不展开历史或步骤，排除 work item 执行 |
 | `subagent_spawn` | `task`；创建新子会话，立即返回原生会话 ID，不等待结果 |
 | `subagent_send` | `id`、`message`；继续已有子任务：运行中以 steer 插入当前工作，空闲时启动下一轮 |
 | `subagent_status` | `id`；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
 | `subagent_stop` | `id`；取消指定的子任务，不停止主 Agent |
 
-结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。四个入口复用原来的原生执行、权限和取消路径，不新增执行状态。
+结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。五个入口复用原来的原生执行、权限和取消路径，不新增执行状态。列表在主会话压缩或隔一段时间后也可用于重新找到已有工作；任务摘要从原生 Reporter 输入读取，状态从 task/submission/live 投影，不另存列表或状态。
+
+工具成功返回统一使用 JSON 文本：
+
+- list：`{"subagents":[{"id":"23","task":"检查配置","status":"working"}]}`，空列表为 `{"subagents":[]}`。
+- spawn/send：`{"id":"23","status":"accepted"}`，只表示已接纳，不表示工作完成。
+- status：`{"id":"23","status":"finished","recentSteps":["已检查配置"]}`；失败可附 `detail`，最近步骤最多五条。
+- stop：`{"id":"23","status":"stopped"}`。
+- 工具主动拒绝的未知 id、越权或空指令：`{"status":"error","error":"…"}` 并标记 `isError`；schema 校验与原生执行异常仍由 SDK 处理。
 
 普通用户输入仍进入主会话，维持 steer all，不广播给所有子 Agent。报告以内部 input、whenBusy:followUp 回传：主 Agent 空闲时唤起处理，忙碌时等待当前回答结束。报告不是新的用户指令，不强制生成完成通知。
 
@@ -62,6 +71,8 @@ Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对�
 原生去重保证重复递送同一身份不重复接纳；它不保证外部工具副作用或 TG 网络发送恰好一次。
 
 ## 验证与后续范围
+
+五个工具已用隔离工作区、真实 Harness 和 Faux provider 验证：空列表、任务摘要与状态、排除 work item、结构化接纳/查询/停止、权限隔离和持久化重开。不调用真实供应商或真实 Bot。
 
 依据本地 pi-mono 的 [后台委派示例](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/23-subagent-background.ts)，实施对照锁定的 durable 1.3.0 类型。
 
