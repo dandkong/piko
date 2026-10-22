@@ -123,7 +123,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     };
     const prior = await this.harness.commit(async tx => ({ ...await receipt(tx) }), ctx);
     if (prior.hash) {
-      if (command.action === "stop" && prior.executionId) await this.children.stop(this.harness, [Number(prior.executionId) as ConversationId]);
+      if (command.action === "stop" && prior.executionId) await this.children.stop(this.harness, ROOT_CONVERSATION_ID, [Number(prior.executionId) as ConversationId]);
       return { id: prior.id, ...(prior.executionId && { executionId: prior.executionId }), duplicate: true };
     }
     if (command.action === "run") await this.ready();
@@ -176,7 +176,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
       return { id, ...(child !== undefined && { executionId: String(child) }), duplicate: false };
     }, ctx);
     // A stop receipt always targets the original child, so a retry cannot stop a later execution.
-    if (command.action === "stop" && stopChildren.length) await this.children.stop(this.harness, stopChildren);
+    if (command.action === "stop" && stopChildren.length) await this.children.stop(this.harness, ROOT_CONVERSATION_ID, stopChildren);
     return result;
   }
   source(tx: Tx, callId: string) { return this.children.source(tx, callId); }

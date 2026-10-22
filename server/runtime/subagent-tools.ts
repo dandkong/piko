@@ -3,6 +3,7 @@ import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, defineTool, LiveDoc, ROOT_CONVERSATION_ID,
   type ToolExecutionApi, type ToolExecutionResult } from "@earendil-works/pi-durable";
 import { TaskContext } from "./task-context";
+import { requireSideChat } from "./side-chats";
 import { JobControl, REPORTER_KIND, subagentIds, taskRecords, jobState, awaitingDelivery, recentActivity,
   type ReporterInput, type SubagentRuntime } from "./subagent-runtime";
 import { singleLine } from "./tool-activity";
@@ -17,12 +18,19 @@ export function createSubagentTools(children: SubagentRuntime) {
   const failure = (error: string): ToolExecutionResult => ({ ...output({ status: "error", error }), isError: true });
   // Separate model-facing schemas share the same native execution and cancellation paths.
   const execute = async (args: Command, api: ToolExecutionApi, ctx: Context): Promise<ToolExecutionResult> => {
-      if (api.conversationId !== ROOT_CONVERSATION_ID) return failure("Only the main assistant can manage subagents.");
+      const parent = api.conversationId;
+      if (parent !== ROOT_CONVERSATION_ID) {
+        const sideChat = await api.commit(async tx => {
+          try { return (await requireSideChat(tx, String(parent))).id; }
+          catch { return undefined; }
+        }, ctx);
+        if (sideChat !== parent) return failure("Subagents are available only in the main chat and side chats.");
+      }
       if (args.action === "list") {
         const subagents = await api.commit(async tx => {
-          const records = await taskRecords(tx);
+          const records = await taskRecords(tx, parent);
           const values = [];
-          for (const child of await subagentIds(tx)) {
+          for (const child of await subagentIds(tx, parent)) {
             // Saved-task executions belong to task_list/get, not ordinary delegation discovery.
             if ((await tx.doc(TaskContext, child)).binding) continue;
             const first = records.find(record => record.kind === REPORTER_KIND && (record.input as ReporterInput).child === child);
@@ -36,13 +44,13 @@ export function createSubagentTools(children: SubagentRuntime) {
         }, ctx);
         return output({ subagents });
       }
-      const ids = await api.commit(tx => subagentIds(tx), ctx);
+      const ids = await api.commit(tx => subagentIds(tx, parent), ctx);
       const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
       if (args.id !== undefined && id === undefined) return failure("Unknown subagent.");
       if (args.action === "status") {
         if (id === undefined) return failure("A subagent id is required.");
         const state = await api.commit(async tx => {
-          const records = await taskRecords(tx);
+          const records = await taskRecords(tx, parent);
           const live = await tx.doc(LiveDoc, id);
           const epoch = (await tx.doc(JobControl, id)).epoch;
           const status = await jobState(tx, records, id, epoch, !!live.run || awaitingDelivery(records, id, epoch));
@@ -53,16 +61,16 @@ export function createSubagentTools(children: SubagentRuntime) {
       }
       if (args.action === "stop") {
         if (id === undefined) return failure("A subagent id is required.");
-        await children.stop(api, [id], ctx);
+        await children.stop(api, parent, [id], ctx);
         return output({ id: String(id), status: "stopped" });
       }
       if (!args.task?.trim()) return failure("Non-empty instructions are required.");
       const agent = await api.agent(ctx);
       const result = await api.commit(async tx => {
-        const source = await children.source(tx, api.callId);
+        const source = await children.source(tx, api.callId, parent);
         return args.action === "send"
-          ? children.send(tx, id!, args.task!, source)
-          : children.spawn(tx, agent, args.task!, source);
+          ? children.send(tx, id!, args.task!, source, parent)
+          : children.spawn(tx, agent, args.task!, source, undefined, parent);
       }, ctx);
       return output({ id: String(result), status: "accepted" });
   };

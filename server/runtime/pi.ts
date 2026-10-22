@@ -9,9 +9,9 @@ import type { ChatRuntime } from "./types";
 import { RuntimeBusyError } from "./types";
 import { DurableChatSession, Recovery } from "./pi-session";
 import { sessionDirectory } from "./pi-context";
-import { createSubagentRuntime, prepareRestart, subagentIds } from "./subagent-runtime";
+import { activeSubagentIds, createSubagentRuntime, prepareRestart, subagentIds } from "./subagent-runtime";
 import { createSubagentTools } from "./subagent-tools";
-import { childScope } from "./background";
+import { childScope, sideChatScope } from "./background";
 import { DurableAssistantTasks } from "./assistant-tasks";
 import { createTaskTools } from "./task-tools";
 import { TaskContext } from "./task-context";
@@ -29,6 +29,7 @@ import { SideChatCreates, SideChatDoc, SideChatError, requireSideChat, sideChats
 import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../shared/side-chats";
 
 export const PIKO_TOOL_NAMES = ["read", "write", "edit", "bash"];
+const SIDE_CHAT_INSTRUCTIONS = "This is an independent side chat. Share workspace guidance, memory and skills, but not the main chat transcript. Do not curate global memory or manage saved tasks. You may delegate independent background work; its results return only to this side chat, never to the main chat. Shared workspace tools are not a sandbox.";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -38,6 +39,7 @@ class PikoRuntime {
   private registry!: Registry;
   private searchConfigured = false;
   private tasks!: DurableAssistantTasks;
+  private children!: ReturnType<typeof createSubagentRuntime>;
   private memory?: MemoryCurationService;
   private main!: DurableChatSession;
   private readonly sessions = new Map<ConversationId, Promise<DurableChatSession>>();
@@ -51,8 +53,14 @@ class PikoRuntime {
     const config = this.config = await loadWorkspaceModels({ home: this.paths.home, settings, env, models: this.models });
     const coding = await createPikoCodingTools();
     const background = () => availableBackground(config.models, config.background);
-    const children = createSubagentRuntime({ storage: () => this.storage,
-      canReport: () => !this.closing && !!this.main?.canReport,
+    const children = this.children = createSubagentRuntime({ storage: () => this.storage,
+      canReport: async id => {
+        if (this.closing) return false;
+        const opening = this.sessions.get(id);
+        if (!opening) return true;
+        try { return (await opening).canReport; }
+        catch { return !this.closing; }
+      },
       background, onReply: reply => this.main.backgroundReply(reply) });
     const memory = createMemoryCurationExtension({ workspace: this.paths.workspace,
       bindings: () => this.main?.bindings ?? new Map(), background, coding });
@@ -92,19 +100,30 @@ class PikoRuntime {
       }
       // Apply the no-replay policy before enabling any scheduler or input.
       const recovery = await prepareRestart(harness, chatIds);
-      if (recovery.interruptedIds.includes(ROOT_CONVERSATION_ID) && !interrupted.includes(ROOT_CONVERSATION_ID)) interrupted.push(ROOT_CONVERSATION_ID);
+      for (const id of recovery.interruptedIds) if (!interrupted.includes(id)) interrupted.push(id);
       const rootAgent = await root.agent(ctx);
+      const parentAgents = new Map([[ROOT_CONVERSATION_ID, rootAgent]]);
+      for (const chat of chats) {
+        const id = Number(chat.id) as ConversationId;
+        const conversation = await harness.conversation(id, ctx);
+        if (conversation) parentAgents.set(id, await conversation.agent(ctx));
+      }
       await harness.commit(async tx => {
-        const scope = childScope(rootAgent);
         const selection = configuredBackground(config.background);
-        for (const id of await subagentIds(tx)) {
-          const binding = (await tx.doc(TaskContext, id)).binding;
-          await configure(tx, id, { ...(selection ? { model: { provider: selection.provider, modelId: selection.modelId }, thinkingLevel: selection.thinkingLevel }
-            : { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel }),
-            cwd: binding ? new TaskFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd, ...scope });
+        for (const owner of chatIds) {
+          const parent = parentAgents.get(owner) ?? rootAgent;
+          const scope = childScope(parent);
+          for (const id of await subagentIds(tx, owner)) {
+            const binding = (await tx.doc(TaskContext, id)).binding;
+            await configure(tx, id, { ...(selection ? { model: { provider: selection.provider, modelId: selection.modelId }, thinkingLevel: selection.thinkingLevel }
+              : { model: parent.model, thinkingLevel: parent.thinkingLevel }),
+              cwd: binding ? new TaskFiles(this.paths.workspace).directory(binding.itemId) : parent.cwd, ...scope });
+          }
         }
-        // Refresh tool/extension availability without resetting a side chat's chosen model or history.
-        for (const chat of chats) await configure(tx, Number(chat.id) as ConversationId, { cwd: this.paths.workspace, ...scope });
+        // Refresh side tools without resetting a side chat's selected model or history.
+        for (const chat of chats) await configure(tx, Number(chat.id) as ConversationId, {
+          cwd: this.paths.workspace, ...sideChatScope(rootAgent), instructions: SIDE_CHAT_INSTRUCTIONS,
+        });
         for (const id of interrupted) {
           (await tx.doc(Recovery, id)).interruption = "The previous work was interrupted by a server restart. Please resend if needed.";
           await tx.appendEntry(id, { kind: "piko.interrupted", model: [{ role: "user", content: "The previous work was interrupted. Saved messages are history. Do not resume or repeat tools automatically; act only on new requests.", timestamp: Date.now() }] });
@@ -163,8 +182,8 @@ class PikoRuntime {
       }
       const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
       await configure(tx, created.id, { cwd: this.paths.workspace, model: rootAgent.model,
-        thinkingLevel: rootAgent.thinkingLevel, ...childScope(rootAgent),
-        instructions: "This is an independent side chat. Share workspace guidance, memory and skills, but not the main chat transcript. Do not curate global memory automatically or manage saved tasks or delegate. Do not send results to the main chat. Shared workspace tools are not a sandbox." });
+        thinkingLevel: rootAgent.thinkingLevel, ...sideChatScope(rootAgent),
+        instructions: SIDE_CHAT_INSTRUCTIONS });
       const metadata = await tx.doc(SideChatDoc, created.id);
       metadata.title = validTitle(title); metadata.createdAt = Date.now();
       request.conversationId = Number(created.id);
@@ -179,7 +198,11 @@ class PikoRuntime {
       if (change.archived !== undefined) metadata.archivedAt = change.archived ? metadata.archivedAt ?? Date.now() : null;
     }, ctx);
     // Archive and input admission use the SAME conversation gate, avoiding submit/archive races.
-    if (change.archived === true) await (await this.session(id)).archive(save);
+    if (change.archived === true) await (await this.session(id)).archive(async () => {
+      const jobs = await this.harness.commit(tx => activeSubagentIds(tx, id), ctx);
+      if (jobs.length) await this.children.stop(this.harness, id, jobs, ctx);
+      await save();
+    });
     else await save();
     return this.harness.commit(async tx => ({ id: value, ...(await requireSideChat(tx, value)).metadata }), ctx);
   }

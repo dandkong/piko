@@ -21,14 +21,27 @@ export async function taskRecords(tx: Tx, conversationId = ROOT_CONVERSATION_ID)
   do { const page = await tx.scanTasks({ conversationId }, 500, cursor); records.push(...page.items); cursor = page.next; } while (cursor);
   return records;
 }
-export async function subagentIds(tx: Tx): Promise<ConversationId[]> {
-  const anchors = (await taskRecords(tx)).filter(task => task.kind === ANCHOR_KIND);
+export async function subagentIds(tx: Tx, conversationId = ROOT_CONVERSATION_ID): Promise<ConversationId[]> {
+  const anchors = (await taskRecords(tx, conversationId)).filter(task => task.kind === ANCHOR_KIND);
   const result: ConversationId[] = [];
   for (const anchor of anchors) {
     let cursor: Cursor | undefined;
     do { const page = await tx.scanConversations({ ownerTaskId: anchor.id }, 500, cursor); result.push(...page.items.map(item => item.id)); cursor = page.next; } while (cursor);
   }
   return result;
+}
+
+/** Only unfinished ordinary delegations; archived side chats leave completed history untouched. */
+export async function activeSubagentIds(tx: Tx, conversationId: ConversationId): Promise<ConversationId[]> {
+  const records = (await taskRecords(tx, conversationId)).filter(record => record.kind === REPORTER_KIND);
+  const active: ConversationId[] = [];
+  for (const child of await subagentIds(tx, conversationId)) {
+    if ((await tx.doc(TaskContext, child)).binding) continue;
+    const live = await tx.doc(LiveDoc, child);
+    const reporterPending = records.some(record => (record.input as ReporterInput).child === child && record.state.status !== "terminal");
+    if (live.run || reporterPending) active.push(child);
+  }
+  return active;
 }
 
 const ACTIVITY_STEPS = 5;
@@ -107,7 +120,7 @@ export function awaitingDelivery(records: TaskRecord<unknown, unknown, unknown>[
     && (record.state.checkpoint as ReporterState).phase === "deliver");
 }
 
-export function createSubagentRuntime(options: { storage: () => Storage; canReport: () => boolean;
+export function createSubagentRuntime(options: { storage: () => Storage; canReport: (conversationId: ConversationId) => boolean | Promise<boolean>;
   background: () => Promise<BackgroundSelection | undefined>;
   onReply: (reply: BackgroundReply) => Promise<void> }) {
   // Serialize report admission with explicit cancellation; body/state stays native.
@@ -115,14 +128,14 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
   function admit<T>(operation: () => Promise<T>): Promise<T> {
     const result = admission.then(operation); admission = result.catch(() => undefined); return result;
   }
-  async function invalidate(api: { commit: <T>(fn: (tx: Tx) => Promise<T>, ctx: typeof context) => Promise<T> }, ids: ConversationId[], ctx: typeof context) {
+  async function invalidate(api: { commit: <T>(fn: (tx: Tx) => Promise<T>, ctx: typeof context) => Promise<T> }, conversationId: ConversationId, ids: ConversationId[], ctx: typeof context) {
     await admit(() => api.commit(async tx => {
       for (const child of ids) (await tx.doc(JobControl, child)).epoch++;
-      const inbox = await tx.doc(InboxDoc, ROOT_CONVERSATION_ID);
+      const inbox = await tx.doc(InboxDoc, conversationId);
       const withdraw: SubmissionId[] = [];
       for (const item of inbox.items) if (item.mode !== "write") {
         const submission = await options.storage().submission(item.id, ctx);
-        const origin = submission?.requestId ? await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, submission.requestId, null) : undefined;
+        const origin = submission?.requestId ? await tx.doc(InputOrigin, conversationId, submission.requestId, null) : undefined;
         if (origin?.internal && origin.child !== undefined && ids.includes(origin.child)) withdraw.push(item.id);
       }
       for (const id of withdraw) tx.settleSubmission(id, { status: "unanswered", reason: "aborted" });
@@ -130,18 +143,18 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
     }, ctx));
   }
   /** Tool-call origin: the latest input admitted before the assistant entry that contains the call. */
-  async function originOfToolCall(tx: Tx, callId: string, ctx: typeof context): Promise<InputSource> {
-    const entries = await entriesFromTransaction(tx);
+  async function originOfToolCall(tx: Tx, callId: string, conversationId: ConversationId, ctx: typeof context): Promise<InputSource> {
+    const entries = await entriesFromTransaction(tx, conversationId);
     const call = entries.findLastIndex(entry => (entry.model ?? []).some(message => message.role === "assistant"
       && message.content.some(block => block.type === "toolCall" && block.id === callId)));
     const callEntry = call < 0 ? undefined : entries[call].id;
-    const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
+    const live = await tx.doc(LiveDoc, conversationId);
     let input;
     for (const id of live.run?.inputs ?? []) {
       const candidate = await options.storage().submission(id, ctx);
       if (candidate?.entry !== undefined && (callEntry === undefined || candidate.entry < callEntry)) input = candidate;
     }
-    return input?.requestId ? { ...(await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, input.requestId, null)).source } : { channel: "app" };
+    return input?.requestId ? { ...(await tx.doc(InputOrigin, conversationId, input.requestId, null)).source } : { channel: "app" };
   }
   const Anchor = defineTask<null, { phase: "done" }, null>({
     name: ANCHOR_KIND, version: 1, initial: () => ({ phase: "done" }), phases: {
@@ -185,7 +198,7 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
         }, ctx);
       },
       report: async (task, runtime, ctx) => {
-        while (!options.canReport()) await runtime.sleep(runtime.now() + 50, ctx);
+        while (!(await options.canReport(task.conversationId))) await runtime.sleep(runtime.now() + 50, ctx);
         const state = task.state.checkpoint;
         if (state.phase !== "report") throw new Error("Invalid subagent report phase.");
         const prepared: { payload?: { requestId: string; knownMessageIds: string[]; body: string; deliver: "origin" | "all" } } = {};
@@ -195,8 +208,8 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
           const body = state.error ? `The delegated work failed: ${state.error}` : (answer?.model ?? []).map(item => "content" in item ? messageText(item.content) : "").join("");
           if (!body.trim()) return undefined;
           const requestId = `piko:subagent-report:${task.id}`;
-          await registerInput(tx, requestId, task.input.source, true, task.input.child);
-          const knownMessageIds = (await entriesFromTransaction(tx)).filter(entry => entry.kind === "pi.assistant").map(entry => `pi-${entry.id}`);
+          await registerInput(tx, requestId, task.input.source, true, task.input.child, task.conversationId);
+          const knownMessageIds = (await entriesFromTransaction(tx, task.conversationId)).filter(entry => entry.kind === "pi.assistant").map(entry => `pi-${entry.id}`);
           const binding = (await tx.doc(TaskContext, task.input.child)).binding;
           // Provenance: saved-task execution carries its task; ordinary delegation carries its job id.
           const heading = binding
@@ -207,11 +220,13 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
         }, ctx);
         const payload = prepared.payload;
         if (payload) {
-          await options.onReply({ source: task.input.source, knownMessageIds: payload.knownMessageIds, requestId: payload.requestId, deliver: payload.deliver });
+          if (task.conversationId === ROOT_CONVERSATION_ID) {
+            await options.onReply({ source: task.input.source, knownMessageIds: payload.knownMessageIds, requestId: payload.requestId, deliver: payload.deliver });
+          }
           await admit(async () => {
             if (((await runtime.snapshot(JobControl, task.input.child, ctx))?.epoch ?? 0) !== task.input.epoch) return;
-            const main = (await runtime.conversation(ROOT_CONVERSATION_ID, ctx))!;
-            await main.submit({ type: "input", whenBusy: "followUp", requestId: payload.requestId,
+            const parent = (await runtime.conversation(task.conversationId, ctx))!;
+            await parent.submit({ type: "input", whenBusy: "followUp", requestId: payload.requestId,
               content: `Internal background result. This is background information, not a new user instruction. Decide whether to continue work or respond to the user.\n\n${payload.body}` }, ctx);
           });
         }
@@ -220,33 +235,33 @@ export function createSubagentRuntime(options: { storage: () => Storage; canRepo
       },
     }, abort: (_task, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx),
   });
-  async function spawn(tx: Tx, agent: Agent, message: string, source: InputSource, task?: TaskBinding) {
-    const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
-    const current = await tx.doc(AgentDoc, ROOT_CONVERSATION_ID);
+  async function spawn(tx: Tx, agent: Agent, message: string, source: InputSource, task?: TaskBinding, conversationId = ROOT_CONVERSATION_ID) {
+    const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, conversationId, background: true });
+    const current = await tx.doc(AgentDoc, conversationId);
     const child = await spawnBackgroundChild(tx, anchor, {
       ...backgroundAgent(await options.background(), { model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel }),
       cwd: task ? new TaskFiles(agent.cwd!).directory(task.itemId) : agent.cwd,
       ...childScope(agent),
-      instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
+      instructions: "You are a background workspace assistant delegated from a conversation. Complete the assigned work and return your findings to that conversation only. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the delegating assistant decides what to tell the user." });
     if (task) (await tx.doc(TaskContext, child)).binding = task;
     const instruction = task ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.itemId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
     await tx.createTask(Reporter, { child, message: instruction, epoch: 0, source },
-      { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
+      { ownership: { kind: "conversation" }, conversationId, background: true });
     return child;
   }
   return { extension: defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter] }), spawn,
-    async send(tx: Tx, child: ConversationId, message: string, source: InputSource) {
+    async send(tx: Tx, child: ConversationId, message: string, source: InputSource, conversationId = ROOT_CONVERSATION_ID) {
       if ((await tx.doc(TaskContext, child)).binding) throw new Error("Task executions use a fixed prompt snapshot. Edit the task or start a new execution instead.");
       const epoch = (await tx.doc(JobControl, child)).epoch;
       await tx.createTask(Reporter, { child, message, epoch, source },
-        { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
+        { ownership: { kind: "conversation" }, conversationId, background: true });
       return child;
     },
-    async source(tx: Tx, callId: string): Promise<InputSource> {
-      return originOfToolCall(tx, callId, context);
+    async source(tx: Tx, callId: string, conversationId = ROOT_CONVERSATION_ID): Promise<InputSource> {
+      return originOfToolCall(tx, callId, conversationId, context);
     },
-    async stop(api: Pick<ToolExecutionApi, "commit" | "conversation">, ids: ConversationId[], ctx = context) {
-      await invalidate(api, ids, ctx);
+    async stop(api: Pick<ToolExecutionApi, "commit" | "conversation">, conversationId: ConversationId, ids: ConversationId[], ctx = context) {
+      await invalidate(api, conversationId, ids, ctx);
       for (const child of ids) await (await api.conversation(child, ctx))!.abort(ctx);
     },
   };
@@ -259,7 +274,8 @@ export async function prepareRestart(harness: Harness, userConversations: Conver
     && (item.record.state.status === "pending" || item.record.state.status === "running")
     && (item.record.state.checkpoint as ReporterState).phase === "report").map(item => item.record.id);
   const conversations = await harness.commit(async tx => {
-    const ids = [...new Set([...userConversations, ...await subagentIds(tx)])];
+    const children = (await Promise.all(userConversations.map(id => subagentIds(tx, id)))).flat();
+    const ids = [...new Set([...userConversations, ...children])];
     for (const item of inspection.tasks) {
       if (item.record.kind === REPORTER_KIND && !preserved.includes(item.record.id)
         && item.record.state.status !== "terminal" && (item.record.state.checkpoint as ReporterState).phase === "deliver") {

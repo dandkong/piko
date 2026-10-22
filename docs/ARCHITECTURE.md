@@ -33,7 +33,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [任务与执行记录](features/tasks.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；旁聊使用独立 ownerless conversation，共享记忆/技能/通用工具，不继承主聊天上下文、不自动回传、不提取旁聊记忆、不开放任务管理/委派工具；见 [旁聊](features/side-chats.md)。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [任务与执行记录](features/tasks.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；旁聊使用独立 ownerless conversation，共享记忆/技能/通用工具，不继承主聊天上下文、不自动回传、不提取旁聊记忆、不开放任务管理工具；旁聊委派仅作用于 owner conversation；见 [旁聊](features/side-chats.md)。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
 
 默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 

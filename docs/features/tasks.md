@@ -47,7 +47,7 @@ type AssistantTaskDraft = {
 | `server/runtime/subagent-tools.ts` | 普通委派的 `subagent_*` 模型工具入口 |
 | `server/runtime/background.ts` | 后台模型、继承工具范围和子会话创建策略 |
 
-任务服务依赖共用执行模块，不依赖普通委派工具。子会话及旁聊移除全部 `task_*`、`subagent_*`，工具执行处另检查 root 权限，不能嵌套委派或创建调度。
+任务服务依赖共用执行模块，不依赖普通委派工具。普通后台子 Agent 移除 `task_*` 与 `subagent_*`；旁聊仅移除 `task_*`，允许作用域限定的 `subagent_*`。任务管理工具执行处仍检查 root 权限，不能嵌套委派或创建调度。
 
 ## 持久化与目录
 

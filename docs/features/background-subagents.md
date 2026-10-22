@@ -78,4 +78,4 @@ Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对�
 
 依据本地 pi-mono 的 [后台委派示例](https://github.com/earendil-works/pi/blob/main/packages/durable/test/examples/23-subagent-background.ts)，实施对照锁定的 durable 1.3.0 类型。
 
-任务调度与 Tasks 首版见 [任务与执行记录](tasks.md)。普通委派的并发/成本限额与可靠平台 outbox 仍待设计；[用户旁聊](side-chats.md) 已独立接入，不提供委派、不自动回传主聊天；普通委派没有独立管理 UI，也不自动续跑未完成执行。
+任务调度与 Tasks 首版见 [任务与执行记录](tasks.md)。普通委派的并发/成本限额与可靠平台 outbox 仍待设计；[用户旁聊](side-chats.md) 已支持作用域隔离的委派，报告只回原旁聊、不自动回传主聊天；普通委派没有独立管理 UI，也不自动续跑未完成执行。
