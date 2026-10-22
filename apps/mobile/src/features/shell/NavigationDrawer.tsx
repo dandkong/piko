@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   panel: {
     position: "absolute",
     left: 0,
-    backgroundColor: colors.drawerUnderlay,
+    backgroundColor: colors.canvas,
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: colors.drawerEdge,
   },
@@ -246,7 +246,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 12,
     paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
   },
 });
