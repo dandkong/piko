@@ -6,11 +6,11 @@
 
 ## 共享资源与会话
 
-主、子 Agent 共用同一个 Harness、JSONL 存储、基本工具、内建扩展、技能、全局 AGENTS.md 和 MEMORY.md。模型选择不共用：后台子 Agent 使用 `agent.profiles.background`（未配置时在创建时继承当时的主会话选择），主会话的 `/models` 切换不影响它们。普通委派共用工作区，没有独立配置或记忆目录；子工具移除全部 `subagent_*` 和 `task_*`，同时在工具执行处拒绝非 root 的委派/任务管理。子角色说明只补充任务职责，仍加载共享指导。
+主、子 Agent 共用同一个 Harness、JSONL 存储、基本工具、内建扩展、技能、全局 AGENTS.md 和 MEMORY.md。模型选择不共用：后台子 Agent 使用 `agent.profiles.background`（未配置时在创建时继承当时的主会话选择），主会话的 `/models` 切换不影响它们。普通委派共用工作区，没有独立配置或记忆目录；子工具移除全部 `subagent_*` 和 `task_*`；委派工具只允许主会话和有效未归档旁聊，任务管理只允许 root。子角色说明只补充任务职责，仍加载共享指导。
 
 [任务与执行记录](tasks.md) 复用相同 Anchor/Reporter 和回传机制，但使用固定任务目录作为 cwd，并额外加载本任务记忆、保存独立输出。本文其余共享文件与不增加展示的约定针对普通聊天委派；Tasks 页面单独展示任务执行记录，不把内部子消息投影到主聊天。
 
-每次 spawn 创建新的原生 conversation；send 可继续已有子会话并复用其历史：运行中直接以 steer 插入当前工作，空闲时作为新输入启动下一轮。需要不带旧上下文的新会话时再 spawn。不建设用户会话列表或切换入口，与未来的用户 side chat 分开。
+每次 spawn 创建新的原生 conversation；send 可继续已有子会话并复用其历史：运行中直接以 steer 插入当前工作，空闲时作为新输入启动下一轮。需要不带旧上下文的新会话时再 spawn。不建设后台子会话列表或切换页面，与已经实现的用户 [旁聊](side-chats.md) 分开。
 
 子会话在 spawn 时直接新建，不 fork 或继承主聊天历史；只加载共享指导、记忆、技能和工具，以及本次委派任务。后续 send 复用该子会话的历史，主 Agent 仍应把新增背景写入 `subagent_send.message`。任务由 Reporter 单独提交，子执行不实时回灌 root；工具、压缩和回答保存在子 conversation 中。UI 只投影 root 的完整历史。
 
@@ -30,7 +30,7 @@
 | `subagent_status` | `id`；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
 | `subagent_stop` | `id`；取消指定的子任务，不停止主 Agent |
 
-结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。五个入口复用原来的原生执行、权限和取消路径，不新增执行状态。`subagent-tools.ts` 只注册工具，`subagent-runtime.ts` 承载共享 Anchor/Reporter、创建/继续/停止、回传与恢复，任务服务也直接依赖后者。列表在主会话压缩或隔一段时间后也可用于重新找到已有工作；任务摘要从原生 Reporter 输入读取，状态从 task/submission/live 投影，不另存列表或状态。
+结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。五个入口复用原来的原生执行、权限和取消路径，不新增执行状态。`subagents/tools.ts` 只负责 schema、服务/查询调用与输出，`subagents/runtime.ts` 承载共享 Anchor/Reporter、创建/继续/停止和回传；`subagents/queries.ts` 统一原生事实读取、owner 校验与普通委派投影，`subagents/recovery.ts` 在 resume 前实施恢复。任务服务依赖共用执行和事实读取，不依赖普通委派工具。列表在主会话压缩或隔一段时间后也可用于重新找到已有工作；任务摘要从原生 Reporter 输入读取，状态从 task/submission/live 投影，不另存列表或状态。
 
 工具成功返回统一使用 JSON 文本：
 
@@ -60,7 +60,7 @@ Anchor 是立即完成的持久化所有权节点，不是常驻线程；子会�
 
 Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对应同一个原生 answer entry，按 answer 身份只回传一次；回传决定与下一阶段 checkpoint 在同一 native commit 保存。checkpoint 保存 answer entry 引用或原生失败原因，报告正文从原生回答读取。
 
-两个原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID。执行状态仍以 Durable 为准，不保存状态副本。短暂的内存串行接纳保证报告提交与显式取消有序。
+两个原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID。执行状态仍以 Durable 为准，不保存状态副本。报告先经过父会话的 ConversationControl 接纳线，再进入后台取消接纳线，并在两者内部复核 epoch；同一顺序用于归档，避免反向持锁。归档预留覆盖停止前台、撤回报告、停止子工作和写入元数据全过程，归档后的报告不能再次唤起会话。原生提交去重与 checkpoint 保持不变。
 
 ## 停止、失败与重启
 

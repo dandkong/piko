@@ -6,11 +6,11 @@
 
 ## 客户端开发约定
 
-- `App.tsx` 负责初始化；`src/components/AppShell.tsx` 管理通用布局；`src/theme.ts` 管理视觉基础。
+- `App.tsx` 负责初始化；`src/features/shell/AppShell.tsx` 管理应用唯一布局、导航和键盘，聊天 owner 只保留各自输入/历史/滚动状态；`src/theme.ts` 管理视觉基础。
 - 按钮、行、chip 和图标控件的状态、尺寸与动效统一遵循 [交互与视觉规范](../../docs/INTERACTION.md)；优先复用 `TactilePressable`、`IconButton`、`TextButton`，不要为单个控件另写按压样式。
-- 页面按功能放进 `src/features/`，临时交互状态留在 Hook，持久业务状态归服务端。Chat 的页面、输入框、API 与 SSE transport 位于 `src/features/chat/`。
+- 页面按功能放进 `src/features/`，临时交互状态留在 Hook，持久业务状态归服务端。Chat 的页面、输入框、API 与 SSE transport 位于 `src/features/chat/`；useChat 保留输入身份与重试协调，useConversationObservation 管活动观察/健康状态，useChatAttachments 管选择/上传。Tasks 的查询和命令状态在 useTasks。
 - 动效使用 Reanimated 和匹配 Expo SDK 的 Worklets，Babel preset 自动配置插件。`TypingIndicator.tsx` 提供等待动效，启用减少动效时保持静止，卸载后停止循环。
-- 左上菜单打开悬浮导航抽屉，四个页签与底部导航共用 `src/navigation.ts` 的配置；抽屉下方旁聊列表右侧三点菜单提供重命名/归档，右下一键使用默认名“新旁聊”创建并进入。顶部名字固定 Piko；主/旁聊分别保留草稿与历史，Chat 导航返回主会话；归档后隐藏，不提供已归档列表或恢复入口。设置和通知尚未接入；不展示不可用的功能页面。详见 [旁聊](../../docs/features/side-chats.md)。
+- 左上菜单打开底层导航、前景推开的层叠抽屉，挂载由同一动画完成回调控制，不另设关闭计时器，四个页签与底部导航共用 `src/navigation.ts` 的配置；抽屉下方旁聊列表右侧三点菜单提供重命名/归档，右下一键使用默认名“新旁聊”创建并进入。顶部名字固定 Piko；主/旁聊分别保留草稿与历史，Chat 导航返回主会话；归档后隐藏，不提供已归档列表或恢复入口。设置和通知尚未接入；不展示不可用的功能页面。详见 [旁聊](../../docs/features/side-chats.md)。
 - Android / iOS 生成工程已忽略，原生设置通过 app.json 和配置插件保存。新增原生依赖或原生配置后重建应用，不能只依赖热更新。
 - 键盘弹出时仅输入框与“回到底部”按钮跟随上移，聊天视口和其他控件保持原位。Android 使用 `adjustNothing` 让键盘覆盖底部区域，并由应用移动输入框；此原生设置在 `apps/mobile/plugins/with-android-adjust-nothing.js` 中配置，Android 需使用自定义开发构建，Expo Go 不会应用该插件。iOS 使用键盘事件驱动动画，可在 Expo Go 中验证。
 - 历史默认最近 50 条，向上滚到顶部附近加载更早记录；失败可点击列表顶端重试。分页合并与断线窗口恢复在 shared/history.ts，原生列表保位使用 maintainVisibleContentPosition，Web 使用可见消息 DOM 锚点补齐 RN Web 未实现的保位行为。

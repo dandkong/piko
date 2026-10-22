@@ -10,6 +10,10 @@ export type TaskBinding = {
   interrupted: boolean;
 };
 export const TaskContext = defineDoc<{ binding: TaskBinding | null }>({
-  kind: "piko.item-context", version: 1, scope: "conversation", history: "latest", fork: "initial",
+  kind: "piko.item-context",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
   initial: () => ({ binding: null }),
 });

@@ -1,5 +1,5 @@
 import { Settings, SquarePen, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   BackHandler,
   Platform,
@@ -11,13 +11,20 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { navigation, type AppTab } from "../../navigation";
-import { colors, drawerLayout, motion, radii } from "../../theme";
+import { colors, drawerLayout, radii } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { SideChatList, type SideChatActions } from "./SideChatList";
 
 /** Underlay navigation layer: the app surface moves aside to reveal tabs and side chats. */
-export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpenSettings, ...sideChatActions }: SideChatActions & {
+export function NavigationDrawer({
+  open,
+  activeTab,
+  onSelectTab,
+  onClose,
+  onOpenSettings,
+  ...sideChatActions
+}: SideChatActions & {
   open: boolean;
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
@@ -26,26 +33,20 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const panelWidth = Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio);
-  const [mounted, setMounted] = useState(open);
-
-  useEffect(() => {
-    if (open) setMounted(true);
-  }, [open]);
-
-  useEffect(() => {
-    if (!mounted || open) return;
-    const timer = setTimeout(() => setMounted(false), motion.drawerOut);
-    return () => clearTimeout(timer);
-  }, [mounted, open]);
-
+  const panelWidth = Math.min(
+    drawerLayout.maxWidth,
+    width * drawerLayout.widthRatio,
+  );
   useEffect(() => {
     if (!open) return;
     if (Platform.OS === "android") {
-      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-        onClose();
-        return true;
-      });
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => {
+          onClose();
+          return true;
+        },
+      );
       return () => subscription.remove();
     }
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -57,8 +58,6 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
     }
   }, [open, onClose]);
 
-  if (!mounted && !open) return null;
-
   return (
     <View
       pointerEvents={open ? "auto" : "none"}
@@ -68,11 +67,14 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
     >
       <View
         accessibilityViewIsModal={open}
-        style={[styles.panel, {
-          width: panelWidth,
-          top: insets.top + drawerLayout.inset,
-          bottom: insets.bottom + drawerLayout.inset,
-        }]}
+        style={[
+          styles.panel,
+          {
+            width: panelWidth,
+            top: insets.top + drawerLayout.inset,
+            bottom: insets.bottom + drawerLayout.inset,
+          },
+        ]}
         testID="navigation-drawer"
       >
         <View style={styles.header}>
@@ -90,7 +92,9 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <Text style={styles.sectionLabel}>选项卡</Text>
           <View style={styles.tabList}>
             {navigation.map(({ label, icon: Icon, hint }) => {
-              const active = label === activeTab && !(label === "Chat" && sideChatActions.activeSideChatId);
+              const active =
+                label === activeTab &&
+                !(label === "Chat" && sideChatActions.activeSideChatId);
               return (
                 <TactilePressable
                   key={label}
@@ -107,7 +111,11 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
                   variant="plain"
                 >
                   <Icon size={22} strokeWidth={1.8} color={colors.text} />
-                  <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
+                  <Text
+                    style={[styles.tabLabel, active && styles.tabLabelActive]}
+                  >
+                    {label}
+                  </Text>
                 </TactilePressable>
               );
             })}
@@ -130,7 +138,11 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
           <IconButton
             hint="Create an independent side chat"
             label="New side chat"
-            onPress={sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy ? () => void sideChatActions.onCreateSideChat?.() : undefined}
+            onPress={
+              sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy
+                ? () => void sideChatActions.onCreateSideChat?.()
+                : undefined
+            }
             variant="primary"
           >
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />

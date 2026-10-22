@@ -16,7 +16,7 @@
 
 ## 运行时
 
-`server/runtime/pi.ts` 持有唯一 Storage/Harness/Registry，启动主会话专属的任务和记忆服务；后台委派可由 root 或旁聊发起，Reporter 按原生 task 的 conversationId 回传到发起会话。`pi-session.ts` 仅绑定一个原生 Conversation，负责输入、停止、维护、历史投影及事件观察；会话控制器关闭不关闭 Harness。
+`server/runtime/pi.ts` 持有唯一 Storage/Harness 和服务生命周期，`bootstrap.ts` 在 resume 前完成恢复和策略刷新；`side-chat-service.ts` 管旁聊创建、更新和归档规则。Reporter 按原生 task 的 conversationId 回到发起会话的接纳线。`conversation-session.ts` 是单会话 facade，`conversation-control.ts` 管输入、停止、维护、完整归档及内部报告，`conversation-view.ts` 管历史投影和事件观察；控制器不关闭 Harness，观察 Store 不停止或销毁控制器。
 
 ```text
 PikoRuntime（唯一 Harness、JSONL、共享资源）
@@ -30,7 +30,7 @@ PikoRuntime（唯一 Harness、JSONL、共享资源）
 
 所有聊天读取及来源标记显式按 conversation ID 隔离。只有确实带旁聊标记的 Conversation 可经旁聊 API 访问，root/后台子会话不能凭 ID 被冒充为旁聊。原生 ID 对外视为不透明字符串。
 
-普通后台子 Agent 使用受限 scope，不能继续委派或管理任务。旁聊保留 `subagent_*` 工具但移除 `task_*`；发起委派时创建由该旁聊拥有的 Anchor/Reporter，状态查询和停止按 owner conversation 隔离。后台模型角色仍按 `agent.profiles.background` 选择，未配置时继承发起旁聊当前模型。报告只以隐藏 follow-up 提交回发起旁聊，不触发主会话回传或 Telegram 投递。启动刷新旁聊工具和提示词，不覆盖已保存模型或聊天历史。归档前在同一会话接纳线内停止所属子 Agent，避免结果落入归档对话。
+普通后台子 Agent 使用受限 scope，不能继续委派或管理任务。旁聊保留 `subagent_*` 工具但移除 `task_*`；发起委派时创建由该旁聊拥有的 Anchor/Reporter，状态查询和停止按 owner conversation 隔离。后台模型角色仍按 `agent.profiles.background` 选择，未配置时继承发起旁聊当前模型。报告只以隐藏 follow-up 提交回发起旁聊，不触发主会话回传或 Telegram 投递。启动刷新旁聊工具和提示词，不覆盖已保存模型或聊天历史。归档在同一会话接纳线内完整预留并停止所属子 Agent；内部报告同样通过该线重新检查可写与取消 epoch，避免检查后再直接原生 submit 的竞争。
 
 ## HTTP
 
@@ -50,7 +50,7 @@ PikoRuntime（唯一 Harness、JSONL、共享资源）
 
 ## 前端状态与恢复
 
-访问过的聊天按 ID 保留独立 ChatProvider/useChat 和视图实例，草稿、附件、分页历史、滚动状态及正在发送的请求不会因切换而改投另一个会话；仅当前显示的会话观察 SSE。停止观察不停止模型工作，再次进入通过最新快照恢复。其他一级页面显示主聊天的 Shell，Chat 按钮始终返回 root。
+访问过的聊天按 ID 保留独立 ChatProvider/useChat 和视图实例，草稿、附件、分页历史、滚动状态及正在发送的请求不会因切换而改投另一个会话；Chat 页面只观察当前聊天；其他一级页面保持 root 观察。停止观察不停止模型工作，再次进入通过最新快照恢复。应用只保留一份 Shell/键盘监听/推开动画，聊天 owner 独立保留草稿和滚动视图；隐藏聊天保留自己的测量值，不采纳另一个聊天的输入框高度。Chat 按钮始终返回 root。
 
 旁聊元数据在打开抽屉时重新读取；列表只展示未归档旁聊。客户端本机归档会移除该聊天的保留视图，并在归档当前聊天时返回主会话。跨设备归档由后端强制拒绝后续输入，元数据在下次抽屉刷新时更新。草稿和选中旁聊不跨应用重开持久化。
 

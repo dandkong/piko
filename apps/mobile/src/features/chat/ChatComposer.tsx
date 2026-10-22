@@ -7,11 +7,14 @@ import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { styles } from "./styles";
 import { handleComposerKeyDown } from "./composerKeyboard";
-import type { PendingAttachment } from "./useChat";
+import type { PendingAttachment } from "./useChatAttachments";
 
 // The pill supplies the focus indicator; hide the browser's inner textarea outline.
 // React Native's types omit "none", which react-native-web supports.
-const webInputStyle = Platform.OS === "web" ? ({ outlineStyle: "none" } as unknown as TextStyle) : undefined;
+const webInputStyle =
+  Platform.OS === "web"
+    ? ({ outlineStyle: "none" } as unknown as TextStyle)
+    : undefined;
 
 type Props = {
   draft: string;
@@ -27,17 +30,31 @@ type Props = {
   onStop: () => void;
 };
 
-export function ChatComposer({ draft, onChange, loading, busy, ready, attachments, attaching, onAttach, onRemoveAttachment, onSend, onStop }: Props) {
+export function ChatComposer({
+  draft,
+  onChange,
+  loading,
+  busy,
+  ready,
+  attachments,
+  attaching,
+  onAttach,
+  onRemoveAttachment,
+  onSend,
+  onStop,
+}: Props) {
   const [focused, setFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<TextInput>(null);
-  const canSend = !loading && ready && (!!draft.trim() || attachments.length > 0);
+  const canSend =
+    !loading && ready && (!!draft.trim() || attachments.length > 0);
   const showStop = busy && !draft.trim() && !attachments.length;
   useEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
     const input = inputRef.current as unknown as HTMLTextAreaElement;
-    const onKeyDown = (event: KeyboardEvent) => handleComposerKeyDown(event, canSend, onSend);
+    const onKeyDown = (event: KeyboardEvent) =>
+      handleComposerKeyDown(event, canSend, onSend);
     input.addEventListener("keydown", onKeyDown);
     return () => input.removeEventListener("keydown", onKeyDown);
   }, [canSend, onSend]);
@@ -59,10 +76,12 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
     <View style={[styles.composer, focused && styles.composerFocused]}>
       {attachments.length > 0 && (
         <View style={styles.composerAttachments}>
-          {attachments.map(item => (
+          {attachments.map((item) => (
             <View key={item.id} style={styles.composerAttachment}>
               <Paperclip size={13} strokeWidth={1.8} color={colors.muted} />
-              <Text numberOfLines={1} style={styles.composerAttachmentName}>{item.name || item.id}</Text>
+              <Text numberOfLines={1} style={styles.composerAttachmentName}>
+                {item.name || item.id}
+              </Text>
               <TactilePressable
                 accessibilityLabel={`Remove ${item.name || item.id}`}
                 accessibilityRole="button"
@@ -92,10 +111,23 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
           ref={inputRef}
           value={draft}
           onChangeText={onChange}
-          onLayout={Platform.OS === "web" ? (event) => setInputWidth(event.nativeEvent.layout.width) : undefined}
-          onContentSizeChange={Platform.OS === "web" ? undefined : (event) => {
-            setInputHeight(Math.max(44, Math.min(140, event.nativeEvent.contentSize.height)));
-          }}
+          onLayout={
+            Platform.OS === "web"
+              ? (event) => setInputWidth(event.nativeEvent.layout.width)
+              : undefined
+          }
+          onContentSizeChange={
+            Platform.OS === "web"
+              ? undefined
+              : (event) => {
+                  setInputHeight(
+                    Math.max(
+                      44,
+                      Math.min(140, event.nativeEvent.contentSize.height),
+                    ),
+                  );
+                }
+          }
           placeholder={loading ? "Connecting…" : "Message…"}
           placeholderTextColor="#949B9F"
           selectionColor={colors.blueDark}
@@ -107,11 +139,15 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
           editable={!loading}
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           returnKeyType="send"
-          onSubmitEditing={Platform.OS === "web" ? undefined : (event) => {
-            if (!loading && ready && event.nativeEvent.text.trim()) {
-              onSend(event.nativeEvent.text);
-            }
-          }}
+          onSubmitEditing={
+            Platform.OS === "web"
+              ? undefined
+              : (event) => {
+                  if (!loading && ready && event.nativeEvent.text.trim()) {
+                    onSend(event.nativeEvent.text);
+                  }
+                }
+          }
           accessibilityLabel="Message Piko"
         />
         <IconButton
@@ -120,7 +156,14 @@ export function ChatComposer({ draft, onChange, loading, busy, ready, attachment
           onPress={showStop ? onStop : () => onSend()}
           variant={showStop ? "soft" : canSend ? "primary" : "soft"}
         >
-          {showStop ? <Square size={18} color={colors.text} fill={colors.text} strokeWidth={0} /> : (
+          {showStop ? (
+            <Square
+              size={18}
+              color={colors.text}
+              fill={colors.text}
+              strokeWidth={0}
+            />
+          ) : (
             <ArrowUp size={22} strokeWidth={1.8} color={colors.text} />
           )}
         </IconButton>

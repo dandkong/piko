@@ -33,12 +33,12 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 
 - 产品称“任务”“后台工作”“执行记录/运行结果”，不以“事项”或“子 Agent”要求用户理解实现；代码保留 `subagent` 技术名。
 - 业务类型为 `AssistantTask` / `AssistantTaskDraft`、`TaskSchedule` / `TaskExecution`，与 Durable 原生 `TaskId` / `TaskRecord` 区分；工具为 `task_*` 与 `subagent_*`，HTTP 为 `/api/tasks`，不保留旧入口别名。
-- `subagent-runtime.ts` 承载两类工作共用执行，`subagent-tools.ts` / `task-tools.ts` 只提供工具入口，`assistant-tasks.ts` 管任务服务。固定持久化 doc 身份、绑定字段与 `items/<id>` 目录不随业务符号改名，不新增兼容层或执行状态副本。
+- `runtime/subagents/runtime.ts` 承载两类工作共用执行，`subagents/queries.ts` 读取原生事实和校验归属；`subagents/tools.ts` / `tasks/tools.ts` 只提供工具入口，`tasks/service.ts` 管任务服务，`tasks/queries.ts` 按需读取摘要/单项回答。固定持久化 doc 身份、绑定字段与 `items/<id>` 目录不随业务符号改名，不新增兼容层或执行状态副本。
 
 ## 代码边界
 
-- `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。
-- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。输入、停止与维护预留统一由运行时接纳线协调；ConversationStore 只负责输出合并和观察，不重复维护锁或后台回传缓存。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
+- `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。应用只有一个 features/shell/AppShell，抽屉动画完成控制挂载，不另用超时器猜测；访问过的聊天保留各自 ChatProvider/useChat、草稿/输入身份和滚动，不为每个聊天复制导航或键盘监听。
+- 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。输入、停止、维护、完整归档和内部报告统一由 ConversationControl 接纳线协调；不得绕过父会话控制器直接回报。ConversationStore 只负责输出合并和观察，关闭观察不停止执行；runtime 唯一拥有控制器和 Harness 生命周期。通道回报提示独立于会话控制器，不重复维护锁或执行状态。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
 - `shared/` 保存跨端契约，不依赖 React Native、Bun 或 Pi SDK。
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
 - 当前助手启用 Pi 的 read、write、edit、bash 四个内建工具及内置 web_search/web_extract；文件/命令工具以后端进程的本机权限运行，默认工作目录为助手工作区。网络业务逻辑在 server/tools，SDK 注册在 server/runtime/web-tools.ts；搜索凭据由后端环境配置，不进入模型参数或客户端，见 [内置网络工具](docs/features/web-tools.md)。后续业务专用工具和访问边界按需求接入；文件范围和权限限制需由运行时实现，不能仅靠提示词或设置 cwd。

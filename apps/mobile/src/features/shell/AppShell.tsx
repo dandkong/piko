@@ -1,19 +1,53 @@
 import { Menu } from "lucide-react-native";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useState, type ReactNode } from "react";
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, type SharedValue, withTiming } from "react-native-reanimated";
-import { navigation, type AppTab } from "../navigation";
-import { colors, drawerLayout, motion, radii } from "../theme";
-import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
-import { IconButton } from "./IconButton";
-import { TactilePressable } from "./TactilePressable";
-
-const KEYBOARD_COMPOSER_GAP = 10;
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  type SharedValue,
+} from "react-native-reanimated";
+import { navigation, type AppTab } from "../../navigation";
+import { colors } from "../../theme";
+import {
+  EdgeFade,
+  FOOTER_FADE_OVERHANG,
+  HEADER_FADE_TAIL,
+} from "../../components/EdgeFade";
+import { IconButton } from "../../components/IconButton";
+import { TactilePressable } from "../../components/TactilePressable";
+import { useDrawerTransition } from "./useDrawerTransition";
+import { KEYBOARD_COMPOSER_GAP, useKeyboardLift } from "./useKeyboardLift";
 export type { AppTab };
 
-export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, onCloseMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
+export function AppShell({
+  children,
+  composer,
+  drawer,
+  menuOpen,
+  onOpenMenu,
+  onCloseMenu,
+  wide,
+  status,
+  headerHeight,
+  footerHeight,
+  onHeaderHeightChange,
+  onFooterHeightChange,
+  keyboardLift,
+  onKeyboardLiftChange,
+  activeTab = "Chat",
+  onTabChange,
+}: {
   children: ReactNode;
   composer: ReactNode;
   drawer?: ReactNode;
@@ -33,99 +67,81 @@ export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, onC
 }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [tabsHeight, setTabsHeight] = useState(0);
-  const keyboardDuration = useRef(250);
   const horizontalPadding = wide ? 42 : 17;
-  const drawerProgress = useSharedValue(0);
-  const drawerPush = Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio) + drawerLayout.inset;
-  const keyboardLiftAmount = keyboardHeight > 0
-    ? Math.max(0, keyboardHeight - tabsHeight) + KEYBOARD_COMPOSER_GAP
-    : 0;
+  const transition = useDrawerTransition(!!menuOpen, width);
+  useKeyboardLift(tabsHeight, keyboardLift, onKeyboardLiftChange);
   const composerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: -keyboardLift.value }],
   }));
-  const pushedSurfaceStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(drawerProgress.value, [0, 1], [0, drawerPush]) },
-      { scale: interpolate(drawerProgress.value, [0, 1], [1, drawerLayout.pushScale]) },
-    ],
-    borderRadius: interpolate(drawerProgress.value, [0, 1], [0, radii.panel]),
-    shadowOpacity: interpolate(drawerProgress.value, [0, 1], [0, 0.14]),
-    shadowRadius: interpolate(drawerProgress.value, [0, 1], [0, 18]),
-    elevation: interpolate(drawerProgress.value, [0, 1], [0, 12]),
-  }));
-  const clippedSurfaceStyle = useAnimatedStyle(() => ({
-    borderRadius: interpolate(drawerProgress.value, [0, 1], [0, radii.panel]),
-  }));
-
-  useEffect(() => {
-    drawerProgress.value = withTiming(menuOpen ? 1 : 0, {
-      duration: menuOpen ? motion.drawerIn : motion.drawerOut,
-      easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-    });
-  }, [drawerProgress, menuOpen]);
-
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    const showEvent = Platform.OS === "ios" ? "keyboardWillChangeFrame" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const show = Keyboard.addListener(showEvent, event => {
-      keyboardDuration.current = event.duration > 0 ? event.duration : 250;
-      setKeyboardHeight(event.endCoordinates.height);
-    });
-    const hide = Keyboard.addListener(hideEvent, event => {
-      keyboardDuration.current = event.duration > 0 ? event.duration : 250;
-      setKeyboardHeight(0);
-    });
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-
-  useEffect(() => {
-    keyboardLift.value = withTiming(keyboardLiftAmount, { duration: keyboardDuration.current });
-    onKeyboardLiftChange(keyboardLiftAmount);
-  }, [keyboardLift, keyboardLiftAmount, onKeyboardLiftChange]);
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={styles.keyboardArea}>
         <View style={styles.shell}>
-          {drawer}
-          <Animated.View style={[styles.pushedSurface, pushedSurfaceStyle]}>
+          {transition.mounted && drawer}
+          <Animated.View
+            style={[styles.pushedSurface, transition.surfaceStyle]}
+          >
             <Animated.View
-              style={[styles.pushedContent, clippedSurfaceStyle]}
+              style={[styles.pushedContent, transition.clipStyle]}
               accessibilityElementsHidden={!!menuOpen}
-              importantForAccessibility={menuOpen ? "no-hide-descendants" : "auto"}
+              importantForAccessibility={
+                menuOpen ? "no-hide-descendants" : "auto"
+              }
             >
-              <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
+              <View
+                style={[
+                  styles.content,
+                  { paddingHorizontal: horizontalPadding },
+                ]}
+              >
+                {children}
+              </View>
               <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
-              <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
+              <EdgeFade
+                edge="bottom"
+                height={footerHeight + FOOTER_FADE_OVERHANG}
+              />
               <AgentHeader
                 wide={wide}
                 topInset={insets.top}
                 status={status}
                 menuOpen={!!menuOpen}
                 onOpenMenu={onOpenMenu}
-                onHeightChange={height => onHeaderHeightChange(height + insets.top)}
+                onHeightChange={(height) =>
+                  onHeaderHeightChange(height + insets.top)
+                }
               />
               <View
                 testID="chat-footer-overlay"
                 pointerEvents="box-none"
-                onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
+                onLayout={({ nativeEvent: { layout } }) =>
+                  onFooterHeightChange(layout.height)
+                }
                 style={styles.footer}
               >
                 <Animated.View style={composerAnimatedStyle}>
-                  <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
+                  <View style={{ paddingHorizontal: horizontalPadding }}>
+                    {composer}
+                  </View>
                 </Animated.View>
-                <BottomTabs wide={wide} onHeightChange={setTabsHeight} activeTab={activeTab} onTabChange={onTabChange} />
+                <BottomTabs
+                  wide={wide}
+                  onHeightChange={setTabsHeight}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                />
               </View>
             </Animated.View>
-            {!!menuOpen && <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close navigation"
-              onPress={onCloseMenu}
-              style={styles.closePushedSurface}
-              testID="navigation-drawer-close-surface"
-            />}
+            {!!menuOpen && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close navigation"
+                onPress={onCloseMenu}
+                style={styles.closePushedSurface}
+                testID="navigation-drawer-close-surface"
+              />
+            )}
           </Animated.View>
         </View>
       </View>
@@ -136,12 +152,19 @@ export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, onC
 function Mascot({ size }: { size: number }) {
   return (
     <View style={{ width: size, height: size }}>
-      <View style={{
-        position: "absolute", top: size * 0.15, left: size * 0.12,
-        width: size * 0.76, height: size * 0.76, borderRadius: size, backgroundColor: "#ECF5FA",
-      }} />
+      <View
+        style={{
+          position: "absolute",
+          top: size * 0.15,
+          left: size * 0.12,
+          width: size * 0.76,
+          height: size * 0.76,
+          borderRadius: size,
+          backgroundColor: "#ECF5FA",
+        }}
+      />
       <Image
-        source={require("../../assets/capybara.png")}
+        source={require("../../../assets/capybara.png")}
         resizeMode="contain"
         style={{ width: size, height: size }}
         accessible={false}
@@ -150,7 +173,14 @@ function Mascot({ size }: { size: number }) {
   );
 }
 
-function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightChange }: {
+function AgentHeader({
+  wide,
+  topInset,
+  status,
+  menuOpen,
+  onOpenMenu,
+  onHeightChange,
+}: {
   wide: boolean;
   topInset: number;
   status: string;
@@ -177,16 +207,38 @@ function AgentHeader({ wide, topInset, status, menuOpen, onOpenMenu, onHeightCha
         <Mascot size={wide ? 58 : 49} />
         <View testID="chat-identity-capsule" style={styles.identityCapsule}>
           <Text style={styles.name}>Piko</Text>
-          {status ? <Text testID="chat-activity-status" numberOfLines={1} accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
+          {status ? (
+            <Text
+              testID="chat-activity-status"
+              numberOfLines={1}
+              accessibilityLiveRegion="polite"
+              style={styles.status}
+            >
+              {status}
+            </Text>
+          ) : null}
         </View>
       </View>
     </View>
   );
 }
 
-function BottomTabs({ wide, onHeightChange, activeTab, onTabChange }: { wide: boolean; onHeightChange: (height: number) => void; activeTab: AppTab; onTabChange?: (tab: AppTab) => void }) {
+function BottomTabs({
+  wide,
+  onHeightChange,
+  activeTab,
+  onTabChange,
+}: {
+  wide: boolean;
+  onHeightChange: (height: number) => void;
+  activeTab: AppTab;
+  onTabChange?: (tab: AppTab) => void;
+}) {
   return (
-    <View onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)} style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
+    <View
+      onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
+      style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}
+    >
       <View style={styles.tabBar}>
         {navigation.map(({ label, icon: Icon, hint }) => {
           const active = label === activeTab;

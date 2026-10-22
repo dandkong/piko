@@ -40,14 +40,15 @@ type AssistantTaskDraft = {
 | 文件 | 职责 |
 | --- | --- |
 | `server/tasks/http.ts` | 任务 HTTP 输入校验和服务调用 |
-| `server/domain/tasks.ts` | 任务定义、时间规则和目录边界 |
-| `server/runtime/assistant-tasks.ts` | 定义、游标、命令幂等、调度、执行投影 |
-| `server/runtime/task-tools.ts` | `task_*` 模型工具入口 |
-| `server/runtime/subagent-runtime.ts` | 两类工作共用的 Anchor/Reporter、创建、继续、取消、回传与恢复 |
-| `server/runtime/subagent-tools.ts` | 普通委派的 `subagent_*` 模型工具入口 |
+| `server/domain/tasks.ts`、`server/task-files.ts` | 分别负责纯定义/时间规则和任务文件目录边界 |
+| `server/runtime/tasks/service.ts`、`documents.ts` | 定义、游标、命令幂等、调度及固定持久化文档 |
+| `server/runtime/tasks/queries.ts` | 活动执行、最新摘要、目标任务分页和单项完整回答 |
+| `server/runtime/tasks/tools.ts` | `task_*` 模型工具入口 |
+| `server/runtime/subagents/runtime.ts`、`queries.ts`、`recovery.ts` | 共用执行、原生事实查询与恢复 |
+| `server/runtime/subagents/tools.ts` | 普通委派的 `subagent_*` 模型工具入口 |
 | `server/runtime/background.ts` | 后台模型、继承工具范围和子会话创建策略 |
 
-任务服务依赖共用执行模块，不依赖普通委派工具。普通后台子 Agent 移除 `task_*` 与 `subagent_*`；旁聊仅移除 `task_*`，允许作用域限定的 `subagent_*`。任务管理工具执行处仍检查 root 权限，不能嵌套委派或创建调度。
+任务服务依赖共用执行模块，不依赖普通委派工具。查询不维护状态副本：事务内扫描只索引一次并按 child 分组；调度和并发检查不读取回答正文，列表只读每项最新回答，详情先过滤任务再读取一页，单项结果只读目标回答。原生存储没有 task binding 索引，归属扫描仍随历史增长，不声称常量查询成本。普通后台子 Agent 移除 `task_*` 与 `subagent_*`；旁聊仅移除 `task_*`，允许作用域限定的 `subagent_*`。任务管理工具执行处仍检查 root 权限，不能嵌套委派或创建调度。
 
 ## 持久化与目录
 

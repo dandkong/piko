@@ -1,0 +1,75 @@
+import { constants } from "node:fs";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { isWithin, readGuidance } from "./workspace";
+import { AssistantTaskError, taskId } from "./domain/tasks";
+
+/** Explicit paths, no title-derived directory names, no symlink traversal in product file APIs. */
+export class TaskFiles {
+  constructor(private readonly workspace: string) {}
+  directory(id: string) {
+    return join(this.workspace, "items", taskId(id));
+  }
+  private async checked(path: string, directory: boolean) {
+    const base = await realpath(this.workspace);
+    if (!isWithin(base, resolve(path)))
+      throw new AssistantTaskError("Path escapes the workspace.");
+    const relative = path
+      .slice(this.workspace.length)
+      .split(/[\\/]/)
+      .filter(Boolean);
+    let current = this.workspace;
+    for (const part of relative) {
+      current = join(current, part);
+      const info = await lstat(current);
+      if (info.isSymbolicLink())
+        throw new AssistantTaskError(
+          "Symbolic links are not supported in task paths.",
+        );
+    }
+    const info = await lstat(path);
+    if (directory ? !info.isDirectory() : !info.isFile())
+      throw new AssistantTaskError("Invalid task file type.");
+    if (
+      !isWithin(base, await realpath(path)) ||
+      (await realpath(path)) !== resolve(path)
+    )
+      throw new AssistantTaskError("Path escapes its declared task location.");
+    return info;
+  }
+  async prepare(id: string) {
+    // Check each existing parent before mkdir; never follow a pre-existing directory link.
+    const paths = [join(this.workspace, "items"), this.directory(id)];
+    for (const path of paths) {
+      try {
+        await mkdir(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      await this.checked(path, true);
+    }
+    const memory = join(this.directory(id), "MEMORY.md");
+    try {
+      const file = await open(
+        memory,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+        0o600,
+      );
+      try {
+        await file.writeFile(
+          "# Task memory\n\nKeep reusable findings and progress here; save execution deliverables alongside this file.\n",
+        );
+      } finally {
+        await file.close();
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    await this.checked(memory, false);
+  }
+  async memory(id: string) {
+    const directory = this.directory(id);
+    await this.checked(join(directory, "MEMORY.md"), false);
+    return readGuidance(directory, "MEMORY.md", 4000);
+  }
+}
