@@ -14,7 +14,7 @@ export function AttachmentList({ attachments }: { attachments?: MessageAttachmen
       {attachments.map(item => (
         <TactilePressable
           key={item.id}
-          accessibilityLabel={`Open ${item.id}`}
+          accessibilityLabel={`打开 ${item.id}`}
           accessibilityRole="link"
           faceStyle={styles.attachmentChip}
           hitSlop={6}

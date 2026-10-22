@@ -1,8 +1,5 @@
 import { Settings, SquarePen } from "lucide-react-native";
-import { useEffect } from "react";
 import {
-  BackHandler,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { navigation, type AppTab } from "../../navigation";
 import { colors, drawerLayout, radii } from "../../theme";
 import { IconButton } from "../../components/IconButton";
@@ -22,12 +20,17 @@ export function NavigationDrawer({
   activeTab,
   onSelectTab,
   onClose,
+  onOpenSettings,
+  covered = false,
   ...sideChatActions
 }: SideChatActions & {
   open: boolean;
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   onClose: () => void;
+  onOpenSettings?: () => void;
+  /** A layer above (settings) owns input and back handling while it is open. */
+  covered?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -35,36 +38,19 @@ export function NavigationDrawer({
     drawerLayout.maxWidth,
     width * drawerLayout.widthRatio,
   );
-  useEffect(() => {
-    if (!open) return;
-    if (Platform.OS === "android") {
-      const subscription = BackHandler.addEventListener(
-        "hardwareBackPress",
-        () => {
-          onClose();
-          return true;
-        },
-      );
-      return () => subscription.remove();
-    }
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      const closeOnEscape = (event: KeyboardEvent) => {
-        if (event.key === "Escape") onClose();
-      };
-      window.addEventListener("keydown", closeOnEscape);
-      return () => window.removeEventListener("keydown", closeOnEscape);
-    }
-  }, [open, onClose]);
+  useDismissOnBack(open && !covered, onClose);
 
   return (
     <View
-      pointerEvents={open ? "auto" : "none"}
+      pointerEvents={open && !covered ? "auto" : "none"}
       style={styles.underlay}
-      accessibilityElementsHidden={!open}
-      importantForAccessibility={open ? "auto" : "no-hide-descendants"}
+      accessibilityElementsHidden={!open || covered}
+      importantForAccessibility={
+        open && !covered ? "auto" : "no-hide-descendants"
+      }
     >
       <View
-        accessibilityViewIsModal={open}
+        accessibilityViewIsModal={open && !covered}
         style={[
           styles.panel,
           {
@@ -86,7 +72,7 @@ export function NavigationDrawer({
         >
           <Text style={styles.sectionLabel}>选项卡</Text>
           <View style={styles.tabList}>
-            {navigation.map(({ label, icon: Icon, hint }) => {
+            {navigation.map(({ label, title, icon: Icon, hint }) => {
               const active =
                 label === activeTab &&
                 !(label === "Chat" && sideChatActions.activeSideChatId);
@@ -94,7 +80,7 @@ export function NavigationDrawer({
                 <TactilePressable
                   key={label}
                   accessibilityRole="tab"
-                  accessibilityLabel={label}
+                  accessibilityLabel={title}
                   accessibilityHint={hint}
                   accessibilityState={{ selected: active }}
                   onPress={() => onSelectTab(label)}
@@ -109,7 +95,7 @@ export function NavigationDrawer({
                   <Text
                     style={[styles.tabLabel, active && styles.tabLabelActive]}
                   >
-                    {label}
+                    {title}
                   </Text>
                 </TactilePressable>
               );
@@ -124,14 +110,15 @@ export function NavigationDrawer({
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
           <IconButton
-            hint="Coming soon"
-            label="Settings"
+            hint="打开设置"
+            label="设置"
+            onPress={onOpenSettings}
           >
             <Settings size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
           <IconButton
-            hint="Create an independent side chat"
-            label="New side chat"
+            hint="新建独立旁聊"
+            label="新建旁聊"
             onPress={
               sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy
                 ? () => void sideChatActions.onCreateSideChat?.()

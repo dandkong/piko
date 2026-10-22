@@ -35,7 +35,7 @@ ConversationStore.close 只退订和排空输出，不 abort/dispose 会话；ru
 
 隐藏聊天保留自身测量值，不能采用另一聊天输入框/键盘高度。切换聊天不改投 pending 输入，不丢草稿、附件、分页或滚动。Chat 导航返回 root；其他一级页观察 root。
 
-抽屉使用同一个 Reanimated transition 管理动画与 underlay 挂载，完成关闭后卸载；中断动画不执行过期关闭回调，不再用独立 setTimeout 猜测动画结束。视觉尺寸、键盘抬升公式和按钮规范保持不变。
+抽屉使用同一个 Reanimated transition 管理动画与 underlay 挂载，完成关闭后卸载；中断动画不执行过期关闭回调，不再用独立 setTimeout 猜测动画结束。视觉尺寸和按钮规范保持不变。
 
 useChat 保留输入身份与重试协调，活动观察/健康检查和附件选择/上传分别由 useConversationObservation/useChatAttachments 负责；TasksScreen 的查询、命令身份和刷新状态由 useTasks 管理。小型视图状态不再机械拆 hook。
 

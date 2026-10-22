@@ -6,6 +6,7 @@ import { IconButton } from "../../components/IconButton";
 import { TextButton } from "../../components/TextButton";
 import { TextInputDialogContent } from "../../components/TextInputDialog";
 import { TactilePressable } from "../../components/TactilePressable";
+import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors, radii } from "../../theme";
 
 export type SideChatActions = {
@@ -25,16 +26,16 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
   const anchors = useRef(new Map<string, View>());
   const { width, height } = useWindowDimensions();
   const visible = sideChats.filter(chat => chat.archivedAt === null);
-  useEffect(() => {
-    if (!menu || typeof window === "undefined") return;
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault(); event.stopPropagation();
-      if (!savingRef.current) { setMenu(undefined); setEditing(undefined); }
-    };
-    window.addEventListener("keydown", dismiss, true);
-    return () => window.removeEventListener("keydown", dismiss, true);
-  }, [menu]);
+  useDismissOnBack(
+    !!menu,
+    () => {
+      if (!savingRef.current) {
+        setMenu(undefined);
+        setEditing(undefined);
+      }
+    },
+    { capture: true },
+  );
   useEffect(() => { setMenu(undefined); }, [width, height]);
   const save = async (id: string) => {
     if (!renamed.trim() || savingRef.current || sideChatBusy) return;

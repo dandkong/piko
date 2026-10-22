@@ -22,8 +22,8 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
     try {
       touch();
       const response = await transport.fetch(`${path}/events`, { signal: controller.signal });
-      if (!response.ok) throw new HttpStreamError("Could not observe conversation.", response.status);
-      if (!response.body) throw new Error("Streaming response is unavailable.");
+      if (!response.ok) throw new HttpStreamError("无法接收对话内容。", response.status);
+      if (!response.body) throw new Error("流式响应不可用。");
       reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (!options.signal.aborted) {
         const chunk = await reader.read(); if (chunk.done) break; touch();
@@ -33,7 +33,7 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
         for (const event of parsed.events) options.onEvent(event);
       }
       if (options.signal.aborted) return;
-      throw new Error("Conversation disconnected.");
+      throw new Error("对话连接已断开。");
     } catch {
       if (options.signal.aborted) return;
       options.onReconnecting(true);
@@ -52,7 +52,7 @@ export async function submitMessage(message: string, requestId: string, signal: 
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
       const response = await transport.fetch(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message, ...(attachmentIds?.length && { attachmentIds }) }) });
       const result = await response.json();
-      if (!response.ok) throw new HttpStreamError(result.error ?? "Couldn't send message.", response.status);
+      if (!response.ok) throw new HttpStreamError(result.error ?? "发送失败。", response.status);
       return result;
     } catch (error) {
       if (signal.aborted || error instanceof HttpStreamError && error.status < 500 || attempt >= 2) throw error;

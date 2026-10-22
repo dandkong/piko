@@ -15,12 +15,12 @@ export function shouldShowTimestamp(previous: number | undefined, current: numbe
   return current - previous >= GAP_MS;
 }
 
-/** Time only for today, date plus time otherwise, in the device locale. */
+/** Time only for today, date plus time otherwise. Fixed to Chinese until i18n lands. */
 export function formatTimestamp(timestamp: number, now = Date.now()): string {
   const date = new Date(timestamp);
-  const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   if (startOfDay(now) !== startOfDay(timestamp)) {
-    const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const day = date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
     return `${day} ${time}`;
   }
   return time;

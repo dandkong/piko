@@ -28,7 +28,7 @@ export function ScreenCard({ children, muted = false, style }: { children: React
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 20, gap: 12 },
+  page: { gap: 12 },
   header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   spacer: { flex: 1 },

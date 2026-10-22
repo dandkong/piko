@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import {
   ActivityIndicator,
   FlatList,
-  Platform,
   Pressable,
   Text,
   View,
@@ -19,74 +17,48 @@ import { AssistantMessage } from "./AssistantMessage";
 import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
-import { useChatAnchor } from "./useChatAnchor";
 import { formatTimestamp, shouldShowTimestamp } from "./time-divider";
 
 export const MESSAGE_GAP = 13;
+/** Distance from the bottom that still counts as following the newest message. */
+const BOTTOM_THRESHOLD = 100;
 
 /** The conversation stays mounted while another tab is shown, keeping draft and scroll position. */
-export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyboardLiftAmount }: {
+export function ChatTab({ hidden, headerHeight, footerHeight }: {
   hidden: boolean;
   headerHeight: number;
   footerHeight: number;
-  keyboardLift: SharedValue<number>;
-  keyboardLiftAmount: number;
 }) {
   const { messages, loading, busy, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const listRef = useRef<FlatList<Message>>(null);
-  const arrowAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -keyboardLift.value }],
-  }));
-  const listMetrics = useRef({ contentHeight: 0, viewportHeight: 0 });
+  const following = useRef(true);
+  const metrics = useRef({ contentHeight: 0, viewportHeight: 0 });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
-  const webScroller = () => {
-    if (Platform.OS !== "web" || typeof HTMLElement === "undefined") return;
-    const node = listRef.current?.getNativeScrollRef();
-    return node instanceof HTMLElement ? node : undefined;
-  };
-  const scrollTo = (offset: number, animated: boolean) => {
-    const node = webScroller();
-    if (node) {
-      if (animated) node.scrollTo({ top: offset, behavior: "smooth" });
-      else node.scrollTop = offset;
-      return;
-    }
+
+  const scrollToLatest = (animated: boolean) => {
+    following.current = true;
+    setAwayFromLatest(false);
+    // scrollToEnd approximates unmeasured rows; the measured content box is exact.
+    const offset = Math.max(0, metrics.current.contentHeight - metrics.current.viewportHeight);
     listRef.current?.scrollToOffset({ offset, animated });
   };
-  const anchor = useChatAnchor({
-    scrollTo,
-    onAwayChange: setAwayFromLatest,
-    indexOf: testId => messages.findIndex(message => `chat-message-${message.id}` === testId),
-    seek: index => listRef.current?.scrollToIndex({ index, animated: false }),
-  });
-  const fetchOlder = () => void loadOlder(() => anchor.detach());
-  useEffect(() => { if (busy) anchor.follow(false); }, [busy]);
-  // Attach before the first page paints: onLayout only arrives after the list has laid out once.
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    let frame = 0; let attempts = 0;
-    const attach = () => {
-      const node = webScroller();
-      if (node) { anchor.watch(node); return; }
-      if (++attempts < 240) frame = requestAnimationFrame(attach);
-    };
-    attach();
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  // Sending while reading history should reveal the new exchange.
+  useEffect(() => { if (busy) scrollToLatest(false); }, [busy]);
 
+  const fetchOlder = () => void loadOlder();
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
     const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
     const hasContent = !!item.content.trim();
     if (!hasContent && !item.attachments?.length && !waitingForText) return null;
     const previous = messages[index - 1];
     const divider = shouldShowTimestamp(previous?.createdAt, item.createdAt)
-      ? <Text accessibilityLabel="Message time" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
+      ? <Text accessibilityLabel="消息时间" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
     return (
       <>
         {divider}
         <View
           testID={`chat-message-${item.id}`}
-          accessibilityLabel={waitingForText ? "Piko is working" : undefined}
+          accessibilityLabel={waitingForText ? "Piko 正在工作" : undefined}
           style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
         >
           {waitingForText ? (
@@ -112,8 +84,7 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
         <FlatList
           testID="chat-list"
           ref={listRef}
-          // Mount a whole history page at once: batching grows the scroll height in steps and each
-          // step snaps to the bottom again, which reads as jumping on load.
+          // Mount a whole history page at once so the first paint already has its full height.
           initialNumToRender={CHAT_PAGE_SIZE}
           maxToRenderPerBatch={CHAT_PAGE_SIZE}
           windowSize={CHAT_PAGE_SIZE * 2 + 1}
@@ -126,34 +97,32 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
           // Reserve one message gap at each measured content boundary; fade extents are visual only.
           contentContainerStyle={[styles.messageList, {
             paddingTop: headerHeight + MESSAGE_GAP,
-            paddingBottom: footerHeight + keyboardLiftAmount + MESSAGE_GAP,
+            paddingBottom: footerHeight + MESSAGE_GAP,
           }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          // Native keeps the reader's cell in place when history is prepended; web uses the anchor hook.
-          maintainVisibleContentPosition={Platform.OS !== "web" ? { minIndexForVisible: 0 } : undefined}
-          onScrollToIndexFailed={({ index, averageItemLength }) => listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })}
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            const nearBottom = contentSize.height - contentOffset.y - layoutMeasurement.height < BOTTOM_THRESHOLD;
+            if (nearBottom !== following.current) {
+              following.current = nearBottom;
+              setAwayFromLatest(!nearBottom);
+            }
             if (contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
-            // Web reads geometry from the DOM observers; native reports it through this event.
-            if (Platform.OS !== "web") anchor.observe(contentOffset.y, contentSize.height, layoutMeasurement.height);
           }}
           scrollEventThrottle={100}
-          onContentSizeChange={(_, height) => {
-            listMetrics.current.contentHeight = height;
-            if (Platform.OS !== "web") anchor.sync(height, listMetrics.current.viewportHeight);
-          }}
           onLayout={({ nativeEvent: { layout } }) => {
-            listMetrics.current.viewportHeight = layout.height;
-            const node = webScroller();
-            if (node) anchor.watch(node);
-            if (Platform.OS !== "web") anchor.sync(listMetrics.current.contentHeight, layout.height);
+            metrics.current.viewportHeight = layout.height;
+          }}
+          // Follow growth only while the reader is already at the bottom.
+          onContentSizeChange={(_, height) => {
+            metrics.current.contentHeight = height;
+            if (following.current) scrollToLatest(false);
           }}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
-              {loadingOlder ? <ActivityIndicator accessibilityLabel="Loading earlier messages" color={colors.blueDark} size="small" /> : (
+              {loadingOlder ? <ActivityIndicator accessibilityLabel="正在加载更早的消息" color={colors.blueDark} size="small" /> : (
                 <Pressable accessibilityRole="button" onPress={fetchOlder}>
-                  <Text style={styles.muted}>{olderError ? "Couldn't load history. Tap to retry" : "Load earlier messages"}</Text>
+                  <Text style={styles.muted}>{olderError ? "历史记录加载失败，点击重试" : "加载更早的消息"}</Text>
                 </Pressable>
               )}
             </View>
@@ -161,13 +130,13 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
           ListEmptyComponent={loading ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.blueDark} />
-              <Text style={styles.muted}>Opening your conversation…</Text>
+              <Text style={styles.muted}>正在打开对话…</Text>
             </View>
           ) : null}
           ListFooterComponent={(
             <View>
               {busy && !messages.some(message => message.id.startsWith("live-") && message.content.trim()) && (
-                <View accessibilityLabel="Piko is working"
+                <View accessibilityLabel="Piko 正在工作"
                   style={[styles.bubble, styles.assistantBubble, styles.typing, { marginTop: 13 }]}>
                   <TypingIndicator />
                 </View>
@@ -178,13 +147,13 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
                   {messages.length > 0 && (
                     <TextButton
                       disabled={busy}
-                      label="Try again"
+                      label="重试"
                       onPress={retry}
                       style={styles.retryButtonLayout}
                       variant="plain"
                     >
                       <RotateCcw size={14} color={colors.text} />
-                      <Text style={styles.retryButtonText}>Try again</Text>
+                      <Text style={styles.retryButtonText}>重试</Text>
                     </TextButton>
                   )}
                 </View>
@@ -193,15 +162,15 @@ export function ChatTab({ hidden, headerHeight, footerHeight, keyboardLift, keyb
           )}
         />
         {awayFromLatest && (
-          <Animated.View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }, arrowAnimatedStyle]}>
+          <View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }]}>
             <IconButton
-              label="Latest messages"
-              onPress={() => anchor.follow(true)}
+              label="最新消息"
+              onPress={() => scrollToLatest(true)}
               style={styles.latestButtonShadow}
             >
               <ArrowDown size={22} strokeWidth={1.8} color={colors.text} />
             </IconButton>
-          </Animated.View>
+          </View>
         )}
       </View>
     </View>

@@ -83,7 +83,7 @@ export function ChatComposer({
                 {item.name || item.id}
               </Text>
               <TactilePressable
-                accessibilityLabel={`Remove ${item.name || item.id}`}
+                accessibilityLabel={`移除 ${item.name || item.id}`}
                 accessibilityRole="button"
                 hitSlop={10}
                 onPress={() => onRemoveAttachment(item.id)}
@@ -101,7 +101,7 @@ export function ChatComposer({
       <View style={styles.composerRow}>
         <IconButton
           disabled={loading || attaching}
-          label="Add attachment"
+          label="添加附件"
           onPress={onAttach}
           variant="plain"
         >
@@ -128,7 +128,7 @@ export function ChatComposer({
                   );
                 }
           }
-          placeholder={loading ? "Connecting…" : "Message…"}
+          placeholder={loading ? "正在连接…" : "发消息…"}
           placeholderTextColor="#949B9F"
           selectionColor={colors.blueDark}
           onFocus={() => setFocused(true)}
@@ -148,11 +148,11 @@ export function ChatComposer({
                   }
                 }
           }
-          accessibilityLabel="Message Piko"
+          accessibilityLabel="给 Piko 发消息"
         />
         <IconButton
           disabled={sendDisabled}
-          label={showStop ? "Stop reply" : "Send message"}
+          label={showStop ? "停止回复" : "发送消息"}
           onPress={showStop ? onStop : () => onSend()}
           variant={showStop ? "soft" : canSend ? "primary" : "soft"}
         >

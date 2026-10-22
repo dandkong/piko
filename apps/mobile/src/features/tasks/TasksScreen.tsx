@@ -19,7 +19,7 @@ type FinishedExecution = TaskExecution & {
 const isFinished = (run: TaskExecution): run is FinishedExecution =>
   run.status !== "running";
 const dayTime = (value: number | string) =>
-  new Date(value).toLocaleString(undefined, {
+  new Date(value).toLocaleString("zh-CN", {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",

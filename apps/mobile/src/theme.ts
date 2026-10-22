@@ -1,7 +1,7 @@
 export const colors = {
   canvas: "#FCFCFC", card: "#FFFFFF", text: "#11191C", muted: "#697176",
   line: "#EEEEF0", blue: "#C8E7FF", blueDark: "#1473C8", danger: "#AA4A45",
-  drawerEdge: "#E3E6E8", desk: "#F2F3F4",
+  drawerEdge: "#E3E6E8", desk: "#F2F3F4", scrim: "rgba(17, 25, 28, 0.16)",
 };
 
 /** Shared control scale. Keep interaction sizes here instead of one-off styles. */

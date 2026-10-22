@@ -4,7 +4,7 @@ import type { PickedFile } from "./api";
 /** One picker for the shared UI; the native surface is not wired yet. */
 export function pickAttachments(): Promise<PickedFile[]> {
   if (Platform.OS !== "web" || typeof document === "undefined") {
-    return Promise.reject(new Error("Attachment upload is available on the web app for now."));
+    return Promise.reject(new Error("附件上传目前仅在网页端可用。"));
   }
   return new Promise(resolve => {
     const input = document.createElement("input");

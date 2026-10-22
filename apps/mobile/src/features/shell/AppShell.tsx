@@ -19,7 +19,6 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from "react-native-reanimated";
 import { navigation, type AppTab } from "../../navigation";
 import { colors, motion, stateColors } from "../../theme";
@@ -31,13 +30,13 @@ import {
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDrawerTransition } from "./useDrawerTransition";
-import { KEYBOARD_COMPOSER_GAP, useKeyboardLift } from "./useKeyboardLift";
 export type { AppTab };
 
 export function AppShell({
   children,
   composer,
   drawer,
+  sheet,
   menuOpen,
   onOpenMenu,
   onCloseMenu,
@@ -47,14 +46,13 @@ export function AppShell({
   footerHeight,
   onHeaderHeightChange,
   onFooterHeightChange,
-  keyboardLift,
-  onKeyboardLiftChange,
   activeTab = "Chat",
   onTabChange,
 }: {
   children: ReactNode;
   composer: ReactNode;
   drawer?: ReactNode;
+  sheet?: ReactNode;
   menuOpen?: boolean;
   onOpenMenu?: () => void;
   onCloseMenu?: () => void;
@@ -66,18 +64,12 @@ export function AppShell({
   footerHeight: number;
   onHeaderHeightChange: (height: number) => void;
   onFooterHeightChange: (height: number) => void;
-  keyboardLift: SharedValue<number>;
-  onKeyboardLiftChange: (lift: number) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [tabsHeight, setTabsHeight] = useState(0);
-  const horizontalPadding = wide ? 42 : 17;
+  // Align every page with the top-left menu button; no width-dependent inset.
+  const horizontalPadding = 20;
   const transition = useDrawerTransition(!!menuOpen, width);
-  useKeyboardLift(tabsHeight, keyboardLift, onKeyboardLiftChange);
-  const composerAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -keyboardLift.value }],
-  }));
   return (
     <SafeAreaView
       style={[styles.safeArea, wide && styles.safeAreaWide]}
@@ -127,14 +119,11 @@ export function AppShell({
                 }
                 style={styles.footer}
               >
-                <Animated.View style={composerAnimatedStyle}>
-                  <View style={{ paddingHorizontal: horizontalPadding }}>
-                    {composer}
-                  </View>
-                </Animated.View>
+                <View style={{ paddingHorizontal: horizontalPadding }}>
+                  {composer}
+                </View>
                 <BottomTabs
                   wide={wide}
-                  onHeightChange={setTabsHeight}
                   activeTab={activeTab}
                   onTabChange={onTabChange}
                 />
@@ -143,13 +132,14 @@ export function AppShell({
             {!!menuOpen && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Close navigation"
+                accessibilityLabel="关闭导航"
                 onPress={onCloseMenu}
                 style={styles.closePushedSurface}
                 testID="navigation-drawer-close-surface"
               />
             )}
           </Animated.View>
+          {sheet}
         </View>
       </View>
     </SafeAreaView>
@@ -204,7 +194,7 @@ function AgentHeader({
     >
       <IconButton
         accessibilityState={{ expanded: menuOpen }}
-        label="Open navigation"
+        label="打开导航"
         onPress={onOpenMenu}
         style={styles.headerButton}
       >
@@ -232,12 +222,10 @@ function AgentHeader({
 
 function BottomTabs({
   wide,
-  onHeightChange,
   activeTab,
   onTabChange,
 }: {
   wide: boolean;
-  onHeightChange: (height: number) => void;
   activeTab: AppTab;
   onTabChange?: (tab: AppTab) => void;
 }) {
@@ -259,10 +247,7 @@ function BottomTabs({
     transform: [{ translateX: position.value * tabWidth }],
   }));
   return (
-    <View
-      onLayout={({ nativeEvent: { layout } }) => onHeightChange(layout.height)}
-      style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}
-    >
+    <View style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
       <View
         style={styles.tabBar}
         onLayout={({ nativeEvent: { layout } }) =>
@@ -277,15 +262,15 @@ function BottomTabs({
             pillStyle,
           ]}
         />
-        {navigation.map(({ label, icon: Icon, hint }) => {
+        {navigation.map(({ label, title, icon: Icon, hint }) => {
           const active = label === activeTab;
           const enabled = !!onTabChange;
           return (
             <TactilePressable
               key={label}
               accessibilityRole="tab"
-              accessibilityLabel={label}
-              accessibilityHint={enabled ? hint : "Coming soon"}
+              accessibilityLabel={title}
+              accessibilityHint={enabled ? hint : "即将开放"}
               accessibilityState={{ selected: active }}
               disabled={!enabled}
               onPress={() => onTabChange?.(label)}
@@ -397,7 +382,7 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 22,
-    paddingTop: KEYBOARD_COMPOSER_GAP,
+    paddingTop: 10,
     alignItems: "center",
   },
   tabBar: {

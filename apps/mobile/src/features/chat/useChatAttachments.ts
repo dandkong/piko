@@ -41,7 +41,7 @@ export function useChatAttachments(
     } catch (cause) {
       if (mounted.current)
         onError(
-          cause instanceof Error ? cause.message : "Couldn't attach the file.",
+          cause instanceof Error ? cause.message : "无法附加文件。",
         );
     } finally {
       locked.current = false;

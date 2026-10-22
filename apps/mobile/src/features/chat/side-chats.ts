@@ -53,7 +53,7 @@ export function useSideChats(open: boolean) {
     } catch (cause) {
       if (mounted.current && current === version.current)
         setError(
-          cause instanceof Error ? cause.message : "Couldn't load side chats.",
+          cause instanceof Error ? cause.message : "无法加载旁聊。",
         );
     }
   }, []);
@@ -87,7 +87,7 @@ export function useSideChats(open: boolean) {
     } catch (cause) {
       if (mounted.current)
         setError(
-          cause instanceof Error ? cause.message : "Couldn't save side chat.",
+          cause instanceof Error ? cause.message : "无法保存旁聊。",
         );
     } finally {
       locked.current = false;

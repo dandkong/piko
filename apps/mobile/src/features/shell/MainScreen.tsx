@@ -1,6 +1,5 @@
 import { memo, useCallback, useRef, useState } from "react";
 import { Keyboard, View, useWindowDimensions } from "react-native";
-import { useSharedValue } from "react-native-reanimated";
 import { AppShell, type AppTab } from "./AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
 import { ChatProvider, type ChatStore } from "../chat/ChatProvider";
@@ -10,6 +9,7 @@ import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
 import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
 import { NavigationDrawer } from "./NavigationDrawer";
+import { SettingsSheet } from "../settings/SettingsSheet";
 import {
   DEFAULT_SIDE_CHAT_TITLE,
   type UpdateSideChat,
@@ -21,16 +21,15 @@ export function MainScreen() {
   const [selectedId, setSelectedId] = useState<string>();
   const [visited, setVisited] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [footerHeights, setFooterHeights] = useState<Record<string, number>>(
     {},
   );
-  const [keyboardLiftAmount, setKeyboardLiftAmount] = useState(0);
   const [activeChat, setActiveChat] = useState<{
     id?: string;
     chat: ChatStore;
   }>();
-  const keyboardLift = useSharedValue(0);
   const { width } = useWindowDimensions();
   const sides = useSideChats(menuOpen);
   const activeId = tab === "Chat" ? selectedId : undefined;
@@ -95,6 +94,14 @@ export function MainScreen() {
             if (value) selectChat(value.id);
           }}
           onUpdateSideChat={updateChat}
+          onOpenSettings={() => setSettingsOpen(true)}
+          covered={settingsOpen}
+        />
+      }
+      sheet={
+        <SettingsSheet
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
         />
       }
       status={archived ? "已归档 · 只读" : (chat?.status ?? "")}
@@ -110,8 +117,6 @@ export function MainScreen() {
           current[key] === value ? current : { ...current, [key]: value },
         );
       }}
-      keyboardLift={keyboardLift}
-      onKeyboardLiftChange={setKeyboardLiftAmount}
       composer={
         tab === "Chat" && !archived && chat ? (
           <ChatComposer
@@ -145,8 +150,6 @@ export function MainScreen() {
           onActiveChat={onActiveChat}
           headerHeight={headerHeight}
           footerHeight={footerHeight}
-          keyboardLift={keyboardLift}
-          keyboardLiftAmount={keyboardLiftAmount}
         />
       ))}
     </AppShell>
@@ -167,7 +170,7 @@ const ChatConversation = memo(function ChatConversation({
   visible: boolean;
   onActiveChat: (id: string | undefined, chat: ChatStore) => void;
 } & Omit<Parameters<typeof ChatTab>[0], "hidden">) {
-  // Hidden lists must not adopt another chat's composer/keyboard insets.
+  // Hidden lists must not adopt another chat's composer insets.
   const retainedLayout = useRef(layout);
   if (visible) retainedLayout.current = layout;
   return (

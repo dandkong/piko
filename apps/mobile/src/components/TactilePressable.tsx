@@ -21,6 +21,9 @@ export type PressableVariant = "card" | "soft" | "plain" | "primary";
 
 type FocusEvent = Parameters<NonNullable<PressableProps["onFocus"]>>[0];
 
+/** Browsers paint a square ring on the focusable wrapper; our ring lives on the rounded face instead. */
+const webPressableStyle = { outlineStyle: "none" } as unknown as ViewStyle;
+
 type Props = {
   children?: ReactNode;
   variant?: PressableVariant;
@@ -131,7 +134,7 @@ export function TactilePressable({
         setPressed(false);
         animateScale(1, motion.pressOut);
       }}
-      style={style}
+      style={Platform.OS === "web" ? [style, webPressableStyle] : style}
       testID={testID}
     >
       <Animated.View style={[styles.face, variantStyle, stateStyle, focusStyle, animatedStyle, faceStyle]}>
@@ -191,9 +194,7 @@ const styles = StyleSheet.create({
     opacity: stateColors.disabledOpacity,
   },
   focus: {
-    outlineColor: stateColors.focus,
-    outlineOffset: 2,
-    outlineStyle: "solid",
-    outlineWidth: 2,
+    /** box-shadow follows the face radius in every browser; CSS outlines do not. */
+    boxShadow: `0 0 0 2px ${stateColors.focus}`,
   } as unknown as ViewStyle,
 });

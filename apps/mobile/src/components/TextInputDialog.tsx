@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useDismissOnBack } from "../hooks/useDismissOnBack";
 import { colors, radii } from "../theme";
 import { TextButton } from "./TextButton";
 
@@ -30,16 +30,7 @@ export function TextInputDialog({ visible, ...props }: TextInputDialogProps & { 
 export function TextInputDialogContent({ title, inputLabel = title, value, onChangeText, onConfirm, onCancel,
   busy = false, disabled = false, error, maxLength, placeholder, confirmLabel = "确认", testID }: TextInputDialogProps) {
   const canConfirm = !busy && !disabled && !!value.trim();
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault(); event.stopPropagation();
-      if (!busy) onCancel();
-    };
-    window.addEventListener("keydown", dismiss, true);
-    return () => window.removeEventListener("keydown", dismiss, true);
-  }, [busy, onCancel]);
+  useDismissOnBack(true, () => { if (!busy) onCancel(); }, { capture: true });
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}>
     <Pressable accessibilityRole="button" accessibilityLabel={`关闭${title}弹窗`} disabled={busy}
       style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onCancel} />

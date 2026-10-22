@@ -84,7 +84,7 @@ export function useChat(conversationId?: string, observing = true) {
     setError(
       snapshot.latest?.status === "unanswered" &&
         snapshot.latest.error !== "aborted"
-        ? (snapshot.latest.error ?? "Reply failed.")
+        ? (snapshot.latest.error ?? "回复失败。")
         : (snapshot.interruption ?? ""),
     );
   }, []);
@@ -151,7 +151,7 @@ export function useChat(conversationId?: string, observing = true) {
           setOlderError(
             cause instanceof Error
               ? cause.message
-              : "Couldn't load earlier messages.",
+              : "无法加载更早的消息。",
           );
       } finally {
         olderController.current = undefined;
@@ -226,7 +226,7 @@ export function useChat(conversationId?: string, observing = true) {
           }));
         }
         setError(
-          cause instanceof Error ? cause.message : "Couldn't send message.",
+          cause instanceof Error ? cause.message : "发送失败。",
         );
       } finally {
         sending.current = false;
@@ -246,7 +246,7 @@ export function useChat(conversationId?: string, observing = true) {
     } catch (cause) {
       if (mounted.current)
         setError(
-          cause instanceof Error ? cause.message : "Couldn't stop reply.",
+          cause instanceof Error ? cause.message : "停止失败。",
         );
     } finally {
       if (mounted.current) setStopping(false);
@@ -266,18 +266,18 @@ export function useChat(conversationId?: string, observing = true) {
     }
   }, [send, refresh, submitting, stopping, busy, error]);
   const status = loading
-    ? "Connecting…"
+    ? "连接中…"
     : attaching
-      ? "Uploading…"
+      ? "正在上传…"
       : stopping
-        ? "Stopping…"
+        ? "正在停止…"
         : reconnecting
-          ? "Reconnecting…"
+          ? "正在重连…"
           : busy
-            ? "Thinking…"
+            ? "思考中…"
             : connected
               ? ""
-              : "Waiting to connect";
+              : "等待连接";
   return {
     ready: !loading && modelReady,
     messages,

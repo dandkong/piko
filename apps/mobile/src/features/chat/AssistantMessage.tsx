@@ -118,7 +118,7 @@ export const AssistantMessage = memo(function AssistantMessage({ content, stream
       <View style={ui.content}>
         <Markdown markdownit={assistantMarkdown} style={markdownStyles} rules={rules}>{source}</Markdown>
       </View>
-      {linkError && <Text accessibilityRole="alert" style={ui.error}>Could not open this link.</Text>}
+      {linkError && <Text accessibilityRole="alert" style={ui.error}>无法打开这个链接。</Text>}
     </View>
   );
 });
