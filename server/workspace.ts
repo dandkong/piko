@@ -3,9 +3,7 @@ import {
   realpathSync,
   writeFileSync,
   lstatSync,
-  openSync,
-  readSync,
-  closeSync,
+  readFileSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { defaultPikoFile } from "./config/defaults";
@@ -81,11 +79,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   }
   for (const name of ["AGENTS.md", "MEMORY.md"]) {
     const path = join(workspace, name);
-    const template = readGuidance(
-      join(paths.resources, "templates"),
-      name,
-      8000,
-    );
+    const template = readGuidance(join(paths.resources, "templates"), name);
     try {
       writeFileSync(path, template, { flag: "wx" });
     } catch (error) {
@@ -97,27 +91,11 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   return { ...paths, home: realpathSync(paths.home), workspace, state };
 }
 
-/** Bounded reads, including allocation; arbitrary files do not become prompt instructions. */
-export function readGuidance(
-  root: string,
-  name: string,
-  maxBytes: number,
-): string {
+/** Read the complete validated guidance file; never silently truncate prompt text. */
+export function readGuidance(root: string, name: string): string {
   const path = join(root, name);
   const stat = lstatSync(path);
   if (!stat.isFile() || !isWithin(realpathSync(root), realpathSync(path)))
     throw new Error(`Invalid guidance file: ${name}`);
-  const fd = openSync(path, "r");
-  try {
-    const buffer = Buffer.alloc(maxBytes + 1);
-    const size = readSync(fd, buffer, 0, buffer.length, 0);
-    return (
-      buffer.subarray(0, Math.min(size, maxBytes)).toString("utf8") +
-      (size > maxBytes
-        ? "\n[Guidance truncated; only the bounded prefix was loaded.]"
-        : "")
-    );
-  } finally {
-    closeSync(fd);
-  }
+  return readFileSync(path, "utf8");
 }

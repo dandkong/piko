@@ -24,7 +24,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 持久化任务已接入：一个任务对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载任务记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 按进行中/已归档分组展示任务与执行记录，页面可归档/恢复；创建、编辑、执行和停止在对话里完成。归档停止未来触发，单次执行成功才称完成，不设第三种任务状态。定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [任务与执行记录](docs/features/tasks.md)。
 - 旁聊已接入同一 Harness 的 ownerless conversation，支持一键默认名新建/列表/切换、三点菜单重命名/归档、独立历史和停止；顶部头像名字固定 Piko，归档后隐藏，不提供已归档或恢复入口；共享工作区记忆/技能/通用工具，不继承主会话上下文、不自动回传、不提取旁聊记忆、不提供任务管理工具；可派发 subagent，列表/停止/回报仅限发起旁聊，不回主会话。Harness 生命周期与每个聊天控制器分离；Telegram 仍只使用 root。见 [旁聊](docs/features/side-chats.md)。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
-- 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`，内建技能同样只扫描单层目录，不递归、不跟随链接目录/技能文件；保留元数据校验与工作区同名覆盖。指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
+- 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`，内建技能同样只扫描单层目录，不递归、不跟随链接目录/技能文件；保留元数据校验与工作区同名覆盖。core、AGENTS、全局和任务 MEMORY 完整读取，不设应用层文本上限或静默截断；模型窗口和 Durable 策略仍是自然限制。指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。
 - 工作区保存三类长期内容：AGENTS.md 管助手身份、表达和做事约定，MEMORY.md 管用户资料、环境事实与长期结论，`memory/YYYY-MM-DD.md` 记录每日记忆（讨论、决定、进展与未完线索，不自动注入，按需 read/search）。主会话闲置后由后台记忆整理 增量维护两类记忆；应用内建 core 管运行规则与工具结果真实性。加载时标注角色和来源，角色不是权限隔离；细则见 [资源与工具](docs/features/workspace-and-main-chat.md#资源与工具)。
 - Durable 原生 JSONL 是会话内容的唯一来源；UI 从所选 conversation 的完整原始 entries 投影，不能用压缩后的模型上下文代替展示历史。Piko 管理配置、通道与传输；执行状态、提交去重和 inbox 由 Durable 管理，不建立 Run 或身份表。

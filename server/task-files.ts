@@ -70,6 +70,6 @@ export class TaskFiles {
   async memory(id: string) {
     const directory = this.directory(id);
     await this.checked(join(directory, "MEMORY.md"), false);
-    return readGuidance(directory, "MEMORY.md", 4000);
+    return readGuidance(directory, "MEMORY.md");
   }
 }

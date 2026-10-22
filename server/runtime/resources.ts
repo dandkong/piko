@@ -36,16 +36,16 @@ export async function loadWorkspaceResources(
   };
   const warn = (path: string, message: string) =>
     result.diagnostics.push({ path, message });
-  for (const [root, name, limit, role] of [
-    [join(paths.resources, "prompts"), "core.md", 8000, "core"],
-    [paths.workspace, "AGENTS.md", 8000, "work_guidance"],
-    [paths.workspace, "MEMORY.md", 4000, "memory"],
-  ] as [string, string, number, GuidanceRole][]) {
+  for (const [root, name, role] of [
+    [join(paths.resources, "prompts"), "core.md", "core"],
+    [paths.workspace, "AGENTS.md", "work_guidance"],
+    [paths.workspace, "MEMORY.md", "memory"],
+  ] as [string, string, GuidanceRole][]) {
     signal?.throwIfAborted();
     result.instructions.push({
       role,
       path: join(root, name),
-      content: readGuidance(root, name, limit),
+      content: readGuidance(root, name),
     });
   }
   const byName = new Map<string, WorkspaceSkill>();
