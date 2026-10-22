@@ -1,3 +1,4 @@
+import type { ActiveCompaction } from "./runtime";
 /** A stored attachment; the model sees its path, the UI only needs the served URL. */
 export type MessageAttachment = { id: string; url: string; mime: string };
 export type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: number; requestId?: string; attachments?: MessageAttachment[] };
@@ -11,7 +12,7 @@ export type ChatUsage = { input: number; output: number; cacheRead: number; cach
 /** One tool call of the current run; live-only, never part of saved history. */
 export type ToolActivity = { callId: string; name: string; summary: string; status: "running" | "done" | "error"; durationMs?: number };
 /** A snapshot's history window is authoritative; older pages remain client-side. */
-export type ConversationResponse = { messages: Message[]; history?: { nextBefore?: string }; busy: boolean; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string>; usage?: ChatUsage };
+export type ConversationResponse = { messages: Message[]; history?: { nextBefore?: string }; busy: boolean; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string>; usage?: ChatUsage; compactions?: ActiveCompaction[] };
 export function isHistoryCursor(value: string): boolean { return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)); }
 export type StreamEvent =
   | { type: "message"; message: Message; final: boolean; previousId?: string }

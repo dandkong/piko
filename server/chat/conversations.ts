@@ -1,4 +1,5 @@
 import { CHAT_PAGE_SIZE, type ConversationResponse, type StreamEvent } from "../../shared/chat";
+import type { CompactionEvent } from "../../shared/runtime";
 import type { BackgroundReply, InputSource, ChatRuntime, ChatSession } from "../runtime/types";
 import { normalizeMessage } from "./input";
 /** Conversation-wide observation. The runtime owns input ordering and maintenance. */
@@ -21,7 +22,7 @@ export class ConversationStore {
       this.session = session;
       this.unsubscribe = session.subscribe(event => {
         // Tool activity is live-only and channel-specific; it never changes history.
-        if (event.type === "tool" || event.type === "tool-clear") return;
+        if (event.type === "tool" || event.type === "tool-clear" || event.type === "compaction") return;
         if (event.type === "error") this.publish(event);
         else if (event.type === "message") {
           if (event.previousId) this.messages.delete(event.previousId);
@@ -66,6 +67,10 @@ export class ConversationStore {
     return (await this.get()).subscribe(event => {
       if (event.type === "tool" || event.type === "tool-clear") listener(event);
     });
+  }
+  /** Main-session lifecycle notifications are separate from the SSE/chat transcript. */
+  async subscribeCompactions(listener: (event: CompactionEvent) => void) {
+    return (await this.get()).subscribe(event => { if (event.type === "compaction") listener(event); });
   }
   async stop(commandId?: string) { const result = await (await this.get()).abort(commandId); this.dirty = true; await this.flush(); return result; }
   async changeRuntime<T>(operation: () => Promise<T>): Promise<T> {

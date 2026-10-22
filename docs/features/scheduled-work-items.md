@@ -4,7 +4,7 @@
 
 ## 范围
 
-一个任务（WorkItem）就是一个 Prompt、一条可选时间规则、一个固定目录。不拆 Goal / 执行计划，不增加多计划工作流；每次执行创建一个新的 owned 子 conversation，不 fork 主聊天历史。全局模型、思考强度、指导与技能共用，子 Agent 移除 subagent 和 work_item，不能嵌套委派或创建调度。
+一个任务（WorkItem）就是一个 Prompt、一条可选时间规则、一个固定目录。不拆 Goal / 执行计划，不增加多计划工作流；每次执行创建一个新的 owned 子 conversation，不 fork 主聊天历史。全局模型、思考强度、指导与技能共用，子 Agent 移除全部 `subagent_*` 和 `work_item_*` 工具，不能嵌套委派或创建调度。
 
 Tasks 导航已启用，只展示 Piko 在替用户做的事：列表按“进行中 / 已完成”分组，标题常驻且可折叠，进行中默认展开、已完成默认关闭；条目只显示名字与人话时间，不显示执行状态、上次结果或下次触发时间。左侧方框表示完成：勾选进行中任务后移入已完成，取消勾选回到进行中；内部仍用 `archived` 表示完成，不另设第三状态。详情页只读，展示任务说明和已结束执行的时间线；时间线最新在上，用竖线与节点连接，带摘要的记录可点开查看完整回答；运行中的执行不进入时间线，结束后重新进入或回前台刷新才出现。失败只显示状态，不展示原始错误。内容写入都在对话里：用户在 Chat 里说做什么，主 Agent 创建、执行、恢复或停止；页面只提供完成切换，不提供创建、执行、暂停、恢复或编辑入口。页面不提供标题/Prompt/Cron/时区表单、编辑、执行 ID、任务记忆或产物文件浏览；这些属于助手和运行时，不暴露给用户。Chat 保持挂载以保留草稿和历史位置；Posts 是示例列表、Artifacts 仅标题占位。Tasks 进入页面读取一次，回前台刷新一次，不轮询、不增加任务 SSE 或持久事件日志，也不自动提交执行。
 
@@ -81,11 +81,11 @@ workspace/items/<任务ID>/
 
 复用现有后台 Anchor/Reporter：调度直接建立子工作，不先唤醒主 Agent 来转述；结果再以可信内部 follow-up 提交到 root，主 Agent 忙碌时等待当前回答结束。任务标题、执行身份和输出目录附在内部回传中，主 Agent 决定回复、继续整理或保持安静。
 
-- 普通主聊天停止不取消独立任务执行；Tasks 的停止操作与 work_item stop 只取消该任务正在运行的子工作，并撤回其未处理的内部报告。
+- 普通主聊天停止不取消独立任务执行；Tasks 的停止操作与 `work_item_stop` 只取消该任务正在运行的子工作，并撤回其未处理的内部报告。
 - 任务执行与普通委派不同：不论创建或手动运行的来源，结果都推送到所有通道（当前为 Telegram 主人私聊）；App 是聚合视图，本来就包含全部记录，不需要额外推送。
 - 普通子 Agent 仍只回复来源通道；任务广播不影响这条默认规则。
 - 回传前重新挂接主回复观察，仍只发送主 Agent 实际生成的回复，任务子 Agent 原文不直接发布。
-- 不给子 Agent 开放调度管理，普通 subagent.send 不能改变任务执行的固定 Prompt 快照；修改任务或再启动一次。
+- 不给子 Agent 开放调度管理，普通 `subagent_send` 不能改变任务执行的固定 Prompt 快照；修改任务或再启动一次。
 - 不建立通知 outbox，不保证 TG 恰好一次送达或重启补发。
 
 ## 重启
@@ -104,10 +104,27 @@ workspace/items/<任务ID>/
 | GET /api/items/:id?before=:executionId | 更早一页执行 |
 | GET /api/items/:id/executions/:executionId | 本次执行的状态与最终回答 |
 
-模型内建 work_item 的 list/get/create/update/run/archive/restore/stop 与 UI 使用同一个业务服务。create 默认手动；只要 schedule 非 null，create/update 必须携带 `scheduleText`。update 必须显式携带完整 title/prompt/schedule，避免意外移除定时；工具说明要求先 get 再更新。UI 只切换完成状态（内部 `archived` / `active`），不创建、不编辑，也不提供独立的恢复入口；取消勾选即恢复。工具身份由原生 tool task 分配，不接受用户伪造内部来源；已取消的管理工具不能再接纳新任务执行。
+模型使用八个独立工具，与 UI 复用同一个业务服务、command、权限与幂等机制，不再暴露 action 分发工具：
 
-## 未验证范围
+| 工具 | 参数与行为 |
+| --- | --- |
+| `work_item_list` | 可选 `includeArchived`；默认仅活动任务，不返回 Prompt 正文 |
+| `work_item_get` | 必填 `id`；完整定义和最近五次执行 |
+| `work_item_create` | `title`、`prompt`、`schedule`、`scheduleText` 全部必填；手动任务显式传 `schedule:null` 和说明文字（如“手动执行”） |
+| `work_item_update` | 必填 `id` 和上述四项完整定义；先 get 再更新，保留未改字段，不影响正在执行的 Prompt 快照 |
+| `work_item_run` | 必填 `id`；立即开始一次后台执行，不改调度，结果自动私下回传，不循环轮询 |
+| `work_item_stop` | 必填 `id`；停止当前执行并撤回待处理报告，不改未来调度 |
+| `work_item_archive` | 必填 `id`；归档为已完成、停止未来触发，不删除；正在运行时先 stop |
+| `work_item_restore` | 必填 `id`；恢复活动状态和未来触发，不立即执行 |
+
+create/update 的 schema 直接声明全部定义字段必填，避免遗漏参数意外改变调度。
+
+UI 只切换完成状态（内部 `archived` / `active`），不创建、不编辑，也不提供独立的恢复入口；取消勾选即恢复。工具身份由原生 tool task 分配，不接受用户伪造内部来源；已取消的管理工具不能再接纳新任务执行。
+
+## 验证与未验证范围
+
+工具拆分已用临时工作区、真实 Durable Harness 和 Faux provider 验证八项操作、create/update 四项定义字段必填、手动/定时更新、运行/停止/归档边界、子会话/旁聊工具隔离、原生结果回传及重开后的工具目录。工具说明仅保留用途与关键边界，不重复 schema 的必填规则。
 
 Web/iOS/Android 生产 bundle 已导出到临时目录，不覆盖正式 Web 构建。真实共享 Chromium 中，用临时 PIKO_HOME 和 faux 模型走通在 Chat 创建任务、Tasks 查看结果与展开时间线、返回 Chat 查看主 Agent 整理回复；测试标签已关闭，已有用户标签保留。
 
-未用真实付费模型或真实 TG Bot 进行本功能验收，iOS/Android 未安装真机验证；没有重启或部署正式服务。后续应验证真实模型能否合理维护任务记忆、稳定保存产物，并检查移动端键盘、后台恢复和 TG 实际投递体验。
+未用真实付费模型或真实 TG Bot 进行本功能验收，iOS/Android 未安装真机验证；上述交互测试均使用隔离工作区。后续应验证真实模型能否合理维护任务记忆、稳定保存产物，并检查移动端键盘、后台恢复和 TG 实际投递体验。

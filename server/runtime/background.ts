@@ -12,14 +12,14 @@ export function backgroundAgent(selection: BackgroundSelection | undefined, pare
 }
 
 /** Background children never delegate or manage tasks, and never re-enter the curation task. */
-const EXCLUDED_TOOLS = ["subagent", "work_item"];
+const EXCLUDED_TOOL_PREFIXES = ["subagent_", "work_item_"];
 const EXCLUDED_EXTENSIONS = ["piko-subagents", "piko-work-items", "piko-memory-curation"];
 
 /** One place for what a background child may inherit from the main agent. */
 export function childScope(agent: Agent) {
   return {
     extensions: agent.extensions.filter(value => !EXCLUDED_EXTENSIONS.includes(value.name)),
-    tools: agent.tools.filter(value => !EXCLUDED_TOOLS.includes(value.name)),
+    tools: agent.tools.filter(value => !EXCLUDED_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
   };
 }
 

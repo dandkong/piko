@@ -1,12 +1,15 @@
 import type { ConversationStore } from "../../chat/conversations";
-import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
+import type { CompactionEvent } from "../../../shared/runtime";
+import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
 import { toolIcon } from "../../runtime/tool-activity";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
-import { TelegramMenus, TelegramMenuError, selectionText, type TelegramCallback } from "./menus";
+import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus";
+import { WELCOME, busyMessage, formatCompaction, formatHelp, formatRecent, formatStatus } from "./command-format";
+export { TELEGRAM_COMMANDS } from "./command-format";
 
 export type TelegramMessage = {
   chatId: string; messageId: string; actorId: string; chatType: string; text?: string;
@@ -15,23 +18,12 @@ export type TelegramMessage = {
   topic?: boolean; business?: boolean;
 };
 
-export const TELEGRAM_COMMANDS = [
-  { command: "start", description: "Get started" }, { command: "help", description: "Show commands" },
-  { command: "status", description: "View status" }, { command: "stop", description: "Stop the current reply" },
-  { command: "recent", description: "View recent messages" }, { command: "skills", description: "Browse skills" },
-  { command: "models", description: "Choose a model" }, { command: "thinking", description: "Set thinking level" },
-  { command: "compact", description: "Compact context" },
-];
-const HELP = "Send a text message to get started. Your conversation is shared with the Piko app.\n\n" +
-  TELEGRAM_COMMANDS.map(item => `/${item.command} — ${item.description}`).join("\n") +
-  "\n\nUse /recent to see replies from the app. Model changes and maintenance are available when Piko is idle.";
-/** Compact token counts for status output. */
-function tokens(value: number): string {
-  return value >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(1))}M`
-    : value >= 1_000 ? `${Number((value / 1_000).toFixed(1))}k` : String(value);
-}
 export class TelegramChannel {
   private accepting = true;
+  private notificationChatId?: string;
+  private readonly compactionReady: Promise<void>;
+  private unsubscribeCompactions?: () => void;
+  private compactionQueue: Promise<void> = Promise.resolve();
   private readonly controller = new AbortController();
   private readonly tasks = new Set<Promise<void>>();
   private readonly deliveries = new Map<string, Promise<void>>();
@@ -46,6 +38,9 @@ export class TelegramChannel {
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
     private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
+    this.compactionReady = conversations.subscribeCompactions(event => this.queueCompaction(event))
+      .then(unsubscribe => { if (this.accepting) this.unsubscribeCompactions = unsubscribe; else unsubscribe(); });
+    this.track(this.compactionReady);
     this.track(conversations.subscribeBackgroundReplies(async reply => {
       if (!this.accepting) return;
       // Scheduled work broadcasts to every channel; ordinary background work answers where it started.
@@ -64,6 +59,7 @@ export class TelegramChannel {
   handleCallback(callback: TelegramCallback): void {
     if (!this.accepting || callback.actorId !== this.identity.userId || callback.chatType !== "private" ||
       callback.topic || callback.business) return;
+    this.notificationChatId = callback.chatId;
     this.track(this.menus.handle(callback).catch(async error => {
       if (!(error instanceof TelegramMenuError)) throw error;
       await this.api.answerCallback(callback.callbackId, error.message, true);
@@ -73,6 +69,7 @@ export class TelegramChannel {
   async handle(message: TelegramMessage): Promise<void> {
     if (!this.accepting || message.actorId !== this.identity.userId || message.chatType !== "private" ||
       message.topic || message.business) return;
+    this.notificationChatId = message.chatId;
     const text = message.text?.trim() ?? "";
     const incoming = message.attachments ?? [];
     if (!text && !incoming.length) { this.feedback(message, "Please send a text or a file."); return; }
@@ -85,7 +82,7 @@ export class TelegramChannel {
       if (match[1].toLowerCase() === "stop") {
         try {
           const stopped = await this.conversations.stop(`telegram:${this.identity.botId}:${message.chatId}:${message.messageId}:stop`);
-          this.feedback(message, stopped ? "Stop requested." : "No reply to stop.");
+          this.feedback(message, stopped ? "Current reply or maintenance stopped. Background work is unchanged." : "Nothing to stop — no reply or maintenance is running.");
         } catch { this.feedback(message, "Couldn't stop the reply. Try /stop again."); }
       } else this.track(this.command(message, match[1].toLowerCase()));
       return;
@@ -105,9 +102,17 @@ export class TelegramChannel {
       const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
       this.startDelivery(message.chatId, known);
     } catch (error) {
-      if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy. Try again when it's ready."); return; }
+      if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy with maintenance. Wait for it to finish, then resend your message."); return; }
       throw error;
     }
+  }
+
+  private queueCompaction(event: CompactionEvent) {
+    const chatId = this.notificationChatId;
+    if (!this.accepting || !chatId) return;
+    // Serial sends preserve start/end order even when a compaction finishes before Telegram accepts the first notice.
+    this.compactionQueue = this.compactionQueue.then(async () => { await this.api.send(chatId, formatCompaction(event), false); })
+      .catch(error => console.warn(`Telegram compaction notification failed (${telegramErrorCode(error)}).`));
   }
 
   private queueTool(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): void {
@@ -151,40 +156,36 @@ export class TelegramChannel {
   private async command(message: TelegramMessage, command: string): Promise<void> {
     try { await this.executeCommand(message, command); }
     catch (error) {
+      // Once admitted, the native lifecycle observer owns completion, cancellation and failure notices.
+      if (error instanceof CompactionExecutionError) return;
       if (!(error instanceof RuntimeBusyError)) console.warn(`Telegram command failed (${telegramErrorCode(error)}).`);
       await new TelegramReply(this.api, message.chatId, "plain").update(error instanceof RuntimeBusyError
-        ? "Piko is busy. Try again when it's ready."
-        : "Couldn't complete that action. Check your configuration and try again.", true);
+        ? busyMessage("compact")
+        : command === "compact"
+          ? "Couldn't confirm the compaction result. Your chat history is preserved. Check /status before retrying /compact."
+          : `Couldn't open /${command}. Try again; if it keeps failing, check the Piko service.`, true);
     }
   }
 
   private async executeCommand(message: TelegramMessage, command: string): Promise<void> {
     let text: string;
-    if (command === "start" || command === "help") text = HELP;
+    if (command === "start") text = WELCOME;
+    else if (command === "help") text = formatHelp();
     else if (command === "status") {
-      const snapshot = await this.conversations.snapshot();
-      text = `Status: ${snapshot.busy ? "Replying" : "Ready"}` + (snapshot.interruption ? `\n${snapshot.interruption}` : "") +
-        (snapshot.latest?.status === "unanswered" ? `\nLast input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}` : "") +
-        (snapshot.usage ? `\nContext: ${tokens(snapshot.usage.input + snapshot.usage.cacheRead + snapshot.usage.cacheWrite)}` +
-          (snapshot.usage.contextWindow ? ` / ${tokens(snapshot.usage.contextWindow)} (${Math.round((snapshot.usage.ratio ?? 0) * 100)}%)` : "") : "");
-      const description = await this.runtime.describe();
-      text += `\n${selectionText(description)}\nSkills: ${description.skills.length}`;
+      text = formatStatus(await this.conversations.snapshot(), await this.runtime.describe());
     } else if (command === "models" || command === "thinking") {
       await this.menus.open(message, command); return;
     } else if (command === "compact") {
-      const result = await this.conversations.changeRuntime(async () => {
-        this.feedback(message, "Compacting context…");
-        return this.runtime.compact();
-      });
-      text = result.status === "compacted" ? "Context compacted. Your chat history is preserved."
-        : result.status === "cancelled" ? "Compaction stopped."
-        : result.reason === "stale" ? "Context changed. The summary wasn't applied."
-        : "Context unchanged. No summary created.";
-      const description = await this.runtime.describe();
-      text += `\n${selectionText(description)}`;
+      await this.compactionReady;
+      const snapshot = await this.conversations.snapshot();
+      if (snapshot.compactions?.length) text = "Compaction is already running. Wait for it to finish; /stop cancels foreground work.";
+      else {
+        if (snapshot.busy) throw new RuntimeBusyError();
+        await this.conversations.changeRuntime(() => this.runtime.compact());
+        return; // All lifecycle feedback comes from the runtime subscription, not this command.
+      }
     } else if (command === "recent") {
-      const history = (await this.conversations.snapshot()).messages;
-      text = history.slice(-10).map(item => `${item.role === "user" ? "You" : "Piko"}:\n${item.content}`).join("\n\n") || "No messages yet.";
+      text = formatRecent((await this.conversations.snapshot({ limit: 50 })).messages);
     } else if (command === "skills") {
       const description = await this.runtime.describe();
       text = description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available.";
@@ -202,11 +203,11 @@ export class TelegramChannel {
     void task.then(() => this.tasks.delete(task));
   }
 
-  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); this.unsubscribeTools?.(); }
+  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); this.unsubscribeTools?.(); this.unsubscribeCompactions?.(); }
 
   async drain(timeoutMs = 3000): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    try { await Promise.race([Promise.all([...this.tasks, this.toolQueue]), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
+    try { await Promise.race([Promise.all([...this.tasks, this.toolQueue, this.compactionQueue]), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
     finally { clearTimeout(timer); this.controller.abort(); }
   }
 }

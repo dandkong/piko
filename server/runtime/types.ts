@@ -1,8 +1,10 @@
 import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
 import type { ConversationResponse, HistoryPage, SubmissionReceipt, StreamEvent } from "../../shared/chat";
-import type { CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
+import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { ItemExecutionDetail, WorkItem, WorkItemCommand, WorkItemDetail, WorkItemReceipt } from "../../shared/work-items";
-export type SessionEvent = StreamEvent;
+export type SessionEvent = StreamEvent | CompactionEvent;
+/** A native compaction task was admitted; its lifecycle observer owns the terminal notification. */
+export class CompactionExecutionError extends Error {}
 export type InputSource = { channel: "app" } | { channel: "telegram"; botId: string; chatId: string };
 export type BackgroundReply = { source: InputSource; knownMessageIds: string[]; requestId: string;
   /** origin: answer where the work started; all: broadcast to every channel (scheduled work). */

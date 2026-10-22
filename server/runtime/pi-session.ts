@@ -7,7 +7,8 @@ import type { WorkspacePaths } from "../domain/workspace";
 import type { BackgroundReply, InputSource, ChatSession, SessionEvent } from "./types";
 import { attachmentPrompt } from "../chat/input";
 import { summarizeToolArgs } from "./tool-activity";
-import { RuntimeBusyError } from "./types";
+import { CompactionExecutionError, RuntimeBusyError } from "./types";
+import { CompactionObserver, compactionResult } from "./compactions";
 import { entriesFromTransaction, historyPageFromTransaction, inputsFromStorage, messageText, projectPiHistory, readPiEntries, readPiInputs } from "./pi-history";
 import { PiMessageEvents } from "./pi-events";
 import { internalInput, registerInput } from "./input-origin";
@@ -25,6 +26,7 @@ function receipt(record: SubmissionRecord): import("../../shared/chat").Submissi
 /** A view/controller for one conversation. Never owns or closes the shared Harness. */
 export class DurableChatSession implements ChatSession {
   private memoryCurationService?: MemoryCurationService;
+  private compactions!: CompactionObserver;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
   private unsubscribeBindings?: () => void;
@@ -63,6 +65,7 @@ export class DurableChatSession implements ChatSession {
 
   async init(): Promise<void> {
     const { harness, storage, conversation } = this;
+    this.compactions = new CompactionObserver(harness, event => this.emit(event), () => this.emit({ type: "refresh" }));
     const agent = await conversation.agent(ctx);
     this.selected = agent.model && { provider: agent.model.provider, modelId: agent.model.modelId };
     for (const model of await this.config.models.getAvailable()) this.contextWindows.set(`${model.provider}/${model.id}`, model.contextWindow);
@@ -83,6 +86,7 @@ export class DurableChatSession implements ChatSession {
     const through = stream.snapshot.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
     this.output.restore(this.entries.filter(entry => entry.id <= through), stream.snapshot, true);
     this.liveBusy = !!stream.snapshot.run;
+    this.compactions.sync(stream.snapshot.compactions, true);
     stream.start(events => this.delivery = this.observe(events));
     void stream.closed.then(end => {
       this.observationError = end.reason === "listener_error" ? end.error
@@ -117,8 +121,11 @@ export class DurableChatSession implements ChatSession {
         const through = event.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
         this.output.restore(this.entries.filter(entry => entry.id <= through), event);
         this.liveBusy = !!event.run;
+        this.compactions.sync(event.compactions);
         this.emit({ type: "refresh" });
       } else {
+        if (event.type === "compaction_start") this.compactions.start(event);
+        else if (event.type === "compaction_end") this.compactions.end(event.taskId);
         if (event.type === "tool_execution_start") {
           const summary = summarizeToolArgs(event.toolName, event.args);
           this.toolCalls.set(event.toolCallId, { name: event.toolName, summary });
@@ -211,7 +218,7 @@ export class DurableChatSession implements ChatSession {
         queued.push({ id: `input-${item.id}`, role: "user", content: messageText(item.content), createdAt: 0, ...(input?.requestId && { requestId: input.requestId }) });
       }
       const recovery = await tx.doc(Recovery, this.conversation.id);
-      return { entries, inputs, hidden, page, running: !!live.run || inbox.items.some(item => item.mode !== "write"), queued, latest, interruption: recovery.interruption };
+      return { entries, inputs, hidden, page, running: !!live.run || inbox.items.some(item => item.mode !== "write"), queued, latest, interruption: recovery.interruption, nativeCompactions: (live.compactions ?? []).map(item => ({ taskId: item.taskId, reason: item.reason })) };
     }, ctx);
     this.liveBusy = state.running;
     let messages;
@@ -226,7 +233,7 @@ export class DurableChatSession implements ChatSession {
       messages = this.messages;
     }
     const usage = this.usage();
-    return { messages: [...messages, ...state.queued], ...(state.page && { history: { nextBefore: state.page.nextBefore } }), busy: this.isStreaming, previousIds: Object.fromEntries(this.previousIds),
+    return { messages: [...messages, ...state.queued], ...(state.page && { history: { nextBefore: state.page.nextBefore } }), busy: this.isStreaming, compactions: this.compactions.snapshot(state.nativeCompactions), previousIds: Object.fromEntries(this.previousIds),
       ...(state.latest && { latest: receipt(state.latest) }), ...(state.interruption && { interruption: state.interruption }), ...(usage && { usage }) };
   }
   async submit(text: string, requestId: string, source: InputSource = { channel: "app" }, attachments: readonly string[] = []) {
@@ -296,6 +303,7 @@ export class DurableChatSession implements ChatSession {
   dispose(): Promise<void> {
     if (this.closing) return this.closing;
     this.disposed = true;
+    this.compactions?.close();
     this.closing = (async () => {
       await this.admission.catch(() => {});
       await this.conversation.abort(ctx);
@@ -311,6 +319,7 @@ export class DurableChatSession implements ChatSession {
   private async maintain<T>(operation: () => Promise<T>): Promise<T> {
     const reserved = await this.serial(async () => {
       if (this.disposed || this.isStreaming) throw new RuntimeBusyError();
+      if (this.observationError) throw this.observationError;
       await this.assertWritable();
       const task = Promise.resolve().then(operation); this.maintenance = task; this.emit({ type: "refresh" });
       return { task };
@@ -354,20 +363,8 @@ export class DurableChatSession implements ChatSession {
   async compact(): Promise<CompactionResult> {
     return this.maintain<CompactionResult>(async () => {
       const task = await this.conversation.compact(undefined, ctx);
-      const settled = await this.harness.waitForTask(task, ctx);
-      const outcome = settled.state.outcome;
-      if (outcome.status === "aborted") return { status: "cancelled" };
-      if (outcome.status === "failed" || outcome.status === "faulted") throw new Error(outcome.error.message);
-      if (outcome.status !== "completed") throw new Error("Compaction did not complete.");
-      if (outcome.result.entryId !== undefined) return { status: "compacted" };
-      if (outcome.result.submissionId === undefined) return { status: "skipped", reason: "no_summary" };
-      const submission = await this.harness.submission(outcome.result.submissionId, ctx);
-      if (!submission) throw new Error("Compaction result is unavailable.");
-      const placed = await submission.wait(ctx);
-      if (placed.status === "done") return { status: "compacted" };
-      if (placed.reason === "aborted") return { status: "cancelled" };
-      if (placed.reason === "stale") return { status: "skipped", reason: "stale" };
-      throw new Error(`Compaction could not be applied: ${placed.reason}`);
+      try { return await compactionResult(this.harness, task); }
+      catch (error) { throw new CompactionExecutionError(error instanceof Error ? error.message : "Compaction failed."); }
     });
   }
 }

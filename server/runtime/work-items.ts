@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT as ctx, type Context } from "@earendil-works/chord/context";
 import { defineDoc, defineDocFamily, defineExtension, defineTool, LiveDoc, ROOT_CONVERSATION_ID,
-  type Agent, type ConversationId, type Harness, type Tx } from "@earendil-works/pi-durable";
+  type Agent, type ConversationId, type Harness, type ToolExecutionApi, type ToolExecutionResult, type Tx } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { ItemExecution, WorkItem, WorkItemCommand, WorkItemDetail, WorkItemDraft, WorkItemReceipt } from "../../shared/work-items";
 import { ItemFiles, WorkItemError, executionId, itemDraft, itemId, latestDue, nextDue } from "../domain/work-items";
@@ -223,21 +223,11 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
     Type.Object({ type: Type.Literal("cron"), expression: Type.String({ description: "Five-field cron expression." }),
       timezone: Type.String({ description: "IANA time zone, such as Asia/Shanghai." }) })],
     { description: "null=manual; once=run once at the given instant; cron=recurring." });
-  return defineExtension({ name: "piko-work-items", tools: [defineTool({
-    name: "work_item", replay: "unsafe",
-    description: "Manage persistent tasks. list: active tasks without prompts; includeArchived also returns archived tasks, which the app shows as completed. get: full definition and the latest 5 executions. create/update: save a complete definition; update replaces title, prompt and schedule, so call get first. schedule null=manual, once.at=ISO 8601 with offset such as 2026-10-22T09:00:00+08:00, cron=five fields plus IANA timezone. scheduleText is shown to the user verbatim and is required whenever schedule is not null. run: start a fresh background assistant now; it does not change the schedule; one execution per task and at most two task executions globally. archive: stop future triggers and mark the task completed in the app; stop its running execution first. restore: re-enable future triggers only. stop: cancel any running execution for the task without changing its schedule. Results return privately to you like ordinary subagents; after a task result, your reply may be sent to every channel. Summarize results for the user. Never claim a schedule ran merely because it exists.",
-    parameters: Type.Object({
-      action: Type.Union(["list", "get", "create", "update", "run", "archive", "restore", "stop"].map(value => Type.Literal(value)),
-        { description: "list, get, create, update, run, archive, restore or stop." }),
-      id: Type.Optional(Type.String({ description: "Task id. Required for get, update, run, archive, restore and stop; pass it without '#'." })),
-      title: Type.Optional(Type.String({ minLength: 1, maxLength: 160, description: "Required for create and update. Maximum 160 characters." })),
-      prompt: Type.Optional(Type.String({ minLength: 1, maxLength: 12000, description: "Required for create and update. Full instruction, maximum 12,000 characters." })),
-      schedule: Type.Optional(schedule),
-      scheduleText: Type.Optional(Type.String({ maxLength: 120,
-        description: "Short human-readable schedule label shown verbatim; required whenever schedule is not null. Do not include a time zone or cron syntax." })),
-      includeArchived: Type.Optional(Type.Boolean({ description: "list only: include archived tasks; the app shows them as completed." })),
-    }),
-    execute: async (args, api, context) => {
+  type Command = { action: "list"; includeArchived?: boolean }
+    | { action: "get" | "run" | "archive" | "restore" | "stop"; id: string }
+    | ({ action: "create"; id?: never } & WorkItemDraft)
+    | ({ action: "update"; id: string } & WorkItemDraft);
+  const execute = async (args: Command, api: ToolExecutionApi, context: Context): Promise<ToolExecutionResult> => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) throw new WorkItemError("Only the main assistant can manage items.", 403);
       if (args.action === "list") {
         const items = await service().list();
@@ -257,8 +247,7 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
       const requestId = `piko:item-tool:${api.taskId}`;
       let command: WorkItemCommand;
       if (args.action === "create" || args.action === "update") {
-        if (args.action === "update" && args.schedule === undefined) throw new WorkItemError("An update replaces the whole definition and requires schedule; use null for manual execution.");
-        const item = itemDraft({ title: args.title, prompt: args.prompt, schedule: args.schedule ?? null, scheduleText: args.scheduleText });
+        const item = itemDraft({ title: args.title, prompt: args.prompt, schedule: args.schedule, scheduleText: args.scheduleText });
         command = args.action === "create" ? { action: "create", requestId, item }
           : { action: "update", requestId, id: itemId(args.id), item };
       } else if (args.action === "run") command = { action: "run", requestId, id: itemId(args.id) };
@@ -266,6 +255,47 @@ export function createWorkItemTools(service: () => DurableWorkItems) {
       else command = { action: "status", requestId, id: itemId(args.id), status: args.action === "archive" ? "archived" : "active" };
       const result = await service().command(command, source, context.abortSignal);
       return { output: [{ type: "text", text: JSON.stringify(result) }] };
-    },
-  })] });
+  };
+  const id = Type.String({ minLength: 1, description: "Task id from work_item_list or work_item_create; pass it without '#'." });
+  const definition = {
+    title: Type.String({ minLength: 1, maxLength: 160, description: "Short task title." }),
+    prompt: Type.String({ minLength: 1, maxLength: 12000, description: "Full self-contained instructions for each fresh background execution." }),
+    schedule,
+    scheduleText: Type.String({ minLength: 1, maxLength: 120, pattern: "\\S",
+      description: "Display label, e.g. '手动执行' or '每天 9:00'; no time zone or cron syntax." }),
+  };
+  return defineExtension({ name: "piko-work-items", tools: [
+    defineTool({ name: "work_item_list", replay: "unsafe",
+      description: "List active tasks with timing and latest results, without prompt bodies. Optionally include archived/completed tasks. Use returned ids; never guess.",
+      parameters: Type.Object({ includeArchived: Type.Optional(Type.Boolean({ description: "Also include archived/completed tasks." })) }),
+      execute: (args, api, ctx) => execute({ ...args, action: "list" }, api, ctx) }),
+    defineTool({ name: "work_item_get", replay: "unsafe",
+      description: "Read a task's full definition and latest five executions. A saved schedule is not proof of execution.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ ...args, action: "get" }, api, ctx) }),
+    defineTool({ name: "work_item_create", replay: "unsafe",
+      description: "Save a persistent task with its own directory and optional scheduling. Does not immediately run it. Update existing tasks rather than creating duplicates.",
+      parameters: Type.Object(definition),
+      execute: (args, api, ctx) => execute({ ...args, action: "create" }, api, ctx) }),
+    defineTool({ name: "work_item_update", replay: "unsafe",
+      description: "Replace the complete task definition. Call work_item_get first and preserve unchanged fields. Does not change an already running execution.",
+      parameters: Type.Object({ id, ...definition }),
+      execute: (args, api, ctx) => execute({ ...args, action: "update" }, api, ctx) }),
+    defineTool({ name: "work_item_run", replay: "unsafe",
+      description: "Run once now without changing the schedule. Returns immediately; results arrive privately. Summarize for the user; replies may reach all channels. Do not poll.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ ...args, action: "run" }, api, ctx) }),
+    defineTool({ name: "work_item_stop", replay: "unsafe",
+      description: "Cancel current execution and pending private reports. Does not change future scheduling; archive the task to stop future triggers.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ ...args, action: "stop" }, api, ctx) }),
+    defineTool({ name: "work_item_archive", replay: "unsafe",
+      description: "Mark completed and stop future triggers, without deleting. If running, call work_item_stop first.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ ...args, action: "archive" }, api, ctx) }),
+    defineTool({ name: "work_item_restore", replay: "unsafe",
+      description: "Restore an archived task to active and re-enable future triggers. Does not immediately run it.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ ...args, action: "restore" }, api, ctx) }),
+  ] });
 }

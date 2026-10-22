@@ -1,7 +1,7 @@
 import { Type } from "typebox";
-import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
 import { AgentDoc, defineDoc, defineExtension, defineTask, defineTool, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
-  type Agent, type ConversationId, type Cursor, type EntryId, type SubmissionId, type Extension, type Harness, type Storage, type TaskRecord, type Tx } from "@earendil-works/pi-durable";
+  type Agent, type ConversationId, type Cursor, type EntryId, type SubmissionId, type Extension, type Harness, type Storage, type TaskRecord, type ToolExecutionApi, type ToolExecutionResult, type Tx } from "@earendil-works/pi-durable";
 import type { BackgroundReply, InputSource } from "./types";
 import { InputOrigin, registerInput } from "./input-origin";
 import { entriesFromTransaction, messageText } from "./pi-history";
@@ -16,7 +16,6 @@ export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
 });
 export const ANCHOR_KIND = "piko.subagent-anchor";
 export const REPORTER_KIND = "piko.subagent-reporter";
-export const SUBAGENT_TOOL = "subagent";
 
 export async function taskRecords(tx: Tx, conversationId = ROOT_CONVERSATION_ID) {
   const records: TaskRecord<unknown, unknown, unknown>[] = []; let cursor: Cursor | undefined;
@@ -236,18 +235,11 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     return child;
   }
-  const tool = defineTool({
-    name: SUBAGENT_TOOL, description: "Delegate independent work to a background subagent. spawn (task required) starts a fresh conversation without this chat's history; include all context it needs, and it returns the job id immediately. send (id and task required) continues an existing job: it steers the current run when busy, or starts a new run when idle. status (id required) returns one job's state and latest steps. stop (id required) cancels one job. Results return privately when ready; never wait for completion.",
-    parameters: Type.Object({
-      action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("status"), Type.Literal("stop")],
-        { description: "spawn starts a job; send continues an existing job; status inspects one job; stop cancels one job." }),
-      id: Type.Optional(Type.String({ pattern: "^[0-9]+$",
-        description: "Numeric job id returned by spawn. Required for send, status and stop; pass it without '#'." })),
-      task: Type.Optional(Type.String({ minLength: 1, maxLength: 24000,
-        description: "Required for spawn and send. For spawn, the full task with all needed context; for send, the instruction to add to the job. Maximum 24000 characters." })),
-    }),
-    replay: "unsafe",
-    execute: async (args, api, ctx) => {
+  type Command = { action: "spawn"; task: string; id?: never }
+    | { action: "send"; id: string; task: string }
+    | { action: "status" | "stop"; id: string; task?: never };
+  // Separate model-facing schemas share the same native execution and cancellation paths.
+  const execute = async (args: Command, api: ToolExecutionApi, ctx: Context): Promise<ToolExecutionResult> => {
       if (api.conversationId !== ROOT_CONVERSATION_ID) return { isError: true, output: [{ type: "text", text: "Nested delegation is unavailable." }] };
       const ids = await api.commit(tx => subagentIds(tx), ctx);
       const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
@@ -292,9 +284,29 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
         return child;
       }, ctx);
       return { output: [{ type: "text", text: `Background job ${result} accepted. Continue your work; its result will arrive privately.` }], details: { conversationId: result } };
-    },
-  });
-  extension = defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter], tools: [tool] });
+  };
+  const id = Type.String({ pattern: "^[0-9]+$", description: "Job id returned by subagent_spawn; pass it without '#'." });
+  const task = Type.String({ minLength: 1, maxLength: 24000,
+    description: "Self-contained instructions with all context needed; the child does not inherit this chat's history." });
+  const tools = [
+    defineTool({ name: "subagent_spawn", replay: "unsafe",
+      description: "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately. Continue working; do not poll.",
+      parameters: Type.Object({ task }),
+      execute: (args, api, ctx) => execute({ action: "spawn", task: args.task }, api, ctx) }),
+    defineTool({ name: "subagent_send", replay: "unsafe",
+      description: "Send instructions to an existing subagent: steer when busy, continue when idle. Returns immediately. Not available for work-item executions.",
+      parameters: Type.Object({ id, message: Type.String({ minLength: 1, maxLength: 24000, description: "Instructions to add to the existing job." }) }),
+      execute: (args, api, ctx) => execute({ action: "send", id: args.id, task: args.message }, api, ctx) }),
+    defineTool({ name: "subagent_status", replay: "unsafe",
+      description: "Inspect a subagent's state and latest five steps on demand. Do not poll; results arrive automatically.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ action: "status", id: args.id }, api, ctx) }),
+    defineTool({ name: "subagent_stop", replay: "unsafe",
+      description: "Cancel a subagent's current work and pending private reports. Keeps its conversation; other jobs continue.",
+      parameters: Type.Object({ id }),
+      execute: (args, api, ctx) => execute({ action: "stop", id: args.id }, api, ctx) }),
+  ];
+  extension = defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter], tools });
   return { extension, spawn,
     async source(tx: Tx, callId: string): Promise<InputSource> {
       return originOfToolCall(tx, callId, context);

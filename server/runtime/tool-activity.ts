@@ -14,6 +14,8 @@ function pick(args: Record<string, unknown>, key: string): string | undefined {
 
 /** Emoji per built-in tool; unknown tools get a generic wrench. */
 export function toolIcon(name: string): string {
+  if (name.startsWith("subagent_")) return "🤖";
+  if (name.startsWith("work_item_")) return "🗓️";
   switch (name) {
     case "read": return "📖";
     case "write": return "📄";
@@ -21,8 +23,6 @@ export function toolIcon(name: string): string {
     case "bash": return "💻";
     case "web_search": return "🔍";
     case "web_extract": return "🌐";
-    case "subagent": return "🤖";
-    case "work_item": return "🗓️";
     default: return "🛠️";
   }
 }
@@ -44,17 +44,15 @@ function summarize(toolName: string, record: Record<string, unknown>): string {
   }
   if (toolName === "web_search") return pick(record, "query") ?? "";
   if (toolName === "web_extract") return pick(record, "url") ?? "";
-  if (toolName === "subagent") {
-    const action = pick(record, "action") ?? "call";
+  if (toolName.startsWith("subagent_")) {
     const id = pick(record, "id");
-    const task = singleLine(pick(record, "task"), 70);
-    return [action, id && `#${id}`, task].filter(Boolean).join(" ");
+    const task = singleLine(pick(record, "task") ?? pick(record, "message"), 70);
+    return [id && `#${id}`, task].filter(Boolean).join(" ");
   }
-  if (toolName === "work_item") {
-    const action = pick(record, "action") ?? "call";
+  if (toolName.startsWith("work_item_")) {
     const id = pick(record, "id");
     const detail = singleLine(pick(record, "title") ?? pick(record, "prompt"), 70);
-    return [action, id && `#${id.slice(0, 8)}`, detail].filter(Boolean).join(" ");
+    return [id && `#${id.slice(0, 8)}`, detail].filter(Boolean).join(" ");
   }
   const entries = Object.entries(record).slice(0, 2).filter(([, value]) => typeof value === "string");
   return entries.map(([key, value]) => `${key}=${String(value)}`).join(", ");

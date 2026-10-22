@@ -134,9 +134,9 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 
 ## 更新的生效时机
 
-当前锁定 durable 1.3.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask`，再等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
+当前锁定 durable 1.3.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask` 结束，不检查摘要是否新增或等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
 
-运行时及 HTTP 现在明确返回 `status: compacted | skipped | cancelled`；skipped 的 reason 为 no_summary 或 stale。只有摘要实际应用后才报告 compacted；未生成摘要、摘要过时无法应用、取消分别反馈，任务失败、丢失结果或其他应用错误报告失败。TG `/compact` 同步这些结果，可选模型详情读取失败不影响已确认的结果。后台自动压缩是否需要展示提醒仍待设计。
+运行时及 HTTP 返回 `status: compacted | cancelled`，任务失败报告错误。`compacted` 表示原生压缩任务完成，不额外断言摘要是否新增或已经应用；摘要和 submission 由 Durable 管理，不再区分 no_summary/stale。TG 的 `/compact` 只负责接纳，开始和完成统一经原生生命周期观察呈现，保留取消/失败提示；主会话的阈值/溢出自动压缩也通知本进程已验证的 TG 私聊。通知不阻塞事件观察；各会话快照附带活动压缩状态。旁聊和后台子会话不向主聊天 TG 通知；生命周期只用于呈现，不写聊天正文或可靠 outbox。
 
 普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
@@ -190,4 +190,4 @@ read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱�
 
 ## 后台子 Agent
 
-主 Agent 的 subagent 工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、内建扩展、全局指导和技能共用，移除委派与任务管理工具；任务执行额外使用本任务目录与记忆。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见 [后台子 Agent](background-subagents.md)。
+主 Agent 的 `subagent_*` 系列工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、内建扩展、全局指导和技能共用，移除委派与任务管理工具；任务执行额外使用本任务目录与记忆。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见 [后台子 Agent](background-subagents.md)。

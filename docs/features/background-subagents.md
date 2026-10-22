@@ -4,13 +4,13 @@
 
 ## 共享资源与会话
 
-主、子 Agent 共用同一个 Harness、JSONL 存储、基本工具、内建扩展、技能、全局 AGENTS.md 和 MEMORY.md。模型选择不共用：后台子 Agent 使用 `agent.profiles.background`（未配置时在创建时继承当时的主会话选择），主会话的 `/models` 切换不影响它们。普通委派共用工作区，没有独立配置或记忆目录；子工具移除 subagent 和 work_item，同时在工具执行处拒绝非 root 的委派/任务管理。子角色说明只补充任务职责，仍加载共享指导。
+主、子 Agent 共用同一个 Harness、JSONL 存储、基本工具、内建扩展、技能、全局 AGENTS.md 和 MEMORY.md。模型选择不共用：后台子 Agent 使用 `agent.profiles.background`（未配置时在创建时继承当时的主会话选择），主会话的 `/models` 切换不影响它们。普通委派共用工作区，没有独立配置或记忆目录；子工具移除全部 `subagent_*` 和 `work_item_*`，同时在工具执行处拒绝非 root 的委派/任务管理。子角色说明只补充任务职责，仍加载共享指导。
 
 [定时任务](scheduled-work-items.md) 复用相同 Anchor/Reporter 和回传机制，但使用固定任务目录作为 cwd，并额外加载本任务记忆、保存独立输出。本文其余共享文件与不增加展示的约定针对普通聊天委派；Tasks 页面单独展示任务执行记录，不把内部子消息投影到主聊天。
 
 每次 spawn 创建新的原生 conversation；send 可继续已有子会话并复用其历史：运行中直接以 steer 插入当前工作，空闲时作为新输入启动下一轮。需要不带旧上下文的新会话时再 spawn。不建设用户会话列表或切换入口，与未来的用户 side chat 分开。
 
-子会话在 spawn 时直接新建，不 fork 或继承主聊天历史；只加载共享指导、记忆、技能和工具，以及本次委派任务。后续 send 复用该子会话的历史，主 Agent 仍应把新增背景写入 task。任务由 Reporter 单独提交，子执行不实时回灌 root；工具、压缩和回答保存在子 conversation 中。UI 只投影 root 的完整历史。
+子会话在 spawn 时直接新建，不 fork 或继承主聊天历史；只加载共享指导、记忆、技能和工具，以及本次委派任务。后续 send 复用该子会话的历史，主 Agent 仍应把新增背景写入 `subagent_send.message`。任务由 Reporter 单独提交，子执行不实时回灌 root；工具、压缩和回答保存在子 conversation 中。UI 只投影 root 的完整历史。
 
 改变主会话模型和思考强度时只影响主会话，不再同步已创建子会话；后台子会话在 spawn 时读取 `agent.profiles.background`，启动时把已有子会话同步到当前后台选择。后台供应商缺凭据时 spawn 报错并使该次任务失败，不阻止后端启动，也不静默回退到主模型。已经准备的模型请求继续完成，后续请求使用新选择。重启时同步当前后台选择、cwd 与工具选择。配置仍需重启生效；指导和技能索引按每次模型请求刷新。
 
@@ -18,14 +18,16 @@
 
 ## 委派与回传
 
-主 Agent 使用内建 subagent 工具，不增加 HTTP 管理 API 或 TG 命令：
+主 Agent 使用四个独立工具，各自的必填参数直接体现在 schema 中，不再暴露 action 分发工具；不增加 HTTP 管理 API 或 TG 命令：
 
-| action | 行为 |
+| 工具 | 必填参数与行为 |
 | --- | --- |
-| spawn | task 必填；创建新子会话，立即返回原生会话 ID，不等待结果 |
-| send | id、task 必填；继续已有子任务：运行中以 steer 插入当前工作，空闲时启动下一轮 |
-| status | id 必填；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
-| stop | id 必填；取消指定的子任务，不停止主 Agent |
+| `subagent_spawn` | `task`；创建新子会话，立即返回原生会话 ID，不等待结果 |
+| `subagent_send` | `id`、`message`；继续已有子任务：运行中以 steer 插入当前工作，空闲时启动下一轮 |
+| `subagent_status` | `id`；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
+| `subagent_stop` | `id`；取消指定的子任务，不停止主 Agent |
+
+结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。四个入口复用原来的原生执行、权限和取消路径，不新增执行状态。
 
 普通用户输入仍进入主会话，维持 steer all，不广播给所有子 Agent。报告以内部 input、whenBusy:followUp 回传：主 Agent 空闲时唤起处理，忙碌时等待当前回答结束。报告不是新的用户指令，不强制生成完成通知。
 
