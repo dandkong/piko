@@ -1,4 +1,4 @@
-import { Settings, SquarePen, X } from "lucide-react-native";
+import { Settings, SquarePen } from "lucide-react-native";
 import { useEffect } from "react";
 import {
   BackHandler,
@@ -69,17 +69,14 @@ export function NavigationDrawer({
           styles.panel,
           {
             width: panelWidth,
-            top: insets.top + drawerLayout.inset,
-            bottom: insets.bottom + drawerLayout.inset,
+            top: 0,
+            bottom: 0,
           },
         ]}
         testID="navigation-drawer"
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 22 }]}>
           <Text style={styles.title}>Piko</Text>
-          <IconButton label="Close navigation" onPress={onClose} size="sm">
-            <X size={18} strokeWidth={1.8} color={colors.muted} />
-          </IconButton>
         </View>
 
         <ScrollView
@@ -125,7 +122,7 @@ export function NavigationDrawer({
           <SideChatList {...sideChatActions} />
         </ScrollView>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
           <IconButton
             hint="Coming soon"
             label="Settings"
@@ -161,16 +158,10 @@ const styles = StyleSheet.create({
   },
   panel: {
     position: "absolute",
-    left: drawerLayout.inset,
-    borderRadius: radii.panel,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    shadowColor: "#132631",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 28,
-    elevation: 12,
+    left: 0,
+    backgroundColor: colors.drawerUnderlay,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.drawerEdge,
   },
   header: {
     flexDirection: "row",

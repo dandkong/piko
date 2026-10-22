@@ -7,7 +7,7 @@ import {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { drawerLayout, motion, radii } from "../../theme";
+import { drawerLayout, motion } from "../../theme";
 
 /** One owner for surface animation and underlay lifetime, including interrupted transitions. */
 export function useDrawerTransition(open: boolean, width: number) {
@@ -17,9 +17,7 @@ export function useDrawerTransition(open: boolean, width: number) {
   const finishClose = useCallback((id: number) => {
     if (id === transition.current) setMounted(false);
   }, []);
-  const push =
-    Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio) +
-    drawerLayout.inset;
+  const push = Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio);
   useEffect(() => {
     const id = ++transition.current;
     if (open) setMounted(true);
@@ -37,20 +35,9 @@ export function useDrawerTransition(open: boolean, width: number) {
       transition.current++;
     };
   }, [open, progress, finishClose]);
+  // Keep the live conversation transition to translation; avoid animating effects on its large surface.
   const surfaceStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(progress.value, [0, 1], [0, push]) },
-      {
-        scale: interpolate(progress.value, [0, 1], [1, drawerLayout.pushScale]),
-      },
-    ],
-    borderRadius: interpolate(progress.value, [0, 1], [0, radii.panel]),
-    shadowOpacity: interpolate(progress.value, [0, 1], [0, 0.14]),
-    shadowRadius: interpolate(progress.value, [0, 1], [0, 18]),
-    elevation: interpolate(progress.value, [0, 1], [0, 12]),
+    transform: [{ translateX: interpolate(progress.value, [0, 1], [0, push]) }],
   }));
-  const clipStyle = useAnimatedStyle(() => ({
-    borderRadius: interpolate(progress.value, [0, 1], [0, radii.panel]),
-  }));
-  return { mounted: mounted || open, surfaceStyle, clipStyle };
+  return { mounted: mounted || open, surfaceStyle };
 }

@@ -82,8 +82,8 @@ export function AppShell({
           <Animated.View
             style={[styles.pushedSurface, transition.surfaceStyle]}
           >
-            <Animated.View
-              style={[styles.pushedContent, transition.clipStyle]}
+            <View
+              style={styles.pushedContent}
               accessibilityElementsHidden={!!menuOpen}
               importantForAccessibility={
                 menuOpen ? "no-hide-descendants" : "auto"
@@ -132,7 +132,7 @@ export function AppShell({
                   onTabChange={onTabChange}
                 />
               </View>
-            </Animated.View>
+            </View>
             {!!menuOpen && (
               <Pressable
                 accessibilityRole="button"
@@ -294,7 +294,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     backgroundColor: colors.canvas,
-    overflow: "hidden",
   },
   closePushedSurface: {
     ...StyleSheet.absoluteFill,

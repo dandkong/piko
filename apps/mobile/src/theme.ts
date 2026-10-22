@@ -1,13 +1,14 @@
 export const colors = {
   canvas: "#FCFCFC", card: "#FFFFFF", text: "#11191C", muted: "#697176",
   line: "#EEEEF0", blue: "#C8E7FF", blueDark: "#1473C8", danger: "#AA4A45",
+  drawerUnderlay: "#F4F5F6", drawerEdge: "#E3E6E8",
 };
 
 /** Shared control scale. Keep interaction sizes here instead of one-off styles. */
 export const controlSizes = { sm: 36, md: 44 } as const;
 
 export const radii = { chip: 12, control: 16, card: 18, panel: 30 } as const;
-export const drawerLayout = { maxWidth: 300, widthRatio: 0.76, inset: 10, pushScale: 0.97 } as const;
+export const drawerLayout = { maxWidth: 300, widthRatio: 0.76 } as const;
 
 export const motion = {
   pressIn: 90,
