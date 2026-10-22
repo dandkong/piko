@@ -7,6 +7,7 @@ export const colors = {
 export const controlSizes = { sm: 36, md: 44 } as const;
 
 export const radii = { chip: 12, control: 16, card: 18, panel: 30 } as const;
+export const drawerLayout = { maxWidth: 300, widthRatio: 0.76, inset: 10, pushScale: 0.97 } as const;
 
 export const motion = {
   pressIn: 90,

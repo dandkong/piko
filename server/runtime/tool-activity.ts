@@ -1,4 +1,4 @@
-/** One Telegram/UI line per call: whitespace collapsed, bounded length. */
+/** One Telegram line per call: whitespace collapsed, bounded length. */
 const LIMIT = 100;
 
 export function singleLine(value: string | undefined, limit = LIMIT): string | undefined {

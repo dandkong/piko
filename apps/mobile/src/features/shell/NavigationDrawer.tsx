@@ -3,32 +3,20 @@ import { useEffect, useState } from "react";
 import {
   BackHandler,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
-import Animated, {
-  Easing,
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { navigation, type AppTab } from "../../navigation";
-import { colors, motion, radii } from "../../theme";
+import { colors, drawerLayout, motion, radii } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { SideChatList, type SideChatActions } from "./SideChatList";
 
-const PANEL_MAX_WIDTH = 300;
-const PANEL_INSET = 10;
-
-/** Floating navigation panel: tabs mirror the bottom bar and side chats stay independent. */
+/** Underlay navigation layer: the app surface moves aside to reveal tabs and side chats. */
 export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpenSettings, ...sideChatActions }: SideChatActions & {
   open: boolean;
   activeTab: AppTab;
@@ -38,8 +26,7 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const panelWidth = Math.min(PANEL_MAX_WIDTH, width * 0.76);
-  const progress = useSharedValue(0);
+  const panelWidth = Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio);
   const [mounted, setMounted] = useState(open);
 
   useEffect(() => {
@@ -47,14 +34,10 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
   }, [open]);
 
   useEffect(() => {
-    if (!mounted) return;
-    progress.value = withTiming(open ? 1 : 0, {
-      duration: open ? motion.drawerIn : motion.drawerOut,
-      easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-    }, finished => {
-      if (finished && !open) runOnJS(setMounted)(false);
-    });
-  }, [mounted, open, progress]);
+    if (!mounted || open) return;
+    const timer = setTimeout(() => setMounted(false), motion.drawerOut);
+    return () => clearTimeout(timer);
+  }, [mounted, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,32 +57,22 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
     }
   }, [open, onClose]);
 
-  const panelStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 1], [0, 1]),
-    transform: [
-      { translateX: interpolate(progress.value, [0, 1], [-panelWidth - PANEL_INSET, 0]) },
-      { scale: interpolate(progress.value, [0, 1], [0.985, 1]) },
-    ],
-  }));
-
-  if (!mounted) return null;
+  if (!mounted && !open) return null;
 
   return (
-    <View pointerEvents="box-none" style={styles.overlay}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close navigation"
-        onPress={onClose}
-        style={StyleSheet.absoluteFill}
-        testID="navigation-drawer-backdrop"
-      />
-      <Animated.View
-        accessibilityViewIsModal
+    <View
+      pointerEvents={open ? "auto" : "none"}
+      style={styles.underlay}
+      accessibilityElementsHidden={!open}
+      importantForAccessibility={open ? "auto" : "no-hide-descendants"}
+    >
+      <View
+        accessibilityViewIsModal={open}
         style={[styles.panel, {
           width: panelWidth,
-          top: insets.top + PANEL_INSET,
-          bottom: insets.bottom + PANEL_INSET,
-        }, panelStyle]}
+          top: insets.top + drawerLayout.inset,
+          bottom: insets.bottom + drawerLayout.inset,
+        }]}
         testID="navigation-drawer"
       >
         <View style={styles.header}>
@@ -163,23 +136,23 @@ export function NavigationDrawer({ open, activeTab, onSelectTab, onClose, onOpen
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
         </View>
-      </Animated.View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  underlay: {
     position: "absolute",
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    zIndex: 20,
+    zIndex: 0,
   },
   panel: {
     position: "absolute",
-    left: PANEL_INSET,
+    left: drawerLayout.inset,
     borderRadius: radii.panel,
     backgroundColor: colors.card,
     borderWidth: 1,

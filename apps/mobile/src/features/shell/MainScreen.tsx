@@ -66,7 +66,7 @@ function Shell({ tab, menuOpen, sides, selectedId, conversationId, visible, sele
   const archived = current?.archivedAt != null;
   return <AppShell
     wide={width >= 900} activeTab={tab} onTabChange={selectTab}
-    menuOpen={visible && menuOpen} onOpenMenu={() => { Keyboard.dismiss(); setMenuOpen(true); }}
+    menuOpen={visible && menuOpen} onOpenMenu={() => { Keyboard.dismiss(); setMenuOpen(true); }} onCloseMenu={() => setMenuOpen(false)}
     drawer={visible ? <NavigationDrawer
       open={menuOpen} activeTab={tab} activeSideChatId={tab === "Chat" ? selectedId : undefined}
       onSelectTab={selectTab} onClose={() => setMenuOpen(false)} sideChats={sides.items}

@@ -1,11 +1,11 @@
 import { Menu } from "lucide-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Image, Keyboard, Platform, StyleSheet, Text, View } from "react-native";
+import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { useAnimatedStyle, type SharedValue, withTiming } from "react-native-reanimated";
+import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, type SharedValue, withTiming } from "react-native-reanimated";
 import { navigation, type AppTab } from "../navigation";
-import { colors } from "../theme";
+import { colors, drawerLayout, motion, radii } from "../theme";
 import { EdgeFade, FOOTER_FADE_OVERHANG, HEADER_FADE_TAIL } from "./EdgeFade";
 import { IconButton } from "./IconButton";
 import { TactilePressable } from "./TactilePressable";
@@ -13,12 +13,13 @@ import { TactilePressable } from "./TactilePressable";
 const KEYBOARD_COMPOSER_GAP = 10;
 export type { AppTab };
 
-export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
+export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, onCloseMenu, wide, status, headerHeight, footerHeight, onHeaderHeightChange, onFooterHeightChange, keyboardLift, onKeyboardLiftChange, activeTab = "Chat", onTabChange }: {
   children: ReactNode;
   composer: ReactNode;
   drawer?: ReactNode;
   menuOpen?: boolean;
   onOpenMenu?: () => void;
+  onCloseMenu?: () => void;
   activeTab?: AppTab;
   onTabChange?: (tab: AppTab) => void;
   wide: boolean;
@@ -31,16 +32,39 @@ export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wid
   onKeyboardLiftChange: (lift: number) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [tabsHeight, setTabsHeight] = useState(0);
   const keyboardDuration = useRef(250);
   const horizontalPadding = wide ? 42 : 17;
+  const drawerProgress = useSharedValue(0);
+  const drawerPush = Math.min(drawerLayout.maxWidth, width * drawerLayout.widthRatio) + drawerLayout.inset;
   const keyboardLiftAmount = keyboardHeight > 0
     ? Math.max(0, keyboardHeight - tabsHeight) + KEYBOARD_COMPOSER_GAP
     : 0;
   const composerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: -keyboardLift.value }],
   }));
+  const pushedSurfaceStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(drawerProgress.value, [0, 1], [0, drawerPush]) },
+      { scale: interpolate(drawerProgress.value, [0, 1], [1, drawerLayout.pushScale]) },
+    ],
+    borderRadius: interpolate(drawerProgress.value, [0, 1], [0, radii.panel]),
+    shadowOpacity: interpolate(drawerProgress.value, [0, 1], [0, 0.14]),
+    shadowRadius: interpolate(drawerProgress.value, [0, 1], [0, 18]),
+    elevation: interpolate(drawerProgress.value, [0, 1], [0, 12]),
+  }));
+  const clippedSurfaceStyle = useAnimatedStyle(() => ({
+    borderRadius: interpolate(drawerProgress.value, [0, 1], [0, radii.panel]),
+  }));
+
+  useEffect(() => {
+    drawerProgress.value = withTiming(menuOpen ? 1 : 0, {
+      duration: menuOpen ? motion.drawerIn : motion.drawerOut,
+      easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+    });
+  }, [drawerProgress, menuOpen]);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -65,29 +89,44 @@ export function AppShell({ children, composer, drawer, menuOpen, onOpenMenu, wid
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={styles.keyboardArea}>
         <View style={styles.shell}>
-          <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
-          <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
-          <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
-          <AgentHeader
-            wide={wide}
-            topInset={insets.top}
-            status={status}
-            menuOpen={!!menuOpen}
-            onOpenMenu={onOpenMenu}
-            onHeightChange={height => onHeaderHeightChange(height + insets.top)}
-          />
-          <View
-            testID="chat-footer-overlay"
-            pointerEvents="box-none"
-            onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
-            style={styles.footer}
-          >
-            <Animated.View style={composerAnimatedStyle}>
-              <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
-            </Animated.View>
-            <BottomTabs wide={wide} onHeightChange={setTabsHeight} activeTab={activeTab} onTabChange={onTabChange} />
-          </View>
           {drawer}
+          <Animated.View style={[styles.pushedSurface, pushedSurfaceStyle]}>
+            <Animated.View
+              style={[styles.pushedContent, clippedSurfaceStyle]}
+              accessibilityElementsHidden={!!menuOpen}
+              importantForAccessibility={menuOpen ? "no-hide-descendants" : "auto"}
+            >
+              <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>{children}</View>
+              <EdgeFade edge="top" height={headerHeight + HEADER_FADE_TAIL} />
+              <EdgeFade edge="bottom" height={footerHeight + FOOTER_FADE_OVERHANG} />
+              <AgentHeader
+                wide={wide}
+                topInset={insets.top}
+                status={status}
+                menuOpen={!!menuOpen}
+                onOpenMenu={onOpenMenu}
+                onHeightChange={height => onHeaderHeightChange(height + insets.top)}
+              />
+              <View
+                testID="chat-footer-overlay"
+                pointerEvents="box-none"
+                onLayout={({ nativeEvent: { layout } }) => onFooterHeightChange(layout.height)}
+                style={styles.footer}
+              >
+                <Animated.View style={composerAnimatedStyle}>
+                  <View style={{ paddingHorizontal: horizontalPadding }}>{composer}</View>
+                </Animated.View>
+                <BottomTabs wide={wide} onHeightChange={setTabsHeight} activeTab={activeTab} onTabChange={onTabChange} />
+              </View>
+            </Animated.View>
+            {!!menuOpen && <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close navigation"
+              onPress={onCloseMenu}
+              style={styles.closePushedSurface}
+              testID="navigation-drawer-close-surface"
+            />}
+          </Animated.View>
         </View>
       </View>
     </SafeAreaView>
@@ -188,6 +227,25 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
+    overflow: "hidden",
+  },
+  pushedSurface: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1,
+    backgroundColor: colors.canvas,
+  },
+  pushedContent: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: colors.canvas,
+    overflow: "hidden",
+  },
+  closePushedSurface: {
+    ...StyleSheet.absoluteFill,
   },
   keyboardArea: {
     flex: 1,
