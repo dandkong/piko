@@ -10,8 +10,8 @@ import { chatStream } from "./chat/stream";
 import { json, withCors } from "./http";
 import { runtimeRequest } from "./runtime/http";
 import type { WebHandler } from "./web";
-import { itemRequest } from "./items/http";
-import { WorkItemError } from "./domain/work-items";
+import { taskRequest } from "./tasks/http";
+import { AssistantTaskError } from "./domain/tasks";
 import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "./attachments";
 export function createApp({ config, runtime, conversations: main, chats, attachments, web }: { config: ServerConfig; runtime: ChatRuntime; conversations: ConversationStore; chats: ConversationStores; attachments: AttachmentStore; web?: WebHandler }) {
   return async (request: Request): Promise<Response> => {
@@ -61,7 +61,7 @@ export function createApp({ config, runtime, conversations: main, chats, attachm
           "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
           ...(!stored.attachment.mime.startsWith("image/") && { "Content-Disposition": "attachment" }) } }));
       }
-      if (url.pathname === "/api/items" || url.pathname.startsWith("/api/items/")) return reply(await itemRequest(request, runtime, config.maxRequestBytes));
+      if (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")) return reply(await taskRequest(request, runtime, config.maxRequestBytes));
       if (url.pathname.startsWith("/api/runtime")) {
         const response = await runtimeRequest(request, runtime, operation => conversations.changeRuntime(operation), id => conversations.stop(id));
         if (response) return reply(response);
@@ -103,6 +103,6 @@ export function createApp({ config, runtime, conversations: main, chats, attachm
       }
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return reply(json({ error: "Not found." }, 404));
       return reply(web ? await web(request) : new Response("Piko API is running."));
-    } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "Request failed." }, error instanceof WorkItemError || error instanceof SideChatError ? error.status : error instanceof RuntimeBusyError ? 409 : 503)); }
+    } catch (error) { return reply(json({ error: error instanceof Error ? error.message : "Request failed." }, error instanceof AssistantTaskError || error instanceof SideChatError ? error.status : error instanceof RuntimeBusyError ? 409 : 503)); }
   };
 }

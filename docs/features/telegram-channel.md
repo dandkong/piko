@@ -19,7 +19,7 @@ RN 提供完整产品体验，Telegram 接入适合私聊的功能，不要求�
 
 菜单只在内存保存来源和目录快照，callback 再次鉴权、验证来源和能力。模型选择使用原生 Conversation.configure，选择保存在 Agent 文档；命令和反馈不写成模型消息。管理操作需空闲，普通输入接纳与管理预留共用串行入口；停止不被长时间压缩阻塞。
 
-内建文案为简洁英文，用户内容、模型回复、模型和技能名称保留原文。帮助使用 Piko app 指代 RN 入口。未知命令与不支持媒体给出提示；图片消息（photo 或 image document）下载到共享附件存储，模型通过 `read` 查看；相册仍按每条消息分别处理。工具调用在运行时单独发一条纯文本状态（如 `📖 read: server/app.ts`、`💻 bash: bun test`、`🔍 web_search: …`、`🤖 subagent_spawn: …`），内置 read/write/edit/bash、web_search/web_extract、subagent_*/work_item_* 各有图标和参数摘要，一轮结束后统一删除；状态只用于观察，不写入历史、不同步给 RN。编辑旧 TG 消息不修改历史、不触发模型，引用消息不额外注入上下文。群聊、语音和后台推送尚未接入。
+内建文案为简洁英文，用户内容、模型回复、模型和技能名称保留原文。帮助使用 Piko app 指代 RN 入口。未知命令与不支持媒体给出提示；图片消息（photo 或 image document）下载到共享附件存储，模型通过 `read` 查看；相册仍按每条消息分别处理。工具调用在运行时单独发一条纯文本状态（如 `📖 read: server/app.ts`、`💻 bash: bun test`、`🔍 web_search: …`、`🤖 Delegate work: …`），内置 read/write/edit/bash、web_search/web_extract、subagent_*/task_* 按类别显示图标、精简业务名称和参数摘要（如 Delegate work、Archive task），未知动作回退原工具名，一轮结束后统一删除；状态只用于观察，不写入历史、不同步给 RN。编辑旧 TG 消息不修改历史、不触发模型，引用消息不额外注入上下文。群聊、语音和后台推送尚未接入。
 
 ## 命令、菜单与提示（参考 pi-pilot）
 
@@ -124,4 +124,4 @@ bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮�
 
 ## 后台委派回复
 
-子 Agent 不增加 TG 命令、工具展示或完成通知。TG 输入发起的后台工作记录经过验证的 Bot/chat 来源；完成结果私下 follow-up 给主 Agent，必要时重新观察空闲后的 root 回复。只投递主 Agent 实际生成的文字，保持 Rich Markdown 与按助手消息独立发送；主 Agent 保持安静则没有通知，普通委派的 RN 来源不额外推 TG。定时任务结果例外：无论来源都广播到 TG。普通 /stop 保留独立子任务，明确取消子工作由主 Agent 的委派工具处理。平台发送状态仍在内存，重启不保证补发，详情见 [后台子 Agent](background-subagents.md)。
+子 Agent 不增加 TG 命令、工具展示或完成通知。TG 输入发起的后台工作记录经过验证的 Bot/chat 来源；完成结果私下 follow-up 给主 Agent，必要时重新观察空闲后的 root 回复。只投递主 Agent 实际生成的文字，保持 Rich Markdown 与按助手消息独立发送；主 Agent 保持安静则没有通知，普通委派的 RN 来源不额外推 TG。保存任务的执行结果例外：无论来源都广播到 TG。普通 /stop 保留独立子任务，明确取消子工作由主 Agent 的委派工具处理。平台发送状态仍在内存，重启不保证补发，详情见 [后台子 Agent](background-subagents.md)。

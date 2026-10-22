@@ -1,12 +1,11 @@
-import { Type } from "typebox";
-import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
-import { AgentDoc, defineDoc, defineExtension, defineTask, defineTool, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
-  type Agent, type ConversationId, type Cursor, type EntryId, type SubmissionId, type Extension, type Harness, type Storage, type TaskRecord, type ToolExecutionApi, type ToolExecutionResult, type Tx } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
+import { AgentDoc, defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
+  type Agent, type ConversationId, type Cursor, type EntryId, type SubmissionId, type Harness, type Storage, type TaskRecord, type ToolExecutionApi, type Tx } from "@earendil-works/pi-durable";
 import type { BackgroundReply, InputSource } from "./types";
 import { InputOrigin, registerInput } from "./input-origin";
 import { entriesFromTransaction, messageText } from "./pi-history";
-import { ItemContext, type ItemBinding } from "./item-context";
-import { ItemFiles } from "../domain/work-items";
+import { TaskContext, type TaskBinding } from "./task-context";
+import { TaskFiles } from "../domain/tasks";
 import { childScope, spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
 import { summarizeToolArgs, toolIcon, singleLine } from "./tool-activity";
 
@@ -77,11 +76,11 @@ export async function recentActivity(tx: Tx, child: ConversationId, limit: numbe
 export type ReporterInput = { child: ConversationId; message: string; epoch: number; source: InputSource };
 export type ReporterState = { phase: "deliver" } | { phase: "report"; answer?: EntryId; error?: string };
 export type ReporterResult = { answer?: EntryId; error?: string } | null;
-export type SubagentController = ReturnType<typeof createSubagents>;
+export type SubagentRuntime = ReturnType<typeof createSubagentRuntime>;
 /** How the child's latest job ended: a run that is gone is stopped, failed, interrupted or finished. */
 export async function jobState(tx: Tx, records: TaskRecord<unknown, unknown, unknown>[], child: ConversationId, epoch: number, working: boolean) {
   if (working) return { state: "working" as const };
-  const binding = (await tx.doc(ItemContext, child)).binding;
+  const binding = (await tx.doc(TaskContext, child)).binding;
   if (binding?.interrupted) return { state: "interrupted" as const };
   const reporter = records.filter(record => record.kind === REPORTER_KIND
     && (record.input as ReporterInput).child === child).at(-1);
@@ -100,7 +99,15 @@ export async function jobState(tx: Tx, records: TaskRecord<unknown, unknown, unk
   return failure ? { state: "failed" as const, detail: singleLine(failure, 80) } : { state: "finished" as const };
 }
 
-export function createSubagents(options: { storage: () => Storage; canReport: () => boolean;
+/** A Reporter still waiting to deliver means the job is working, not finished. */
+export function awaitingDelivery(records: TaskRecord<unknown, unknown, unknown>[], child: ConversationId, epoch: number): boolean {
+  return records.some(record => record.kind === REPORTER_KIND && record.state.status !== "terminal"
+    && (record.input as ReporterInput).child === child && (record.input as ReporterInput).epoch === epoch
+    && (record.state.status === "pending" || record.state.status === "running")
+    && (record.state.checkpoint as ReporterState).phase === "deliver");
+}
+
+export function createSubagentRuntime(options: { storage: () => Storage; canReport: () => boolean;
   background: () => Promise<BackgroundSelection | undefined>;
   onReply: (reply: BackgroundReply) => Promise<void> }) {
   // Serialize report admission with explicit cancellation; body/state stays native.
@@ -136,13 +143,6 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
     }
     return input?.requestId ? { ...(await tx.doc(InputOrigin, ROOT_CONVERSATION_ID, input.requestId, null)).source } : { channel: "app" };
   }
-  /** A Reporter still waiting to deliver means the job is working, not finished. */
-  function awaitingDelivery(records: TaskRecord<unknown, unknown, unknown>[], child: ConversationId, epoch: number): boolean {
-    return records.some(record => record.kind === REPORTER_KIND && record.state.status !== "terminal"
-      && (record.input as ReporterInput).child === child && (record.input as ReporterInput).epoch === epoch
-      && (record.state.status === "pending" || record.state.status === "running")
-      && (record.state.checkpoint as ReporterState).phase === "deliver");
-  }
   const Anchor = defineTask<null, { phase: "done" }, null>({
     name: ANCHOR_KIND, version: 1, initial: () => ({ phase: "done" }), phases: {
       done: (_task, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx),
@@ -152,12 +152,12 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
     name: REPORTER_KIND, version: 1, initial: () => ({ phase: "deliver" }), phases: {
       deliver: async (task, runtime, ctx) => {
         const child = (await runtime.conversation(task.input.child, ctx))!;
-        const binding = (await runtime.snapshot(ItemContext, task.input.child, ctx))?.binding;
+        const binding = (await runtime.snapshot(TaskContext, task.input.child, ctx))?.binding;
         if (binding) {
           const root = await runtime.agent(ctx);
-          try { await new ItemFiles(root.cwd!).prepare(binding.itemId); }
+          try { await new TaskFiles(root.cwd!).prepare(binding.itemId); }
           catch (error) {
-            await runtime.commit(() => ({ status: "running", checkpoint: { phase: "report", error: error instanceof Error ? error.message : "Cannot prepare the item directory." } }), ctx);
+            await runtime.commit(() => ({ status: "running", checkpoint: { phase: "report", error: error instanceof Error ? error.message : "Cannot prepare the task directory." } }), ctx);
             return;
           }
         }
@@ -197,10 +197,10 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
           const requestId = `piko:subagent-report:${task.id}`;
           await registerInput(tx, requestId, task.input.source, true, task.input.child);
           const knownMessageIds = (await entriesFromTransaction(tx)).filter(entry => entry.kind === "pi.assistant").map(entry => `pi-${entry.id}`);
-          const binding = (await tx.doc(ItemContext, task.input.child)).binding;
-          // Provenance paragraph: scheduled work carries its item, plain delegation carries its job id.
+          const binding = (await tx.doc(TaskContext, task.input.child)).binding;
+          // Provenance: saved-task execution carries its task; ordinary delegation carries its job id.
           const heading = binding
-            ? `Scheduled work item ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. This is the item's persistent directory under items/${binding.itemId}/ in the main workspace.\n\n`
+            ? `Scheduled task ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. This is the task's persistent directory under items/${binding.itemId}/ in the main workspace.\n\n`
             : `Background subagent ${task.input.child}.\n\n`;
           // Scheduled work is broadcast to every channel; ordinary delegation only answers where it started.
           prepared.payload = { requestId, knownMessageIds, body: heading + body, deliver: binding ? "all" : "origin" };
@@ -220,121 +220,34 @@ export function createSubagents(options: { storage: () => Storage; canReport: ()
       },
     }, abort: (_task, runtime, ctx) => runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx),
   });
-  let extension: Extension;
-  async function spawn(tx: Tx, agent: Agent, message: string, source: InputSource, item?: ItemBinding) {
+  async function spawn(tx: Tx, agent: Agent, message: string, source: InputSource, task?: TaskBinding) {
     const anchor = await tx.createTask(Anchor, null, { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     const current = await tx.doc(AgentDoc, ROOT_CONVERSATION_ID);
     const child = await spawnBackgroundChild(tx, anchor, {
       ...backgroundAgent(await options.background(), { model: current.model ?? agent.model, thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel }),
-      cwd: item ? new ItemFiles(agent.cwd!).directory(item.itemId) : agent.cwd,
+      cwd: task ? new TaskFiles(agent.cwd!).directory(task.itemId) : agent.cwd,
       ...childScope(agent),
       instructions: "You are a background workspace assistant delegated by the main assistant. Complete the assigned task and return the findings to it. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the main assistant decides what to tell the user." });
-    if (item) (await tx.doc(ItemContext, child)).binding = item;
-    const task = item ? `${message}\n\nThis is work item ${JSON.stringify(item.title)} (${item.itemId}), execution ${child}. ${item.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(item.scheduledAt).toISOString()}.`} Started at ${new Date(item.startedAt).toISOString()}. Your working directory is this item's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
-    await tx.createTask(Reporter, { child, message: task, epoch: 0, source },
+    if (task) (await tx.doc(TaskContext, child)).binding = task;
+    const instruction = task ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.itemId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.` : message;
+    await tx.createTask(Reporter, { child, message: instruction, epoch: 0, source },
       { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
     return child;
   }
-  type Command = { action: "spawn"; task: string; id?: never }
-    | { action: "send"; id: string; task: string }
-    | { action: "status" | "stop"; id: string; task?: never }
-    | { action: "list"; id?: never; task?: never };
-  const output = (value: object): ToolExecutionResult => ({ output: [{ type: "text", text: JSON.stringify(value) }] });
-  const failure = (error: string): ToolExecutionResult => ({ ...output({ status: "error", error }), isError: true });
-  // Separate model-facing schemas share the same native execution and cancellation paths.
-  const execute = async (args: Command, api: ToolExecutionApi, ctx: Context): Promise<ToolExecutionResult> => {
-      if (api.conversationId !== ROOT_CONVERSATION_ID) return failure("Only the main assistant can manage subagents.");
-      if (args.action === "list") {
-        const subagents = await api.commit(async tx => {
-          const records = await taskRecords(tx);
-          const values = [];
-          for (const child of await subagentIds(tx)) {
-            // Work-item executions belong to work_item_list/get, not ordinary delegation discovery.
-            if ((await tx.doc(ItemContext, child)).binding) continue;
-            const first = records.find(record => record.kind === REPORTER_KIND && (record.input as ReporterInput).child === child);
-            const live = await tx.doc(LiveDoc, child);
-            const epoch = (await tx.doc(JobControl, child)).epoch;
-            const state = await jobState(tx, records, child, epoch, !!live.run || awaitingDelivery(records, child, epoch));
-            values.push({ id: String(child), task: singleLine(first && (first.input as ReporterInput).message, ACTIVITY_TEXT_LIMIT) ?? "",
-              status: state.state });
-          }
-          return values;
-        }, ctx);
-        return output({ subagents });
-      }
-      const ids = await api.commit(tx => subagentIds(tx), ctx);
-      const id = args.id === undefined ? undefined : ids.find(id => String(id) === args.id);
-      if (args.id !== undefined && id === undefined) return failure("Unknown subagent.");
-      if (args.action === "status") {
-        if (id === undefined) return failure("A subagent id is required.");
-        const state = await api.commit(async tx => {
-          const records = await taskRecords(tx);
-          const live = await tx.doc(LiveDoc, id);
-          const epoch = (await tx.doc(JobControl, id)).epoch;
-          const status = await jobState(tx, records, id, epoch, !!live.run || awaitingDelivery(records, id, epoch));
-          return { id: String(id), status: status.state, ...(status.detail && { detail: status.detail }),
-            recentSteps: await recentActivity(tx, id, ACTIVITY_STEPS) };
-        }, ctx);
-        return output(state);
-      }
-      if (args.action === "stop") {
-        if (id === undefined) return failure("A subagent id is required.");
-        await invalidate(api, [id], ctx);
-        await (await api.conversation(id, ctx))!.abort(ctx);
-        return output({ id: String(id), status: "stopped" });
-      }
-      if (!args.task?.trim()) return failure("Non-empty instructions are required.");
-      const agent = await api.agent(ctx);
-      const result = await api.commit(async tx => {
-        const source = await originOfToolCall(tx, api.callId, ctx);
-        let child = id;
-        let epoch = 0;
-        if (args.action === "send") {
-          if (child === undefined) throw new Error("send needs a subagent id.");
-          if ((await tx.doc(ItemContext, child)).binding) throw new Error("Item executions use a fixed prompt snapshot. Edit the item or start a new execution instead.");
-          epoch = (await tx.doc(JobControl, child)).epoch;
-        } else {
-          return spawn(tx, agent, args.task!, source);
-        }
-        await tx.createTask(Reporter, { child, message: args.task!, epoch, source },
-          { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
-        return child;
-      }, ctx);
-      return output({ id: String(result), status: "accepted" });
-  };
-  const id = Type.String({ pattern: "^[0-9]+$", description: "Job id from subagent_list or subagent_spawn; pass it without '#'." });
-  const task = Type.String({ minLength: 1, maxLength: 24000,
-    description: "Self-contained instructions with all context needed; the child does not inherit this chat's history." });
-  const tools = [
-    defineTool({ name: "subagent_list", replay: "unsafe",
-      description: "List ordinary subagents with ids, brief tasks and current states. Excludes work-item executions; no history or steps. Do not poll.",
-      parameters: Type.Object({}),
-      execute: (_args, api, ctx) => execute({ action: "list" }, api, ctx) }),
-    defineTool({ name: "subagent_spawn", replay: "unsafe",
-      description: "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately. Continue working; do not poll.",
-      parameters: Type.Object({ task }),
-      execute: (args, api, ctx) => execute({ action: "spawn", task: args.task }, api, ctx) }),
-    defineTool({ name: "subagent_send", replay: "unsafe",
-      description: "Send instructions to an existing subagent: steer when busy, continue when idle. Returns immediately. Not available for work-item executions.",
-      parameters: Type.Object({ id, message: Type.String({ minLength: 1, maxLength: 24000, description: "Instructions to add to the existing job." }) }),
-      execute: (args, api, ctx) => execute({ action: "send", id: args.id, task: args.message }, api, ctx) }),
-    defineTool({ name: "subagent_status", replay: "unsafe",
-      description: "Inspect a subagent's state and latest five steps on demand. Do not poll; results arrive automatically.",
-      parameters: Type.Object({ id }),
-      execute: (args, api, ctx) => execute({ action: "status", id: args.id }, api, ctx) }),
-    defineTool({ name: "subagent_stop", replay: "unsafe",
-      description: "Cancel a subagent's current work and pending private reports. Keeps its conversation; other jobs continue.",
-      parameters: Type.Object({ id }),
-      execute: (args, api, ctx) => execute({ action: "stop", id: args.id }, api, ctx) }),
-  ];
-  extension = defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter], tools });
-  return { extension, spawn,
+  return { extension: defineExtension({ name: "piko-subagents", tasks: [Anchor, Reporter] }), spawn,
+    async send(tx: Tx, child: ConversationId, message: string, source: InputSource) {
+      if ((await tx.doc(TaskContext, child)).binding) throw new Error("Task executions use a fixed prompt snapshot. Edit the task or start a new execution instead.");
+      const epoch = (await tx.doc(JobControl, child)).epoch;
+      await tx.createTask(Reporter, { child, message, epoch, source },
+        { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true });
+      return child;
+    },
     async source(tx: Tx, callId: string): Promise<InputSource> {
       return originOfToolCall(tx, callId, context);
     },
-    async stop(harness: Harness, ids: ConversationId[]) {
-      await invalidate(harness, ids, context);
-      for (const child of ids) await (await harness.conversation(child, context))!.abort(context);
+    async stop(api: Pick<ToolExecutionApi, "commit" | "conversation">, ids: ConversationId[], ctx = context) {
+      await invalidate(api, ids, ctx);
+      for (const child of ids) await (await api.conversation(child, ctx))!.abort(ctx);
     },
   };
 }
@@ -350,7 +263,7 @@ export async function prepareRestart(harness: Harness, userConversations: Conver
     for (const item of inspection.tasks) {
       if (item.record.kind === REPORTER_KIND && !preserved.includes(item.record.id)
         && item.record.state.status !== "terminal" && (item.record.state.checkpoint as ReporterState).phase === "deliver") {
-        const binding = (await tx.doc(ItemContext, (item.record.input as ReporterInput).child)).binding;
+        const binding = (await tx.doc(TaskContext, (item.record.input as ReporterInput).child)).binding;
         if (binding) binding.interrupted = true;
       }
     }

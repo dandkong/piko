@@ -44,7 +44,7 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
 
 - Telegram 默认关闭；enabled 和允许访问的 userId 仅由 JSON 管理。有 Token 不自动启用通道。
 - 两个网络工具默认启用。关闭时从主/子 Agent 的实际工具表移除；即使有搜索 Key，也不会反向启用被关闭的工具。正常运行时工具清单不列出已禁用工具。
-- 模型预设固定为 agent.profiles.main（主会话初始选择）和 agent.profiles.background（委派、定时任务、记忆整理等后台子 Agent），不接受其他名字，两者模型与思考级别启动时校验；可选 agent.stream 保留模型连接参数，没有环境覆盖入口。主会话当前选择另保存在 Durable Agent 文档中，profiles.main 不覆盖已有选择；省略 background 时后台继承主会话，省略 main 时新会话选第一个可用模型。
+- 模型预设固定为 agent.profiles.main（主会话初始选择）和 agent.profiles.background（后台工作、任务执行、记忆整理等后台子 Agent），不接受其他名字，两者模型与思考级别启动时校验；可选 agent.stream 保留模型连接参数，没有环境覆盖入口。主会话当前选择另保存在 Durable Agent 文档中，profiles.main 不覆盖已有选择；省略 background 时后台继承主会话，省略 main 时新会话选第一个可用模型。
 - 不再配置 retry/compaction，Piko 不覆盖 Durable 的默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
 - models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值。供应商凭据写 `providers.<id>.apiKey`（内联，格式与 Pi 一致），或放在 auth.json；`keyless` 与 `apiKey` 互斥，两者都不配置时供应商视为未配置。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
 

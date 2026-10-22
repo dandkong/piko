@@ -1,6 +1,6 @@
 # 旁聊
 
-状态：首版已实现；Web 与临时模拟模型验证通过，原生设备行为仍需验证。旁聊是用户直接使用的独立聊天，不是主聊天分支、事项或后台子 Agent。
+状态：首版已实现；Web 与临时模拟模型验证通过，原生设备行为仍需验证。旁聊是用户直接使用的独立聊天，不是主聊天分支、保存任务或后台工作。
 
 ## 产品范围
 
@@ -9,20 +9,20 @@
 - 每个旁聊有自己的历史、上下文、模型选择、输入去重、停止与压缩状态。新建时复制主会话当前模型/思考选择，之后独立，不增加新的配置角色位。
 - 不 fork 主会话，不继承其聊天记录，不自动回传、合并或推送主会话；Telegram 仍只接主会话。
 - 共享同一工作区和动态资源 section：AGENTS.md、MEMORY.md、技能及通用文件/命令/网络工具。记忆不是创建时的副本，后续请求会加载最新工作区记忆。
-- 不向旁聊提供 `work_item_*`、`subagent_*` 系列工具；不为旁聊启动记忆整理，也不将旁聊历史纳入主会话的每日/长期记忆增量。模型自动上下文压缩仍可正常工作，不是记忆提取。
-- 共享工具依然使用服务进程本机权限，不构成文件沙箱；不提供事项工具/自动记忆整理，不代表 write/edit/bash 无法触及对应文件。
+- 不向旁聊提供 `task_*`、`subagent_*` 系列工具；不为旁聊启动记忆整理，也不将旁聊历史纳入主会话的每日/长期记忆增量。模型自动上下文压缩仍可正常工作，不是记忆提取。
+- 共享工具依然使用服务进程本机权限，不构成文件沙箱；不提供任务管理工具/自动记忆整理，不代表 write/edit/bash 无法触及对应文件。
 - 归档会先停止该旁聊并撤回其未应用输入，再标记归档；历史和底层日志保留，拒绝新输入。客户端隐藏已归档旁聊，不提供已归档列表或恢复入口；归档当前旁聊后回到主聊天。原有 API 的恢复能力保留，但不对客户端提供入口。归档与提交共用该会话的接纳线，避免“归档后又接纳输入”的竞争。
 
 ## 运行时
 
-`server/runtime/pi.ts` 持有唯一 Storage/Harness/Registry，启动主会话专属的事项和记忆服务。`pi-session.ts` 仅绑定一个原生 Conversation，负责输入、停止、维护、历史投影及事件观察；会话控制器关闭不关闭 Harness。
+`server/runtime/pi.ts` 持有唯一 Storage/Harness/Registry，启动主会话专属的任务和记忆服务。`pi-session.ts` 仅绑定一个原生 Conversation，负责输入、停止、维护、历史投影及事件观察；会话控制器关闭不关闭 Harness。
 
 ```text
 PikoRuntime（唯一 Harness、JSONL、共享资源）
 ├── root → DurableChatSession → ConversationStore → App / Telegram
 ├── ownerless 旁聊 → DurableChatSession → ConversationStore → App
 ├── owned 后台子会话 → Anchor / Reporter → root
-└── 主会话专属事项与记忆整理服务
+└── 主会话专属任务与记忆整理服务
 ```
 
 旁聊使用原生 ownerless Conversation。`piko.side-chat` 是 conversation Doc，只保存 title、createdAt、archivedAt；`piko.side-chat-creates` 是 session Doc family，按创建 requestId 保存原生 ID 回执，创建和回执在同一个 commit。列表由原生 Conversation + 该标记投影，不混入 owned 子会话，也不建立独立 Thread、Run 或消息存储。
@@ -61,7 +61,7 @@ PikoRuntime（唯一 Harness、JSONL、共享资源）
 
 - 服务端/客户端类型检查；Web 导出到临时目录。
 - 创建请求去重；两旁聊与 root 共用 Harness，但历史、分页、同名 requestId 和停止互不干扰。
-- 同一份记忆与技能确实进入旁聊模型请求；无主会话上下文，无事项/委派工具。
+- 同一份记忆与技能确实进入旁聊模型请求；无主会话上下文，无任务管理/委派工具。
 - HTTP root/未知 ID 拒绝，归档期间停止、只读访问、拒绝输入和恢复。
 - 关闭重开后元数据、历史、工具范围保留，不自动调用模型。
 - 强杀独立验证进程后重开：旁聊遗留执行取消，未应用 steer 撤回，只在受影响旁聊显示中断，不重放模型、不误标记 root。

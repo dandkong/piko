@@ -22,7 +22,8 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/domain/ | 工作区初始化、路径校验与后端锁 |
 | server/runtime/ | pi.ts 持有唯一 Harness/服务；pi-session.ts 绑定单个 Conversation，处理输入/维护接纳、观察与历史；其余负责配置、内建工具、资源与后台工作 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
-| server/items/、server/domain/work-items.ts | 任务 HTTP 校验、时间规则与任务目录边界；原生文档与调度适配留在 runtime/work-items.ts |
+| server/tasks/、server/domain/tasks.ts | 任务 HTTP 校验、时间规则与目录边界；业务类型 AssistantTask，原生文档与调度留在 runtime/assistant-tasks.ts |
+| runtime/subagent-runtime.ts、subagent-tools.ts、task-tools.ts | 共用后台执行与独立模型工具入口；任务服务不依赖普通委派工具 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 
@@ -32,7 +33,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [定时任务](features/scheduled-work-items.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；旁聊使用独立 ownerless conversation，共享记忆/技能/通用工具，不继承主聊天上下文、不自动回传、不提取旁聊记忆、不开放事项/委派工具；见 [旁聊](features/side-chats.md)。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，移除嵌套委派和任务管理；任务执行在 items/<id> 下使用独立 cwd 和本任务记忆，见 [任务与执行记录](features/tasks.md)。每日/长期记忆由独立的内部 记忆整理 task 处理，不展示为 Tasks 任务；旁聊使用独立 ownerless conversation，共享记忆/技能/通用工具，不继承主聊天上下文、不自动回传、不提取旁聊记忆、不开放任务管理/委派工具；见 [旁聊](features/side-chats.md)。详见 [后台子 Agent](features/background-subagents.md) 和 [记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
 
 默认目录在后端机器 ~/.piko，独立于源码。server/config.ts 严格按字段分工：JSON 管非敏感应用/Agent/工具行为；环境管理部署参数和凭据，没有同一字段的双入口。仅环境体系内部 config/.env < 进程环境，PIKO_HOME 由进程定位；放错位置报错。模型文件独立，不继承个人 Pi CLI，见 [应用配置](features/application-config.md)。
 
@@ -89,7 +90,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
-| piko.work-items / piko.item-command / piko.item-context | 原生文档保存任务定义、时间游标、管理请求回执与子会话归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
+| piko.work-items / piko.item-command / piko.item-context | 固定持久化身份不随 AssistantTask 符号改名；保存定义、游标、回执与归属，状态从原生 Reporter/submission/LiveDoc 投影，不是新旧兼容层 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称/创建/归档元数据与创建请求回执，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
@@ -134,10 +135,10 @@ SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再�
 
 ## Telegram 通道
 
-TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。普通子 Agent 只回复来源通道（RN 来源不推 TG）；定时任务结果推送到所有通道。App 是聚合视图，始终能看到全部记录。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
+TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。普通子 Agent 只回复来源通道（RN 来源不推 TG）；保存任务的执行结果推送到所有通道。App 是聚合视图，始终能看到全部记录。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
 
 RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每条助手消息有独立 Rich Markdown 消息，条内流式编辑；补充输入不重发旧回复。TG 加入 RN 正在执行的工作只观察未完成及后续消息，纯 RN 工作默认不推送 TG。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
 
 ## 后续方向（未实现）
 
-任务调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [定时任务](features/scheduled-work-items.md)。旁聊首版已接入，见 [旁聊](features/side-chats.md)；独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。
+任务调度与 Tasks 首版已接入：一个 Prompt、一条可选时间规则、一个目录，结果交回主 Agent；详见 [任务与执行记录](features/tasks.md)。旁聊首版已接入，见 [旁聊](features/side-chats.md)；独立通知、权限与可靠 outbox 尚未实现。结构化项目状态优先复用原生 defineDoc，后台工作复用 task、conversation 和 write/input submission；先确定停止范围、上下文共享和恢复授权，不再引入重复执行状态或正文存储。

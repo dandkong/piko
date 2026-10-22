@@ -2,8 +2,8 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../domain/workspace";
-import { ItemFiles } from "../domain/work-items";
-import { ItemContext } from "./item-context";
+import { TaskFiles } from "../domain/tasks";
+import { TaskContext } from "./task-context";
 
 export type WorkspaceSkill = { name: string; description: string; path: string; disableModelInvocation: boolean };
 type GuidanceRole = "core" | "work_guidance" | "memory";
@@ -88,10 +88,10 @@ export function createWorkspaceResources(paths: WorkspacePaths) {
       return `Current date: ${date}
 Time zone: ${timeZone}`;
     }),
-    section("item_memory", async (input, context) => {
-      const binding = (await input.read.snapshot(ItemContext, input.conversationId, context))?.binding;
+    section("task_memory", async (input, context) => {
+      const binding = (await input.read.snapshot(TaskContext, input.conversationId, context))?.binding;
       if (!binding) return undefined;
-      return `<instructions_file role="memory" path="${escape(new ItemFiles(paths.workspace).directory(binding.itemId))}/MEMORY.md">\n${await new ItemFiles(paths.workspace).memory(binding.itemId)}\n</instructions_file>`;
+      return `<instructions_file role="memory" path="${escape(new TaskFiles(paths.workspace).directory(binding.itemId))}/MEMORY.md">\n${await new TaskFiles(paths.workspace).memory(binding.itemId)}\n</instructions_file>`;
     }),
     section("workspace_resources", async (_input, context) => {
       const resources = await loadWorkspaceResources(paths, context.abortSignal);

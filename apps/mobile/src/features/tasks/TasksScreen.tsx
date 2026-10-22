@@ -1,37 +1,37 @@
-import { Check, ChevronDown, ChevronUp } from "lucide-react-native";
+import { Archive, ArchiveRestore, ChevronDown, ChevronUp } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
-import type { ItemExecution, WorkItem, WorkItemCommand, WorkItemDetail } from "../../../../../shared/work-items";
+import type { TaskExecution, AssistantTask, AssistantTaskCommand, AssistantTaskDetail } from "../../../../../shared/tasks";
 import { colors } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { AssistantMessage } from "../chat/AssistantMessage";
-import { loadExecution, loadItem, loadItems, sendCommand } from "./api";
+import { loadExecution, loadTask, loadTasks, sendCommand } from "./api";
 
-type Command = WorkItemCommand extends infer T ? T extends WorkItemCommand ? Omit<T, "requestId"> : never : never;
-type FinishedExecution = ItemExecution & { status: Exclude<ItemExecution["status"], "running"> };
-const isFinished = (run: ItemExecution): run is FinishedExecution => run.status !== "running";
+type Command = AssistantTaskCommand extends infer T ? T extends AssistantTaskCommand ? Omit<T, "requestId"> : never : never;
+type FinishedExecution = TaskExecution & { status: Exclude<TaskExecution["status"], "running"> };
+const isFinished = (run: TaskExecution): run is FinishedExecution => run.status !== "running";
 const dayTime = (value: number | string) => new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const statusNames: Record<FinishedExecution["status"], string> = { completed: "已完成", failed: "失败", stopped: "已停止", interrupted: "已中断" };
-const scheduleLabel = (item: WorkItem) => item.scheduleText ?? (!item.schedule ? "手动" : item.schedule.type === "once" ? dayTime(item.schedule.at) : "定期");
+const scheduleLabel = (task: AssistantTask) => task.scheduleText;
 
 /** The assistant's standing commitments: the task list stays lean, and detail shows finished records. */
 export function TasksScreen({ topInset, bottomInset }: { topInset: number; bottomInset: number }) {
-  const [items, setItems] = useState<WorkItem[]>([]);
+  const [tasks, setTasks] = useState<AssistantTask[]>([]);
   const [selected, setSelected] = useState<string>();
-  const [detail, setDetail] = useState<WorkItemDetail>();
+  const [detail, setDetail] = useState<AssistantTaskDetail>();
   const [open, setOpen] = useState<string>();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
-  const [openSections, setOpenSections] = useState({ active: true, completed: false });
+  const [openSections, setOpenSections] = useState({ active: true, archived: false });
   const mounted = useRef(true);
   const sending = useRef(false);
-  const pending = useRef<{ signature: string; command: WorkItemCommand } | undefined>(undefined);
+  const pending = useRef<{ signature: string; command: AssistantTaskCommand } | undefined>(undefined);
   const selection = useRef(selected);
   selection.current = selected;
 
@@ -40,9 +40,9 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     let active = true; const controller = new AbortController();
     void (async () => {
       try {
-        const [list, current] = await Promise.all([loadItems(controller.signal), selected ? loadItem(selected, controller.signal) : undefined]);
+        const [list, current] = await Promise.all([loadTasks(controller.signal), selected ? loadTask(selected, controller.signal) : undefined]);
         if (!active) return;
-        setItems(list.items);
+        setTasks(list.tasks);
         setDetail(current);
         setError("");
       } catch { if (active) setError("暂时加载不了任务。"); }
@@ -55,16 +55,16 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     return () => listener.remove();
   }, []);
 
-  const openItem = (id?: string) => { setSelected(id); setDetail(undefined); setOpen(undefined); setError(""); setLoading(Boolean(id)); };
-  const showAnswer = useCallback(async (execution: ItemExecution) => {
-    const item = selection.current;
-    if (!item || answers[execution.id] !== undefined) return;
+  const openTask = (id?: string) => { setSelected(id); setDetail(undefined); setOpen(undefined); setError(""); setLoading(Boolean(id)); };
+  const showAnswer = useCallback(async (execution: TaskExecution) => {
+    const selectedTask = selection.current;
+    if (!selectedTask || answers[execution.id] !== undefined) return;
     try {
-      const result = await loadExecution(item, execution.id);
-      if (selection.current === item) setAnswers(previous => ({ ...previous, [execution.id]: result.answer }));
-    } catch { if (selection.current === item) setError("暂时加载不了这次记录。"); }
+      const result = await loadExecution(selectedTask, execution.id);
+      if (selection.current === selectedTask) setAnswers(previous => ({ ...previous, [execution.id]: result.answer }));
+    } catch { if (selection.current === selectedTask) setError("暂时加载不了这次运行结果。"); }
   }, [answers]);
-  const toggle = (execution: ItemExecution) => {
+  const toggle = (execution: TaskExecution) => {
     const next = open === execution.id ? undefined : execution.id;
     setOpen(next);
     if (next) void showAnswer(execution);
@@ -74,7 +74,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     if (sending.current) return;
     sending.current = true; setBusy(true); setError("");
     const signature = JSON.stringify(body);
-    if (pending.current?.signature !== signature) pending.current = { signature, command: { ...body, requestId: randomUUID() } as WorkItemCommand };
+    if (pending.current?.signature !== signature) pending.current = { signature, command: { ...body, requestId: randomUUID() } as AssistantTaskCommand };
     try {
       await sendCommand(pending.current.command);
       if (!mounted.current) return;
@@ -83,39 +83,39 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
     } catch { if (mounted.current) setError("操作没有成功，请稍后再试。"); }
     finally { sending.current = false; if (mounted.current) setBusy(false); }
   };
-  const toggleDone = (entry: WorkItem) => {
+  const toggleArchive = (entry: AssistantTask) => {
     void send({ action: "status", id: entry.id, status: entry.status === "archived" ? "active" : "archived" });
   };
-  const toggleSection = (section: "active" | "completed") => {
+  const toggleSection = (section: "active" | "archived") => {
     setOpenSections(value => ({ ...value, [section]: !value[section] }));
   };
 
-  const item = detail?.item;
-  const activeItems = items.filter(value => value.status === "active");
-  const completedItems = items.filter(value => value.status === "archived");
+  const currentTask = detail?.task;
+  const activeTasks = tasks.filter(value => value.status === "active");
+  const archivedTasks = tasks.filter(value => value.status === "archived");
   const records = detail?.executions.filter(isFinished) ?? [];
-  const renderItem = (value: WorkItem) => {
-    const completed = value.status === "archived";
+  const renderTask = (value: AssistantTask) => {
+    const archived = value.status === "archived";
     return <ScreenCard key={value.id} style={styles.row}>
       <TactilePressable
-        accessibilityLabel={completed ? "标记为未完成" : "标记为已完成"}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: completed }}
+        accessibilityLabel={archived ? "恢复任务" : "归档任务"}
+        accessibilityHint={archived ? "恢复任务和未来调度，不立即执行" : "停止未来调度，保留任务和执行记录"}
+        accessibilityRole="button"
         disabled={busy || value.latest?.status === "running"}
         hitSlop={11}
-        onPress={() => toggleDone(value)}
+        onPress={() => toggleArchive(value)}
         scaleTo={0.9}
-        selected={completed}
-        style={styles.checkHit}
-        faceStyle={[styles.check, completed && styles.checkSelected]}
+        style={styles.archiveHit}
+        faceStyle={styles.archiveControl}
         variant="plain"
       >
-        {completed && <Check size={14} strokeWidth={2.5} color={colors.text} />}
+        {archived ? <ArchiveRestore size={18} strokeWidth={1.8} color={colors.muted} />
+          : <Archive size={18} strokeWidth={1.8} color={colors.muted} />}
       </TactilePressable>
       <TactilePressable
         accessibilityRole="button"
         disabled={busy}
-        onPress={() => openItem(value.id)}
+        onPress={() => openTask(value.id)}
         scaleTo={1}
         style={styles.cardBodyHit}
         faceStyle={styles.cardBody}
@@ -126,7 +126,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
       </TactilePressable>
     </ScreenCard>;
   };
-  const renderSection = (key: "active" | "completed", label: string, values: WorkItem[]) => {
+  const renderSection = (key: "active" | "archived", label: string, values: AssistantTask[]) => {
     const expanded = openSections[key];
     return <View key={key} style={styles.sectionGroup}>
       <TactilePressable
@@ -143,29 +143,30 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
         <Text style={styles.section}>{label}</Text>
         {expanded ? <ChevronDown size={16} color={colors.muted} /> : <ChevronUp size={16} color={colors.muted} />}
       </TactilePressable>
-      {expanded && !!values.length && <View style={styles.sectionItems}>{values.map(renderItem)}</View>}
+      {expanded && !!values.length && <View style={styles.sectionTasks}>{values.map(renderTask)}</View>}
     </View>;
   };
 
   return <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
-    <ScreenHeader title={item?.title ?? "任务"} action={selected
-      ? <TextButton label="返回" onPress={() => openItem()}><Text style={styles.backText}>返回</Text></TextButton>
+    <ScreenHeader title={currentTask?.title ?? "任务"} action={selected
+      ? <TextButton label="返回" onPress={() => openTask()}><Text style={styles.backText}>返回</Text></TextButton>
       : undefined} />
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {loading && <ActivityIndicator accessibilityLabel="正在加载" color={colors.blueDark} />}
 
     {!selected && !loading && <>
-      {renderSection("active", "进行中", activeItems)}
-      {renderSection("completed", "已完成", completedItems)}
-      {!activeItems.length && !completedItems.length && <Text style={styles.empty}>还没有任务。在聊天里告诉 Piko 你想让它做什么。</Text>}
+      {renderSection("active", "进行中", activeTasks)}
+      {renderSection("archived", "已归档", archivedTasks)}
+      {!activeTasks.length && !archivedTasks.length && <Text style={styles.empty}>还没有任务。在聊天里告诉 Piko 你想让它做什么。</Text>}
     </>}
 
-    {item && <>
+    {currentTask && <>
       <ScreenCard>
-        <Text style={styles.body}>{item.prompt}</Text>
-        <Text style={styles.meta}>{scheduleLabel(item)}</Text>
+        <Text style={styles.body}>{currentTask.prompt}</Text>
+        <Text style={styles.meta}>{scheduleLabel(currentTask)}</Text>
       </ScreenCard>
 
+      {!!records.length && <Text style={styles.section}>执行记录</Text>}
       {!!records.length && <View style={styles.timeline}>
         {records.map((run, index) => {
           const expanded = open === run.id;
@@ -193,7 +194,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
             <View style={[styles.timelineBody, index === records.length - 1 && styles.timelineBodyLast]}>
               {expandable
                 ? <TactilePressable
-                  accessibilityHint={expanded ? "收起记录" : "展开记录"}
+                  accessibilityHint={expanded ? "收起运行结果" : "展开运行结果"}
                   accessibilityRole="button"
                   accessibilityState={{ expanded }}
                   onPress={() => toggle(run)}
@@ -207,7 +208,7 @@ export function TasksScreen({ topInset, bottomInset }: { topInset: number; botto
           </View>;
         })}
       </View>}
-      {!records.length && <Text style={styles.empty}>还没有记录。</Text>}
+      {!records.length && <Text style={styles.empty}>还没有执行记录。</Text>}
     </>}
   </Screen>;
 }
@@ -228,11 +229,10 @@ const styles = StyleSheet.create({
   chevronOpen: { transform: [{ rotate: "180deg" }] },
   cardBodyHit: { flex: 1 },
   cardBody: { alignItems: "stretch", justifyContent: "flex-start", gap: 8, padding: 4, margin: -4, borderRadius: 12 },
-  checkHit: { width: 22, height: 22, marginTop: 2 },
-  check: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: "#C4C9CC", alignItems: "center", justifyContent: "center" },
-  checkSelected: { borderColor: colors.muted },
+  archiveHit: { width: 22, height: 22, marginTop: 2 },
+  archiveControl: { width: 22, height: 22, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   sectionGroup: { gap: 12 },
-  sectionItems: { gap: 12 },
+  sectionTasks: { gap: 12 },
   sectionHit: { width: "100%" },
   sectionHeader: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, borderRadius: 12 },
   section: { fontSize: 13, fontWeight: "500", color: colors.muted },

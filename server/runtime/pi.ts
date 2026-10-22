@@ -9,11 +9,13 @@ import type { ChatRuntime } from "./types";
 import { RuntimeBusyError } from "./types";
 import { DurableChatSession, Recovery } from "./pi-session";
 import { sessionDirectory } from "./pi-context";
-import { createSubagents, prepareRestart, subagentIds } from "./subagents";
+import { createSubagentRuntime, prepareRestart, subagentIds } from "./subagent-runtime";
+import { createSubagentTools } from "./subagent-tools";
 import { childScope } from "./background";
-import { createWorkItemTools, DurableWorkItems } from "./work-items";
-import { ItemContext } from "./item-context";
-import { ItemFiles } from "../domain/work-items";
+import { DurableAssistantTasks } from "./assistant-tasks";
+import { createTaskTools } from "./task-tools";
+import { TaskContext } from "./task-context";
+import { TaskFiles } from "../domain/tasks";
 import { createWorkspaceResources } from "./resources";
 import { runtimePaths } from "./config/paths";
 import { loadWorkspaceModels, requireAvailableModel, availableBackground, configuredBackground, type WorkspaceModelConfig } from "./model-config";
@@ -35,7 +37,7 @@ class PikoRuntime {
   private config!: WorkspaceModelConfig;
   private registry!: Registry;
   private searchConfigured = false;
-  private items!: DurableWorkItems;
+  private tasks!: DurableAssistantTasks;
   private memory?: MemoryCurationService;
   private main!: DurableChatSession;
   private readonly sessions = new Map<ConversationId, Promise<DurableChatSession>>();
@@ -49,7 +51,7 @@ class PikoRuntime {
     const config = this.config = await loadWorkspaceModels({ home: this.paths.home, settings, env, models: this.models });
     const coding = await createPikoCodingTools();
     const background = () => availableBackground(config.models, config.background);
-    const children = createSubagents({ storage: () => this.storage,
+    const children = createSubagentRuntime({ storage: () => this.storage,
       canReport: () => !this.closing && !!this.main?.canReport,
       background, onReply: reply => this.main.backgroundReply(reply) });
     const memory = createMemoryCurationExtension({ workspace: this.paths.workspace,
@@ -57,8 +59,8 @@ class PikoRuntime {
     const web = createWebTools(env, { settings: settings.tools });
     this.searchConfigured = web.searchConfigured;
     const registry = this.registry = createRegistry();
-    for (const extension of [coding, createWorkspaceResources(this.paths), web.extension, children.extension,
-      createWorkItemTools(() => this.items), memory.extension]) registry.install(extension);
+    for (const extension of [coding, createWorkspaceResources(this.paths), web.extension, children.extension, createSubagentTools(children),
+      createTaskTools(() => this.tasks), memory.extension]) registry.install(extension);
     const directory = sessionDirectory(runtimePaths(this.paths.home).sessions);
     const persisted = existsSync(join(directory, "main.jsonl"));
     const storage = this.storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
@@ -96,10 +98,10 @@ class PikoRuntime {
         const scope = childScope(rootAgent);
         const selection = configuredBackground(config.background);
         for (const id of await subagentIds(tx)) {
-          const binding = (await tx.doc(ItemContext, id)).binding;
+          const binding = (await tx.doc(TaskContext, id)).binding;
           await configure(tx, id, { ...(selection ? { model: { provider: selection.provider, modelId: selection.modelId }, thinkingLevel: selection.thinkingLevel }
             : { model: rootAgent.model, thinkingLevel: rootAgent.thinkingLevel }),
-            cwd: binding ? new ItemFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd, ...scope });
+            cwd: binding ? new TaskFiles(this.paths.workspace).directory(binding.itemId) : rootAgent.cwd, ...scope });
         }
         // Refresh tool/extension availability without resetting a side chat's chosen model or history.
         for (const chat of chats) await configure(tx, Number(chat.id) as ConversationId, { cwd: this.paths.workspace, ...scope });
@@ -109,7 +111,7 @@ class PikoRuntime {
         }
       }, ctx);
       this.main = await this.session();
-      this.items = new DurableWorkItems(harness, this.paths.workspace, children, async () => {
+      this.tasks = new DurableAssistantTasks(harness, this.paths.workspace, children, async () => {
         if (this.closing) throw new Error("Piko is shutting down.");
         if (!this.main.canReport) throw new RuntimeBusyError();
         await this.main.ensureReady();
@@ -117,7 +119,7 @@ class PikoRuntime {
       this.memory = new MemoryCurationService(harness, memory.task, () => this.main.bindings);
       this.main.attachMemory(this.memory);
       harness.resume();
-      this.items.start();
+      this.tasks.start();
       await this.memory.start();
     } catch (error) { await this.close(); throw error; }
   }
@@ -148,7 +150,7 @@ class PikoRuntime {
     const { id } = await this.harness.commit(tx => requireSideChat(tx, value), ctx);
     return this.session(id);
   }
-  workItems() { return this.items; }
+  tasksService() { return this.tasks; }
   async list() { return this.harness.commit(tx => sideChats(tx), ctx); }
   async create(requestId: string, title: string): Promise<SideChat> {
     const rootAgent = await this.main.native.agent(ctx);
@@ -162,7 +164,7 @@ class PikoRuntime {
       const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
       await configure(tx, created.id, { cwd: this.paths.workspace, model: rootAgent.model,
         thinkingLevel: rootAgent.thinkingLevel, ...childScope(rootAgent),
-        instructions: "This is an independent side chat. Share workspace guidance, memory and skills, but not the main chat transcript. Do not curate global memory automatically or manage work items or delegate. Do not send results to the main chat. Shared workspace tools are not a sandbox." });
+        instructions: "This is an independent side chat. Share workspace guidance, memory and skills, but not the main chat transcript. Do not curate global memory automatically or manage saved tasks or delegate. Do not send results to the main chat. Shared workspace tools are not a sandbox." });
       const metadata = await tx.doc(SideChatDoc, created.id);
       metadata.title = validTitle(title); metadata.createdAt = Date.now();
       request.conversationId = Number(created.id);
@@ -187,7 +189,7 @@ class PikoRuntime {
     this.closed = (async () => {
       this.memory?.close();
       try {
-        await this.items?.close();
+        await this.tasks?.close();
         await Promise.allSettled([...this.sessions.values()].map(async value => (await value).dispose()));
       } finally { await this.harness?.close(ctx); }
     })();
@@ -213,7 +215,7 @@ export function createPiRuntime(paths: WorkspacePaths, options: { models?: Model
     return id === undefined ? runtime.session() : runtime.sideSession(id);
   };
   return {
-    workItems: async () => (await get()).workItems(),
+    tasks: async () => (await get()).tasksService(),
     sideChats: { list: async () => (await get()).list(), create: async (requestId, title) => (await get()).create(requestId, title),
       update: async (id, change) => (await get()).update(id, change) },
     isModelReady: async () => (await session()).modelReady(),

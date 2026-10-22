@@ -21,13 +21,19 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 客户端交互采用统一的“轻触”规范：导航选中用浅灰、提交/创建用浅蓝，同一区域最多一个主操作；按钮共享尺寸、状态矩阵和动效，不使用水波纹或弹跳。具体规则与组件见 [交互与视觉规范](docs/INTERACTION.md)，后续设计不得另起一套按钮样式。
 - 主会话是默认且持续的交流入口；不先建设传统多会话切换界面。一级模块只保留 Chat（主聊天）、Tasks（任务）、Posts（主动帖子）、Artifacts（产物），不建设 Ideas。聊天列表铺满可用屏幕，头部、输入框与导航悬浮；上下使用同一浅色渐隐样式但独立控制覆盖范围；头部覆盖实测内容并向下延伸 12px，底部覆盖输入框/导航并在输入框上方延伸 32px。渐隐只负责视觉，列表首尾根据头像胶囊底边和输入框顶边实测，并与消息间距统一为 13px；头像不加底板，名字与状态保留上下结构并包在自适应胶囊内，正常空闲隐藏状态。
 - 后台子 Agent 已接入同一 Harness 的 owned conversation：共用配置、全局工作区资源和基本工具，移除嵌套委派与任务管理；一次任务新建一个持久化子会话，不 fork 主聊天历史，额外背景写入委派任务；可信内部 follow-up 回传，不增加展示；普通停止保留后台工作，重启中断不确定执行，仅恢复已完成结果的回传。见 [后台子 Agent](docs/features/background-subagents.md)。
-- 定时任务已接入：一个任务对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载任务记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 按进行中/已完成分组展示任务与结果时间线，完成状态可在页面切换；创建、执行与恢复在对话里完成，归档即完成，不设第三状态。定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [定时任务](docs/features/scheduled-work-items.md)。
-- 旁聊已接入同一 Harness 的 ownerless conversation，支持一键默认名新建/列表/切换、三点菜单重命名/归档、独立历史和停止；顶部头像名字固定 Piko，归档后隐藏，不提供已归档或恢复入口；共享工作区记忆/技能/通用工具，不继承主会话上下文、不自动回传、不提取旁聊记忆、不提供事项或委派工具。Harness 生命周期与每个聊天控制器分离；Telegram 仍只使用 root。见 [旁聊](docs/features/side-chats.md)。
+- 持久化任务已接入：一个任务对应一个 Prompt、可选 once/Cron 和固定 items/<id> 目录；每次创建新子会话，加载任务记忆、保存独立输出，结果同普通子 Agent 私下回传主 Agent。Tasks 按进行中/已归档分组展示任务与执行记录，页面可归档/恢复；创建、编辑、执行和停止在对话里完成。归档停止未来触发，单次执行成功才称完成，不设第三种任务状态。定义/游标用原生 doc，执行状态仍从原生 task/submission 投影，不建立 Run 表。见 [任务与执行记录](docs/features/tasks.md)。
+- 旁聊已接入同一 Harness 的 ownerless conversation，支持一键默认名新建/列表/切换、三点菜单重命名/归档、独立历史和停止；顶部头像名字固定 Piko，归档后隐藏，不提供已归档或恢复入口；共享工作区记忆/技能/通用工具，不继承主会话上下文、不自动回传、不提取旁聊记忆、不提供任务管理或委派工具。Harness 生命周期与每个聊天控制器分离；Telegram 仍只使用 root。见 [旁聊](docs/features/side-chats.md)。
 - 助手拥有长期工作区，独立于源码仓库，位于后端机器；会话关联工作区。
 - 用户技能采用工作区 `.agents/skills/<name>/SKILL.md`；指导和技能索引通过 durable 资源 section 加载，上下文压缩由 durable 处理。`PIKO_HOME/skills` 不创建也不读取。
 - 内建指导和技能随应用发布；用户指导、记忆和技能属于工作区。初始化不覆盖已有用户文件，升级不覆盖用户定制。
 - 工作区保存三类长期内容：AGENTS.md 管助手身份、表达和做事约定，MEMORY.md 管用户资料、环境事实与长期结论，`memory/YYYY-MM-DD.md` 记录每日记忆（讨论、决定、进展与未完线索，不自动注入，按需 read/search）。主会话闲置后由后台记忆整理 增量维护两类记忆；应用内建 core 管运行规则与工具结果真实性。加载时标注角色和来源，角色不是权限隔离；细则见 [资源与工具](docs/features/workspace-and-main-chat.md#资源与工具)。
 - Durable 原生 JSONL 是会话内容的唯一来源；UI 从所选 conversation 的完整原始 entries 投影，不能用压缩后的模型上下文代替展示历史。Piko 管理配置、通道与传输；执行状态、提交去重和 inbox 由 Durable 管理，不建立 Run 或身份表。
+
+## 名称约定
+
+- 产品称“任务”“后台工作”“执行记录/运行结果”，不以“事项”或“子 Agent”要求用户理解实现；代码保留 `subagent` 技术名。
+- 业务类型为 `AssistantTask` / `AssistantTaskDraft`、`TaskSchedule` / `TaskExecution`，与 Durable 原生 `TaskId` / `TaskRecord` 区分；工具为 `task_*` 与 `subagent_*`，HTTP 为 `/api/tasks`，不保留旧入口别名。
+- `subagent-runtime.ts` 承载两类工作共用执行，`subagent-tools.ts` / `task-tools.ts` 只提供工具入口，`assistant-tasks.ts` 管任务服务。固定持久化 doc 身份、绑定字段与 `items/<id>` 目录不随业务符号改名，不新增兼容层或执行状态副本。
 
 ## 代码边界
 

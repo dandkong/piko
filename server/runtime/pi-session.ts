@@ -352,7 +352,7 @@ export class DurableChatSession implements ChatSession {
   }
   async modelReady() { return (await this.config.models.getAvailable()).length > 0; }
 
-  /** One gate for input, work items and maintenance: a stored model with usable credentials. */
+  /** One gate for input, saved tasks and maintenance: a stored model with usable credentials. */
   private async requireCurrentAgent() {
     const agent = await this.conversation.agent(ctx);
     if (!agent.model) throw new Error("No model is configured. Add its credentials, then choose a model in PIKO_HOME/config/piko.json under agent.profiles.");

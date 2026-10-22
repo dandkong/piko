@@ -1,7 +1,7 @@
 import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
 import type { ConversationResponse, HistoryPage, SubmissionReceipt, StreamEvent } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
-import type { ItemExecutionDetail, WorkItem, WorkItemCommand, WorkItemDetail, WorkItemReceipt } from "../../shared/work-items";
+import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
 export type SessionEvent = StreamEvent | CompactionEvent;
 /** A native compaction task was admitted; its lifecycle observer owns the terminal notification. */
 export class CompactionExecutionError extends Error {}
@@ -22,14 +22,14 @@ export interface ChatSession {
   abort(commandId?: string): Promise<boolean>;
   dispose(): Promise<void>;
 }
-export interface WorkItemsRuntime {
-  list(): Promise<WorkItem[]>;
-  detail(id: string, before?: string): Promise<WorkItemDetail>;
-  command(command: WorkItemCommand, source?: InputSource): Promise<WorkItemReceipt>;
-  result(id: string, executionId: string): Promise<ItemExecutionDetail>;
+export interface AssistantTasksRuntime {
+  list(): Promise<AssistantTask[]>;
+  detail(id: string, before?: string): Promise<AssistantTaskDetail>;
+  command(command: AssistantTaskCommand, source?: InputSource): Promise<AssistantTaskReceipt>;
+  result(id: string, executionId: string): Promise<TaskExecutionDetail>;
 }
 export interface ChatRuntime {
-  workItems(): Promise<WorkItemsRuntime>;
+  tasks(): Promise<AssistantTasksRuntime>;
   isModelReady(): Promise<boolean>;
   sideChats: {
     list(): Promise<SideChat[]>;

@@ -3,7 +3,7 @@ import type { CompactionEvent } from "../../../shared/runtime";
 import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
-import { toolIcon } from "../../runtime/tool-activity";
+import { toolDisplayName, toolIcon } from "../../runtime/tool-activity";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
@@ -125,7 +125,7 @@ export class TelegramChannel {
     if (event.type === "tool-clear") { await this.deleteToolMessages(); return; }
     if (!this.accepting || event.activity.status !== "running") return;
     const { name, summary } = event.activity;
-    const messageId = await this.api.send(this.identity.userId, `${toolIcon(name)} ${name}${summary ? `: ${summary}` : ""}`, false);
+    const messageId = await this.api.send(this.identity.userId, `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`, false);
     this.toolMessages.set(event.activity.callId, messageId);
   }
 

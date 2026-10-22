@@ -53,7 +53,7 @@ BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 }
 ```
 
-`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话（以及尚无模型保存的旧会话）的初始选择；`background` 供后台子 Agent 使用，普通委派、定时任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。已有主会话的选择保存在 Durable Agent 文档中，重启后仍是上次切换的结果，改 JSON 不会覆盖它。
+`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话（以及尚无模型保存的旧会话）的初始选择；`background` 供后台子 Agent 使用，普通后台工作、任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。已有主会话的选择保存在 Durable Agent 文档中，重启后仍是上次切换的结果，改 JSON 不会覆盖它。
 
 上述 ID 来自锁定的 pi-ai 1.3.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
 
@@ -180,7 +180,7 @@ Piko 应用内建 core.md 提供运行规则；工作区只使用 AGENTS.md（�
 
 Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；`/api/runtime` 只报告 Piko 内建工具及其配置状态。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
 
-Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。定时任务复用普通子 Agent 回传，详见 [定时任务](scheduled-work-items.md)。主会话另有内部 记忆整理 Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一次整理中可能有多个模型/工具轮次。游标、活动 整理 task 与重试状态由 Durable 文档保存，不增加任务/UI、SQL 或独立历史副本；只由后台闲置调度触发，不提供手动触发工具。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆整理)。
+Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。保存任务的执行复用普通子 Agent 回传，详见 [任务与执行记录](tasks.md)。主会话另有内部 记忆整理 Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一次整理中可能有多个模型/工具轮次。游标、活动 整理 task 与重试状态由 Durable 文档保存，不增加任务/UI、SQL 或独立历史副本；只由后台闲置调度触发，不提供手动触发工具。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆整理)。
 
 ## 边界
 

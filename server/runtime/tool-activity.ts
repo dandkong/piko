@@ -15,7 +15,7 @@ function pick(args: Record<string, unknown>, key: string): string | undefined {
 /** Emoji per built-in tool; unknown tools get a generic wrench. */
 export function toolIcon(name: string): string {
   if (name.startsWith("subagent_")) return "🤖";
-  if (name.startsWith("work_item_")) return "🗓️";
+  if (name.startsWith("task_")) return "🗓️";
   switch (name) {
     case "read": return "📖";
     case "write": return "📄";
@@ -25,6 +25,18 @@ export function toolIcon(name: string): string {
     case "web_extract": return "🌐";
     default: return "🛠️";
   }
+}
+
+/** Business-friendly labels are presentation only; unknown tools keep their native name. */
+export function toolDisplayName(name: string): string {
+  const separator = name.indexOf("_");
+  const family = name.slice(0, separator);
+  const action = name.slice(separator + 1);
+  const labels: Record<string, Record<string, string>> = {
+    subagent: { list: "List background work", spawn: "Delegate work", send: "Send instructions", status: "Check background work", stop: "Stop background work" },
+    task: { list: "List tasks", get: "Read task", create: "Create task", update: "Update task", run: "Run task", stop: "Stop task execution", archive: "Archive task", restore: "Restore task" },
+  };
+  return labels[family]?.[action] ?? name;
 }
 
 /** What the call is about, derived from arguments; never includes file contents. */
@@ -49,7 +61,7 @@ function summarize(toolName: string, record: Record<string, unknown>): string {
     const task = singleLine(pick(record, "task") ?? pick(record, "message"), 70);
     return [id && `#${id}`, task].filter(Boolean).join(" ");
   }
-  if (toolName.startsWith("work_item_")) {
+  if (toolName.startsWith("task_")) {
     const id = pick(record, "id");
     const detail = singleLine(pick(record, "title") ?? pick(record, "prompt"), 70);
     return [id && `#${id.slice(0, 8)}`, detail].filter(Boolean).join(" ");
