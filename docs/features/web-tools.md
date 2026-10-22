@@ -27,7 +27,7 @@ BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
 
 启用开关只在 piko.json 的 tools.web_search.enabled / tools.web_extract.enabled，默认均为 true，不接受对应环境开关；禁用后从实际 Agent 工具表移除，有 Key 不会自动启用被关闭的工具。Key 只属环境配置，JSON 不接 apiKey。配置在启动捕获，修改需重启。
 
-没有 Key 时后端仍能启动、提取网页和使用其他工具；`web_search` 返回安全的未配置错误，系统 section 提醒模型不可声称搜索成功。`GET /api/runtime` 的 tools 字段列出内建工具名称与 status（available/unconfigured），不返回供应商或凭据。available 表示已注册且必要配置存在，不是联网健康检查。
+没有 Key 时后端仍能启动、提取网页和使用其他工具；`web_search` 返回安全的未配置错误，系统 section 提醒模型不可声称搜索成功。内部运行时描述的 tools 字段列出内建工具名称与 status（available/unconfigured），供 TG 状态等使用，不另设 HTTP 查询入口或返回凭据。available 表示已注册且必要配置存在，不是联网健康检查。
 
 ## 来源与代码边界
 

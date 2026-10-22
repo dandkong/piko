@@ -70,13 +70,13 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 模型、资源与内建扩展
 
-模型凭据通过 StoredCredentialStore 从 config/auth.json 加载/刷新并原子持久化，其次使用 models.json 的 provider apiKey；不回退进程环境变量。通道、工具和显式 headersEnv 仍从后端环境读取。model-config.ts 负责加载和角色校验，model-provider.ts 负责供应商目录、请求选项和 stream 适配。自定义 JSON 可指定 API、地址、模型能力、请求参数及兼容项。当前模型选择保存到 durable Agent 文档，重启保留。agent.profiles 只有 main 和 background 两个固定角色位：main 用于初始选择且不覆盖会话已有选择，background 单独决定后台子 Agent 的模型，未配置时继承发起会话的选择。
+模型凭据通过 StoredCredentialStore 从 config/auth.json 只读加载，其次使用 models.json 的 provider apiKey；不回退进程环境变量。通道、工具和显式 headersEnv 仍从后端环境读取。model-config.ts 负责加载和角色校验，model-provider.ts 负责供应商目录、请求选项和 stream 适配。自定义 JSON 可指定 API、地址、模型能力、请求参数及兼容项。当前模型选择保存到 durable Agent 文档，重启保留。agent.profiles 只有 main 和 background 两个固定角色位：main 用于初始选择且不覆盖会话已有选择，background 单独决定后台子 Agent 的模型，未配置时继承发起会话的选择。
 
 Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 
 模型配置在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
-- 技能来源：工作区 `.agents/skills` 与应用 `server/resources/skills`；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
+- 技能来源：工作区 `.agents/skills/<目录>/SKILL.md` 与应用 `server/resources/skills/<目录>/SKILL.md`，只读单层，不递归或跟随链接目录/文件；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。`memory/YYYY-MM-DD.md` 每日记忆不自动注入，相关时由助手按需 read/search。注入时标注来源和角色，文件职责见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core/AGENTS 各上限 8,000 字节，MEMORY 上限 4,000 字节，超量截断。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
 - Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和内部 记忆整理 task。记忆整理 task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
@@ -103,7 +103,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求，不强制原文或失败关联，不再维护输入哈希或 piko.input 标记。相同 requestId 返回原生提交，调用方不能用它表达新内容。
 
-历史在原生 commit 线上按不可变 entry ID 游标读取原始 entries 并投影；最近快照和向前分页每页至多 50 条可见已保存消息，提交绑定从原生 submission 初始化并随 commit 更新。不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 为 pi-<entry ID>，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。display=true 的 piko.result 可投影为被动回复，产品投递入口尚未实现。
+历史在原生 commit 线上按不可变 entry ID 游标读取原始 entries 并投影；最近快照和向前分页每页至多 50 条可见已保存消息，提交绑定从原生 submission 初始化并随 commit 更新。不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 为 pi-<entry ID>，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。只投影原生用户/助手消息，不为尚无写入端的被动结果预留展示分支。
 
 生成中使用临时消息身份，保存后原位替换为原生身份。快照包含已保存历史、当前未提交文字和原生 inbox 中待应用输入；临时投影不落盘。输入与助手消息各自展示，不分组、不强行配对，压缩和 reset 不删除原始展示历史。
 
@@ -115,13 +115,10 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | GET /api/chat/history?before=… | 根据 entry ID 向前加载至多 50 条可见历史，返回 nextBefore |
 | POST /api/chat | {requestId,message}，返回 {submission,duplicate}；不返回 SSE |
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
-| GET /api/chat/submission?requestId=… | 查询原生提交回执；不存在返回 404 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/health | 后端和模型可用状态 |
-| GET /api/runtime | 模型、思考、预设、技能与内建工具状态 |
-| POST /api/runtime/selection、compact、cancel | 模型选择、压缩和停止；选择/压缩要求空闲 |
 
-原生会话 ID 由 Durable 分配，不由客户端提供；不提供主会话删除、旧 /api/main 或按 Run 观察接口。旁聊元数据使用 `/api/side-chats`，聊天链路使用 `/api/side-chats/:id/chat`，复用主会话的快照、分页、SSE、提交回执和停止语义；详见 [旁聊 API](features/side-chats.md#http)。
+原生会话 ID 由 Durable 分配，不由客户端提供；不提供主会话删除、旧 /api/main 或按 Run 观察接口。闲置的 runtime HTTP 管理与独立 submission 查询入口已移除；模型选择/压缩仍供 TG 直接调用，去重及后台报告仍使用原生回执，客户端从 POST 与快照恢复接纳状态。旁聊元数据使用 `/api/side-chats`，聊天链路使用 `/api/side-chats/:id/chat`，复用主会话的快照、分页、SSE、提交回执和停止语义；详见 [旁聊 API](features/side-chats.md#http)。
 
 每个 DurableChatSession 只绑定一个 Conversation，作为 facade 将输入、停止、维护、完整归档及内部报告提交交给 ConversationControl 的同一接纳线；历史/流式快照由 ConversationView 投影。内部报告不得绕过控制器直接提交；归档期间持有预留，报告进入时重新检查可写与取消 epoch。ConversationStore 只转发、合并和关闭观察，不停止或销毁控制器；runtime 唯一拥有其生命周期。根会话的通道回报提示由独立 BackgroundReplies 保存在内存，不属于执行状态或可靠 outbox。运行时接口的描述、配置、压缩、停止与关闭都是必需能力。模型工作不占用接纳锁。RN/TG 普通输入统一使用 whenBusy=steer、steeringMode=all，在原生接纳边界一起加入当前工作，不打断已经开始的模型请求或工具。管理操作预留空闲边界；期间立即拒绝普通输入，停止仍能取消压缩。拒绝输入不创建 submission，也不永久保存拒绝决定。
 

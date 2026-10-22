@@ -6,7 +6,6 @@ import type { ConversationStores } from "./chat/stores";
 import { SideChatError } from "./runtime/side-chats";
 import { AssistantTaskError } from "./domain/tasks";
 import { HttpError, json, withCors } from "./http";
-import { runtimeRequest } from "./runtime/http";
 import { taskRequest } from "./tasks/http";
 import { chatRequest } from "./chat/http";
 import { sideChatRequest } from "./side-chats/http";
@@ -49,12 +48,6 @@ export function createApp({
         (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")
           ? await taskRequest(request, runtime, config.maxRequestBytes)
           : undefined) ??
-        (await runtimeRequest(
-          request,
-          runtime,
-          (operation) => conversations.changeRuntime(operation),
-          (id) => conversations.stop(id),
-        )) ??
         (await chatRequest(
           request,
           chats,

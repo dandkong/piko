@@ -17,7 +17,7 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 访问 http://127.0.0.1:8787。缺少 apps/mobile/dist/web/index.html 时启动会报错，先完成构建。`bun run start:api` 仅启动 API 与可选 TG；开发仍使用 dev / dev:web / dev:api。
 
-首次运行补齐配置与模板，默认 TG 关闭。停止进程，编辑统一行为 piko.json（含 agent 预设）、模型目录 models.json，以及只含部署参数/敏感凭据的私有 .env 后再启动；不再使用 auth.json。示例 piko.json：
+首次运行补齐配置与模板，默认 TG 关闭。停止进程，编辑统一行为 piko.json（含 agent 预设）、模型目录 models.json、模型凭据 auth.json（或 models.json 的 provider apiKey），以及只含部署参数/通道和工具凭据的私有 .env 后再启动。示例 piko.json：
 
 ```json
 {

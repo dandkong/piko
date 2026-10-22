@@ -18,11 +18,11 @@ export async function chatRequest(
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const side =
-    /^\/api\/side-chats\/([^/]+)(\/chat(?:\/history|\/events|\/submission|\/stop)?)$/.exec(
+    /^\/api\/side-chats\/([^/]+)(\/chat(?:\/history|\/events|\/stop)?)$/.exec(
       url.pathname,
     );
   const path = side ? `/api${side[2]}` : url.pathname;
-  if (!/^\/api\/chat(?:\/history|\/events|\/submission|\/stop)?$/.test(path))
+  if (!/^\/api\/chat(?:\/history|\/events|\/stop)?$/.test(path))
     return undefined;
   const conversations = side ? await chats.side(side[1]!) : chats.main;
   if (request.method === "GET" && path === "/api/chat")
@@ -35,15 +35,6 @@ export async function chatRequest(
   }
   if (request.method === "GET" && path === "/api/chat/events")
     return chatStream(conversations, request);
-  if (request.method === "GET" && path === "/api/chat/submission") {
-    const id = url.searchParams.get("requestId");
-    if (!isRequestId(id))
-      return json({ error: "A requestId is required." }, 422);
-    const result = await (await conversations.get()).submission(id);
-    return result
-      ? json(result)
-      : json({ error: "Submission not found." }, 404);
-  }
   if (
     request.method === "POST" &&
     (path === "/api/chat" || path === "/api/chat/stop")

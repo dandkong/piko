@@ -22,7 +22,7 @@
 
 ## 展示与上下文
 
-展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 为 pi-<entry ID>，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；display=true 的 piko.result 可形成被动回复。
+展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 为 pi-<entry ID>，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；不预留尚无写入端的被动结果展示分支。
 
 Web/RN 的首次快照与后续 SSE 快照只传最近 50 条可见已保存消息，另附当前流式消息与未应用输入。`GET /api/chat/history?before=<entry ID>` 向前读取至多 50 条，`nextBefore` 表示还可向前翻页；游标基于不可变 entry ID，新增消息不会移动旧页边界。每页与状态在原生 commit 线上读取；提交绑定从原生 submission 初始化并随 commit 更新，不新建正文或永久索引。
 

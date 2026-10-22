@@ -22,14 +22,12 @@ export function NavigationDrawer({
   activeTab,
   onSelectTab,
   onClose,
-  onOpenSettings,
   ...sideChatActions
 }: SideChatActions & {
   open: boolean;
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   onClose: () => void;
-  onOpenSettings?: () => void;
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -129,9 +127,8 @@ export function NavigationDrawer({
 
         <View style={styles.footer}>
           <IconButton
-            hint={onOpenSettings ? "Open settings" : "Coming soon"}
+            hint="Coming soon"
             label="Settings"
-            onPress={onOpenSettings}
           >
             <Settings size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>

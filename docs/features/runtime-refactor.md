@@ -1,6 +1,6 @@
 # 中期结构重构与回归清单
 
-状态：已实现（2026-10-22）。保持工具/API 契约、原生存储身份与已确认交互，不引入兼容入口、Run 表、可靠 outbox 或通用框架。架构见 [ARCHITECTURE](../ARCHITECTURE.md)。
+状态：已实现（2026-10-22）。保留原生存储身份与已确认交互，不引入兼容入口、Run 表、可靠 outbox 或通用框架；后续移除无客户端消费者的 HTTP 管理入口，当前接口以架构文档为准。架构见 [ARCHITECTURE](../ARCHITECTURE.md)。
 
 ## 责任与依赖
 
@@ -11,7 +11,7 @@
 - `tasks/service.ts` 管定义/游标/幂等/调度，`documents.ts` 管固定原生身份，`queries.ts` 按需投影，`tools.ts` 为模型入口。任务服务依赖共用执行和事实查询，不依赖普通委派工具。
 - `model-config.ts` 加载模型目录、凭据与角色配置，`model-provider.ts` 处理供应商模型、headers、请求选项与 stream 适配。
 - `workspace.ts`、`task-files.ts` 管文件 I/O；`domain/tasks.ts` 只管定义校验和日历计算。
-- HTTP 按 chat/side-chats/tasks/attachments/runtime 分 handler；app 只分发、转换错误、处理 CORS 和 Web fallback。公共 body reader 即使没有 Content-Length，也在读流时限制大小并取消超限流。
+- HTTP 按 chat/side-chats/tasks/attachments 分 handler；app 只分发、转换错误、处理 CORS 和 Web fallback。公共 body reader 即使没有 Content-Length，也在读流时限制大小并取消超限流。
 
 ## 接纳与关闭
 
@@ -38,6 +38,12 @@ ConversationStore.close 只退订和排空输出，不 abort/dispose 会话；ru
 抽屉使用同一个 Reanimated transition 管理动画与 underlay 挂载，完成关闭后卸载；中断动画不执行过期关闭回调，不再用独立 setTimeout 猜测动画结束。视觉尺寸、键盘抬升公式和按钮规范保持不变。
 
 useChat 保留输入身份与重试协调，活动观察/健康检查和附件选择/上传分别由 useConversationObservation/useChatAttachments 负责；TasksScreen 的查询、命令身份和刷新状态由 useTasks 管理。小型视图状态不再机械拆 hook。
+
+## 后续功能减法
+
+技能固定扫描单层 `<目录>/SKILL.md`，不递归、不跟随链接目录/文件；保留元数据、路径校验和工作区覆盖。移除无消费者的 runtime HTTP 管理与独立 submission 查询路由，TG 直接调用的运行时能力、原生回执和去重不变。Posts 移除模拟数据展示空状态，历史仅投影原生用户/助手消息，不预留被动结果分支；设置按钮仍禁用，不提前暴露回调。TG/App 富文本实现及依赖未修改，保留流式 Markdown、分段与格式降级。
+
+上述减法另以隔离 fixture 验证单层/嵌套/链接技能、同名覆盖、错误元数据和取消；已移除路由对 GET/POST 均返回 404，且不触达业务服务；原生回执/历史及 TG 控制继续回归。
 
 ## 固定回归协议
 

@@ -42,11 +42,10 @@ PikoRuntime（唯一 Harness、JSONL、共享资源）
 | GET /api/side-chats/:id/chat | 最近聊天快照 |
 | GET /api/side-chats/:id/chat/history?before=… | 向前分页 |
 | GET /api/side-chats/:id/chat/events | 首帧快照 + SSE 更新 |
-| GET /api/side-chats/:id/chat/submission?requestId=… | 本会话接纳回执 |
 | POST /api/side-chats/:id/chat | `{requestId,message,attachmentIds?}` |
 | POST /api/side-chats/:id/chat/stop | `{requestId}`，只停止该会话 |
 
-主聊天仍为 `/api/chat`；已有 `/api/runtime` 管理入口和 Telegram 模型命令仍作用于主会话。运行时内部可按 conversation ID 描述/选择/压缩，首版未增加旁聊的模型管理 UI。
+主聊天仍为 `/api/chat`；Telegram 模型命令作用于主会话。内部仍可按 conversation ID 描述/选择/压缩，但没有独立 runtime HTTP 管理或 submission 查询入口，也未增加旁聊的模型管理 UI。输入 POST 回执、快照与相同 requestId 重试保留原有去重语义。
 
 ## 前端状态与恢复
 

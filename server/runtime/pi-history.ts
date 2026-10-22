@@ -55,7 +55,7 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
       ...(before && { maxEntryId: (Number(before) - 1) as EntryRecord["id"] }) }, 100, cursor);
     for (const entry of page.items) {
       entries.push(entry);
-      if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && entry.kind !== "piko.result") continue;
+      if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant") continue;
       const requestId = inputs.get(entry.id);
       if (requestId && await internalInput(tx, requestId, conversationId)) continue;
       const projected = projectPiHistory([entry], requestId ? new Map([[entry.id, requestId]]) : undefined).messages;
@@ -95,14 +95,7 @@ export function projectPiHistory(entries: readonly EntryRecord[], inputs = new M
         if (text.trim() || attachments?.length) messages.push({ id: "pi-" + entry.id, role: message.role, content: text,
           createdAt: message.timestamp, ...(requestId && { requestId }), ...(attachments && { attachments }) });
       }
-    } else if (entry.kind === "piko.result" && data(entry).display === true) {
-      const content = (entry.model ?? []).map(message => "content" in message ? messageText(message.content) : "").join("");
-      if (content.trim()) messages.push({ id: "pi-" + entry.id, role: "assistant", content, createdAt: Number(data(entry).createdAt ?? 0) });
     }
   }
   return { messages };
-}
-
-function data(entry: EntryRecord): Record<string, unknown> {
-  return entry.data && typeof entry.data === "object" && !Array.isArray(entry.data) ? entry.data : {};
 }

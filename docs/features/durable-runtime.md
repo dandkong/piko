@@ -55,9 +55,9 @@ BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 
 `agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话（以及尚无模型保存的旧会话）的初始选择；`background` 供后台子 Agent 使用，普通后台工作、任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。已有主会话的选择保存在 Durable Agent 文档中，重启后仍是上次切换的结果，改 JSON 不会覆盖它。
 
-上述 ID 来自锁定的 pi-ai 1.3.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 GET /api/runtime 返回为准：目录中存在模型也须有可用凭据。
+上述 ID 来自锁定的 pi-ai 1.3.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 TG `/models` 列表为准：目录中存在模型也须有可用凭据。
 
-第一次创建原生会话使用 agent.profiles.main；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留；修改 main 不会自动切换当前会话，需要时再调用 selection API 直接选 provider/model。最初没有模型的会话在重启后可以启用新配置。
+第一次创建原生会话使用 agent.profiles.main；未设置时选第一个可用模型。已有会话的选择保存在原生日志，重启会保留；修改 main 不会自动切换当前会话，需要时通过 TG `/models` 选择模型。最初没有模型的会话在重启后可以启用新配置。
 
 通用思考值为 off/minimal/low/medium/high/xhigh/max；只接受所选模型实际支持的值，能力列表见 thinkingLevels。例如本版本 deepseek-flash 支持 off/low/high/max。Piko 不把所有思考值强行映射到每个供应商。
 
@@ -65,7 +65,7 @@ BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
 
 ## 自定义供应商与参数
 
-models.json 支持内建供应商覆盖和自定义模型，只存元数据与非敏感请求默认值。API Key 只能从环境解析；自定义供应商示例：
+models.json 支持内建供应商覆盖和自定义模型，可保存 provider apiKey，或使用优先级更高的 auth.json；不从环境变量回退模型 API Key。自定义供应商示例：
 
 ```json
 {
@@ -107,36 +107,19 @@ models.json 支持内建供应商覆盖和自定义模型，只存元数据与�
 
 Piko 不再暴露 compaction/retry 配置，不在 Harness 启动时覆盖这两项；直接使用 Durable 默认策略。当前锁定版本默认启用自动压缩和重试（最多额外 3 次），不是删除功能。agent.stream 仍可选配 transport/timeoutMs/maxRetries/maxRetryDelayMs/cacheRetention；这是模型供应商连接选项，不是 Harness 生成重试策略，客户端聊天仍使用 Piko SSE。
 
-## 控制 API
+## 会话控制
 
-以下操作针对主会话，API 默认端口 8787：
+主会话的模型/思考选择、手动压缩由 TG `/models`、`/thinking`、`/compact` 直接调用运行时能力；选择与压缩要求会话空闲。App 与 TG 的停止仍共用会话控制器，App 使用 `POST /api/chat/stop`，TG 使用 `/stop`。
 
-```powershell
-# 只返回配置元数据与能力，不返回 API Key
-Invoke-RestMethod http://127.0.0.1:8787/api/runtime
+不再开放独立 runtime HTTP 管理入口，也不提供聊天提交回执的独立查询路由；它们没有现有客户端消费者。模型目录、描述、配置、压缩和原生 submission 查询能力仍保留在内部，供 TG、接纳去重和后台报告使用。客户端通过 POST 回执、最新快照和相同 requestId 重试确认接纳，不新增别名。
 
-# 选择模型与思考强度
-Invoke-RestMethod http://127.0.0.1:8787/api/runtime/selection -Method Post `
-  -ContentType "application/json" -Body '{"provider":"custom","model":"gpt-6.1-sol","thinking":"high"}'
-
-# 也可仅修改思考强度
-Invoke-RestMethod http://127.0.0.1:8787/api/runtime/selection -Method Post `
-  -ContentType "application/json" -Body '{"thinking":"high"}'
-
-# 手动压缩会使用当前模型生成摘要，保留完整聊天历史
-Invoke-RestMethod http://127.0.0.1:8787/api/runtime/compact -Method Post
-
-# 停止当前回复或手动压缩
-Invoke-RestMethod http://127.0.0.1:8787/api/runtime/cancel -Method Post
-```
-
-selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":"off"}`。选择和压缩不能与生成并发，繁忙返回 409。piko/models JSON 与凭据环境修改后重启后端生效。指导和技能在每次模型请求自动刷新。
+piko/models/auth JSON 与后端环境修改后重启后端生效。指导和技能在每次模型请求自动刷新。
 
 ## 更新的生效时机
 
 当前锁定 durable 1.3.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask` 结束，不检查摘要是否新增或等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩沿用 Durable 默认策略，Piko 不再提供自动压缩开关；手动 compact 保留。
 
-运行时及 HTTP 返回 `status: compacted | cancelled`，任务失败报告错误。`compacted` 表示原生压缩任务完成，不额外断言摘要是否新增或已经应用；摘要和 submission 由 Durable 管理，不再区分 no_summary/stale。TG 的 `/compact` 只负责接纳，开始和完成统一经原生生命周期观察呈现，保留取消/失败提示；主会话的阈值/溢出自动压缩也通知本进程已验证的 TG 私聊。通知不阻塞事件观察；各会话快照附带活动压缩状态。旁聊和后台子会话不向主聊天 TG 通知；生命周期只用于呈现，不写聊天正文或可靠 outbox。
+运行时内部返回 `status: compacted | cancelled`，任务失败报告错误。`compacted` 表示原生压缩任务完成，不额外断言摘要是否新增或已经应用；摘要和 submission 由 Durable 管理，不再区分 no_summary/stale。TG 的 `/compact` 只负责接纳，开始和完成统一经原生生命周期观察呈现，保留取消/失败提示；主会话的阈值/溢出自动压缩也通知本进程已验证的 TG 私聊。通知不阻塞事件观察；各会话快照附带活动压缩状态。旁聊和后台子会话不向主聊天 TG 通知；生命周期只用于呈现，不写聊天正文或可靠 outbox。
 
 普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
 
@@ -149,13 +132,13 @@ selection 也接受 `{"provider":"deepseek","model":"deepseek-flash","thinking":
 | 工作区 .agents/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
 | config/piko.json、models.json | 重启后端；profiles.main 不自动切换已有会话，profiles.background 在重启时同步到子会话 |
-| config/.env 中的 OAuth 凭据 | 手工修改需重启；运行时 OAuth 刷新由串行原子写入发布新凭据 |
+| config/auth.json 中的模型凭据 | 手工修改需重启；Piko 只读，不提供交互登录或凭据写回 |
 | config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
 | 工作区其他 md、JSONL 和 Durable 原生文档 | 普通文件按需读取，重启保留存储和文档状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 `/models`、`/thinking` 或 selection API 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，后台子 Agent 始终跟随 `agent.profiles.background`。编辑 piko/models JSON 或凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+通过 TG `/models`、`/thinking` 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，后台子 Agent 始终跟随 `agent.profiles.background`。编辑 piko/models/auth JSON 或通道/工具凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 
@@ -172,13 +155,13 @@ description: Record decisions and next actions for an ongoing project.
 Read the project's existing notes, then append the new decision and next action.
 ```
 
-技能来源为工作区 `.agents/skills` 与应用内建；同名时工作区版本优先。`PIKO_HOME/skills` 不创建也不读取。不递归读取祖先指导、不加载个人 Pi CLI 资源。`disable-model-invocation: true` 的技能不注入模型索引；普通技能只注入名称/描述/文件路径，正文由 read 按需加载。聊天输入不会展开 CLI `/skill:` 命令。
+技能只发现工作区 `.agents/skills/<目录>/SKILL.md` 与内建 `skills/<目录>/SKILL.md` 的单层目录，不递归、不跟随链接目录或链接技能文件；同名时工作区版本优先。`PIKO_HOME/skills` 不创建也不读取。不递归读取祖先指导、不加载个人 Pi CLI 资源。`disable-model-invocation: true` 的技能不注入模型索引；普通技能只注入名称/描述/文件路径，正文由 read 按需加载。聊天输入不会展开 CLI `/skill:` 命令。
 
 Piko 应用内建 core.md 提供运行规则；工作区只使用 AGENTS.md（如何表达和做事）与 MEMORY.md（长期事实与结论）。工作区指导与技能可由用户或助手修改，初始化不会覆盖。具体职责见 [资源与工具](workspace-and-main-chat.md#资源与工具)。
 
 ## 内建 Durable Extension
 
-Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；`/api/runtime` 只报告 Piko 内建工具及其配置状态。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
+Piko 在服务端源码中用 Durable Extension 注册资源 section、网络工具与子 Agent 能力。用户工作区和 `PIKO_HOME` 不提供可加载的代码插件入口；内建工具与配置状态由内部运行时描述提供给 TG，不另设 HTTP 管理入口。用户要补充工作流程与领域知识时使用工作区 skill，不能借此注册新的运行时工具。内建网络工具的行为见 [内置网络工具](web-tools.md)。
 
 Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发起的自定义后台代码任务或第三方扩展安装目前不属于产品能力。保存任务的执行复用普通子 Agent 回传，详见 [任务与执行记录](tasks.md)。主会话另有内部 记忆整理 Durable task：闲置 30 分钟后检查增量，并创建仅配 `read/write/edit` 的专用子 Agent 直接编辑每日和长期 Markdown 文件；一次整理中可能有多个模型/工具轮次。游标、活动 整理 task 与重试状态由 Durable 文档保存，不增加任务/UI、SQL 或独立历史副本；只由后台闲置调度触发，不提供手动触发工具。细节见 [工作区与主会话模型](workspace-and-main-chat.md#每日与长期记忆整理)。
 

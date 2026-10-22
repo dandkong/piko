@@ -1,5 +1,5 @@
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readFile, readdir, realpath, lstat } from "node:fs/promises";
+import { join } from "node:path";
 import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../workspace";
 import { TaskFiles } from "../task-files";
@@ -49,101 +49,79 @@ export async function loadWorkspaceResources(
     });
   }
   const byName = new Map<string, WorkspaceSkill>();
-  let visited = 0;
   for (const root of [
     join(paths.resources, "skills"),
     join(paths.workspace, ".agents", "skills"),
   ]) {
     let canonical: string;
+    let entries;
     try {
       canonical = await realpath(root);
+      entries = await readdir(root, { withFileTypes: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         warn(root, "Cannot access skills directory");
       continue;
     }
-    const seen = new Set<string>();
-    async function scan(directory: string, depth: number): Promise<void> {
+    // Fixed layout only: <root>/<directory>/SKILL.md. No recursion or linked directories.
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       signal?.throwIfAborted();
-      if (depth > 6 || visited >= 2000) {
-        warn(directory, "Skill discovery limit reached");
-        return;
-      }
+      if (
+        !entry.isDirectory() ||
+        entry.name.startsWith(".") ||
+        entry.name === "node_modules"
+      )
+        continue;
+      const path = join(root, entry.name, "SKILL.md");
       try {
-        const real = await realpath(directory);
-        if (!isWithin(canonical, real)) {
-          warn(directory, "Skill directory escapes its declared root");
-          return;
+        if (
+          !(await lstat(path)).isFile() ||
+          !isWithin(canonical, await realpath(path))
+        ) {
+          warn(path, "Invalid skill file");
+          continue;
         }
-        if (seen.has(real)) return;
-        seen.add(real);
-        visited++;
-        const entries = await readdir(directory, { withFileTypes: true });
-        if (entries.some((entry) => entry.name === "SKILL.md")) {
-          const path = join(directory, "SKILL.md");
-          if (
-            !(await stat(path)).isFile() ||
-            !isWithin(canonical, await realpath(path))
-          ) {
-            warn(path, "Invalid skill file");
-            return;
-          }
-          const text = (await readFile(path, "utf8")).replace(/^\uFEFF/, "");
-          const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-          if (!match) {
-            warn(path, "Skill requires YAML frontmatter");
-            return;
-          }
-          const metadata: unknown = Bun.YAML.parse(match[1]!);
-          if (
-            !metadata ||
-            typeof metadata !== "object" ||
-            Array.isArray(metadata)
-          ) {
-            warn(path, "Invalid skill metadata");
-            return;
-          }
-          const value = metadata as Record<string, unknown>;
-          if (
-            typeof value.name !== "string" ||
-            !/^[a-z0-9][a-z0-9-]*$/.test(value.name) ||
-            typeof value.description !== "string" ||
-            !value.description.trim()
-          ) {
-            warn(path, "Skill requires a name and description");
-            return;
-          }
-          if (value.name !== basename(directory))
-            warn(path, "Skill name differs from directory name");
-          if (byName.has(value.name))
-            warn(path, `Overrides skill at ${byName.get(value.name)!.path}`);
-          byName.set(value.name, {
-            name: value.name,
-            description: value.description,
-            path,
-            disableModelInvocation: value["disable-model-invocation"] === true,
-          });
-          return;
+        const text = (await readFile(path, "utf8")).replace(/^\uFEFF/, "");
+        const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+        if (!match) {
+          warn(path, "Skill requires YAML frontmatter");
+          continue;
         }
-        for (const entry of entries.sort((a, b) =>
-          a.name.localeCompare(b.name),
-        )) {
-          if (entry.name.startsWith(".") || entry.name === "node_modules")
-            continue;
-          const child = join(directory, entry.name);
-          if (
-            entry.isDirectory() ||
-            (entry.isSymbolicLink() && (await stat(child)).isDirectory())
-          )
-            await scan(child, depth + 1);
-          if (visited >= 2000) break;
+        const metadata: unknown = Bun.YAML.parse(match[1]!);
+        if (
+          !metadata ||
+          typeof metadata !== "object" ||
+          Array.isArray(metadata)
+        ) {
+          warn(path, "Invalid skill metadata");
+          continue;
         }
-      } catch {
+        const value = metadata as Record<string, unknown>;
+        if (
+          typeof value.name !== "string" ||
+          !/^[a-z0-9][a-z0-9-]*$/.test(value.name) ||
+          typeof value.description !== "string" ||
+          !value.description.trim()
+        ) {
+          warn(path, "Skill requires a name and description");
+          continue;
+        }
+        if (value.name !== entry.name)
+          warn(path, "Skill name differs from directory name");
+        if (byName.has(value.name))
+          warn(path, `Overrides skill at ${byName.get(value.name)!.path}`);
+        byName.set(value.name, {
+          name: value.name,
+          description: value.description,
+          path,
+          disableModelInvocation: value["disable-model-invocation"] === true,
+        });
+      } catch (error) {
         signal?.throwIfAborted();
-        warn(directory, "Cannot parse or scan skill directory");
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+          warn(path, "Cannot parse or read skill");
       }
     }
-    await scan(root, 0);
   }
   result.skills = [...byName.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
