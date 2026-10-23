@@ -1,15 +1,22 @@
 import { requestJson, record, text, httpUrl } from "../request";
-import { SEARCH_SNIPPET_MAX, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
+import { freshnessStartIso, SEARCH_SNIPPET_MAX, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
 
 export function createExaProvider(options: ProviderOptions): SearchProvider {
   return {
     id: "exa",
     supports: () => true,
-    async search(query, count, signal): Promise<SearchResult[]> {
+    async search(query, count, filters, signal): Promise<SearchResult[]> {
+      const body: Record<string, unknown> = { query, type: "auto", numResults: count,
+        contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } };
+      if (filters.publishedAfter) body.startPublishedDate = `${filters.publishedAfter}T00:00:00.000Z`;
+      else if (filters.freshness) body.startPublishedDate = freshnessStartIso(filters.freshness);
+      if (filters.publishedBefore) body.endPublishedDate = `${filters.publishedBefore}T23:59:59.999Z`;
+      if (filters.includeDomains?.length) body.includeDomains = [...filters.includeDomains];
+      if (filters.excludeDomains?.length) body.excludeDomains = [...filters.excludeDomains];
       const data = await requestJson("exa", "https://api.exa.ai/search", {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },
-        body: JSON.stringify({ query, type: "auto", numResults: count, contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } }),
+        headers: { Accept: "application/json", "Content-Type": "application/json", "x-api-key": options.apiKey },
+        body: JSON.stringify(body),
       }, options, signal);
       const results = record(data)?.results;
       if (!Array.isArray(results)) throw new Error("Invalid Exa search response.");

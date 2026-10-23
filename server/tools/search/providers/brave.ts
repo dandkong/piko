@@ -1,15 +1,21 @@
 import { requestJson, record, text, httpUrl } from "../request";
-import type { ProviderOptions, SearchProvider, SearchResult } from "../types";
+import { hasDateFilters, hasDomainFilters, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
 
 const SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+const FRESHNESS: Record<string, string> = { day: "pd", week: "pw", month: "pm", year: "py" };
+
 export function createBraveProvider(options: ProviderOptions): SearchProvider {
   return {
     id: "brave",
-    supports: () => true,
-    async search(query, count, signal): Promise<SearchResult[]> {
+    // Brave freshness is based on discovery time, not publication time; it cannot honor
+    // absolute published-date bounds or domain filters without changing their semantics.
+    supports: (_query, filters) => !hasDomainFilters(filters)
+      && (!hasDateFilters(filters) || !!filters.freshness),
+    async search(query, count, filters, signal): Promise<SearchResult[]> {
       const url = new URL(SEARCH_URL);
       url.searchParams.set("q", query);
       url.searchParams.set("count", String(count));
+      if (filters.freshness) url.searchParams.set("freshness", FRESHNESS[filters.freshness]);
       const data = await requestJson("brave", url, {
         method: "GET",
         headers: { Accept: "application/json", "X-Subscription-Token": options.apiKey },

@@ -6,6 +6,31 @@ export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 /** Per-result excerpt budget shared by provider requests and the tool's output formatter. */
 export const SEARCH_SNIPPET_MAX = 1200;
 
+export const SEARCH_FRESHNESS = ["day", "week", "month", "year"] as const;
+export type SearchFreshness = (typeof SEARCH_FRESHNESS)[number];
+const FRESHNESS_DAYS: Record<SearchFreshness, number> = { day: 1, week: 7, month: 30, year: 365 };
+
+/** Recency or absolute date bounds; providers without native support are skipped by the tool. */
+export type SearchFilters = {
+  freshness?: SearchFreshness;
+  publishedAfter?: string;
+  publishedBefore?: string;
+  includeDomains?: readonly string[];
+  excludeDomains?: readonly string[];
+};
+
+export function hasDateFilters(filters: SearchFilters): boolean {
+  return !!(filters.freshness || filters.publishedAfter || filters.publishedBefore);
+}
+
+export function hasDomainFilters(filters: SearchFilters): boolean {
+  return !!(filters.includeDomains?.length || filters.excludeDomains?.length);
+}
+
+export function freshnessStartIso(freshness: SearchFreshness, now = Date.now()): string {
+  return new Date(now - FRESHNESS_DAYS[freshness] * 86_400_000).toISOString();
+}
+
 /** Provider-neutral subset consumed by the single web_search tool. */
 export type SearchResult = {
   title: string;
@@ -17,8 +42,8 @@ export type SearchResult = {
 /** Small seam for adding/removing a backend; no plugin lifecycle or provider config object. */
 export type SearchProvider = {
   id: SearchProviderId;
-  supports(query: string): boolean;
-  search(query: string, count: number, signal?: AbortSignal): Promise<SearchResult[]>;
+  supports(query: string, filters: SearchFilters): boolean;
+  search(query: string, count: number, filters: SearchFilters, signal?: AbortSignal): Promise<SearchResult[]>;
 };
 
 export type ProviderOptions = {

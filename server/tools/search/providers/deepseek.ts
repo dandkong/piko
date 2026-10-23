@@ -1,14 +1,14 @@
 import { requestJson, record, text, httpUrl } from "../request";
-import type { ProviderOptions, SearchProvider, SearchResult } from "../types";
+import { hasDateFilters, hasDomainFilters, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
 
 const SEARCH_URL = "https://api.deepseek.com/v1/tools/search";
 export function createDeepSeekProvider(options: ProviderOptions): SearchProvider {
   return {
     id: "deepseek",
-    // DeepSeek Search limits queries to 128 Unicode characters; skip it rather than
-    // truncate the user's intent, then let the next configured backend try unchanged.
-    supports: query => [...query].length <= 128,
-    async search(query, count, signal): Promise<SearchResult[]> {
+    // DeepSeek Search has no date or domain parameters and limits queries to 128 Unicode
+    // characters; skip it rather than truncate the user's intent or ignore a filter.
+    supports: (query, filters) => [...query].length <= 128 && !hasDateFilters(filters) && !hasDomainFilters(filters),
+    async search(query, count, _filters, signal): Promise<SearchResult[]> {
       const data = await requestJson("deepseek", SEARCH_URL, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },

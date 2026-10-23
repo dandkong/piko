@@ -9,7 +9,7 @@
 - Bun 托管 pi-durable 1.3.0 + pi-ai 1.3.0，使用 HTTP + SSE 提供文本流、停止、错误重试、提交去重、快照、断线/刷新/前台恢复。
 - 服务端唯一主会话，Durable 原生 SQLite 是唯一会话内容来源；UI 投影完整 conversation entries，不另建 Piko 消息/Run 表；原生 submission/inbox/live 管理去重和执行，重启撤销遗留工作并显示中断提示，流式片段不另行持久化。
 - 工作区初始化、有限指导/技能发现与 Pi 的 read、write、edit、bash 四个内建工具已启用；可读取/创建工作区技能和执行脚本，不加载用户代码插件。
-- 内置 web_search/web_extract 已接入；搜索保持 query/maxResults 参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单报告内建工具与配置状态，工作区技能/脚本不注册新工具。[网络工具](docs/features/web-tools.md)。
+- 内置 web_search/web_extract 已接入；搜索保持 query/maxResults/时间与域名过滤参数，凭据从后端环境读取，不向模型暴露供应商；正文提取沿用 Readability/Markdown，支持超时与停止。运行时清单报告内建工具与配置状态，工作区技能/脚本不注册新工具。[网络工具](docs/features/web-tools.md)。
 - 模型凭据使用 auth.json/models.json，不回退环境；通道/工具凭据留在后端环境。模型/思考选择、压缩/取消运行时能力与 TG 按钮菜单已接入（不再开放独立 HTTP 管理入口），共享主会话选择和空闲限制。[配置说明](docs/features/durable-runtime.md)。附件上传/发送和图片读取已接入，RN 模型配置界面待设计。
 - 应用配置按字段严格分工：piko.json 统一管理 agent 模型预设与可选连接选项、通道和工具行为，models.json 管模型目录/可选 apiKey，auth.json 管模型凭据与 OAuth 刷新；重试和自动压缩直接沿用 Durable 默认策略。HTTP/工作区部署参数、通道和工具凭据仅环境/.env，不读取 settings.json 或旧行为环境变量。启动时校验，修改后重启。[应用配置](docs/features/application-config.md)。
 - RN/TG 运行中输入使用 steer all，输入分别去重，助手消息独立展示；停止撤回待应用输入。手动/阈值/溢出压缩共用原生生命周期，TG 仅通知开始、完成、取消或失败，不检查摘要放置。
