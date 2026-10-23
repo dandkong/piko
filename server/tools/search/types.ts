@@ -3,6 +3,9 @@ import { WebRequestError } from "../http";
 export const SEARCH_PROVIDER_IDS = ["exa", "tavily", "deepseek", "brave"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 
+/** Per-result excerpt budget shared by provider requests and the tool's output formatter. */
+export const SEARCH_SNIPPET_MAX = 1200;
+
 /** Provider-neutral subset consumed by the single web_search tool. */
 export type SearchResult = {
   title: string;

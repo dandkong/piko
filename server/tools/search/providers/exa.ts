@@ -1,5 +1,5 @@
 import { requestJson, record, text, httpUrl } from "../request";
-import type { ProviderOptions, SearchProvider, SearchResult } from "../types";
+import { SEARCH_SNIPPET_MAX, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
 
 export function createExaProvider(options: ProviderOptions): SearchProvider {
   return {
@@ -9,7 +9,7 @@ export function createExaProvider(options: ProviderOptions): SearchProvider {
       const data = await requestJson("exa", "https://api.exa.ai/search", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },
-        body: JSON.stringify({ query, type: "auto", numResults: count, contents: { highlights: true } }),
+        body: JSON.stringify({ query, type: "auto", numResults: count, contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } }),
       }, options, signal);
       const results = record(data)?.results;
       if (!Array.isArray(results)) throw new Error("Invalid Exa search response.");

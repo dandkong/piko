@@ -1,5 +1,5 @@
 import { WebRequestError } from "./http";
-import type { SearchProvider, SearchResult } from "./search/types";
+import { SEARCH_SNIPPET_MAX, type SearchProvider, type SearchResult } from "./search/types";
 
 export type SearchArguments = { query: string; maxResults?: number };
 export type SearchOptions = { providers: readonly SearchProvider[]; redact?: readonly string[] };
@@ -43,7 +43,7 @@ function formatResults(results: readonly SearchResult[], secrets: readonly strin
   if (!results.length) return "No results found.";
   const redact = (value: string) => secrets.reduce((text, secret) => secret ? text.replaceAll(secret, "[redacted]") : text, value);
   return ["Results:", ...results.map((item, index) => {
-    const snippet = truncate(item.snippet ?? "", 1200);
+    const snippet = truncate(item.snippet ?? "", SEARCH_SNIPPET_MAX);
     const published = item.publishedAt ? `\n   Published: ${item.publishedAt}` : "";
     return `${index + 1}. ${redact(item.title)}\n   ${redact(item.url)}${published}${snippet ? `\n   ${redact(snippet)}` : ""}`;
   })].join("\n");
