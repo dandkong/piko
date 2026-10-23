@@ -23,9 +23,8 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
-  const [footerHeights, setFooterHeights] = useState<Record<string, number>>(
-    {},
-  );
+  // The footer is shared by all conversations; an unchanged layout need not emit onLayout on a switch.
+  const [footerHeight, setFooterHeight] = useState(0);
   const [activeChat, setActiveChat] = useState<{
     id?: string;
     chat: ChatStore;
@@ -33,7 +32,6 @@ export function MainScreen() {
   const { width } = useWindowDimensions();
   const sides = useSideChats(menuOpen);
   const activeId = tab === "Chat" ? selectedId : undefined;
-  const footerHeight = footerHeights[activeId ?? "main"] ?? 0;
   const chat = activeChat?.id === activeId ? activeChat?.chat : undefined;
   const archived =
     sides.items.find((item) => item.id === activeId)?.archivedAt != null;
@@ -112,10 +110,7 @@ export function MainScreen() {
       }}
       onFooterHeightChange={(value) => {
         if (tab !== "Chat" || value <= 0) return;
-        const key = activeId ?? "main";
-        setFooterHeights((current) =>
-          current[key] === value ? current : { ...current, [key]: value },
-        );
+        setFooterHeight(value);
       }}
       composer={
         tab === "Chat" && !archived && chat ? (

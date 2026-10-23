@@ -37,7 +37,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
   const scrollToLatest = (animated: boolean) => {
     if (dragging.current || !metrics.current.viewportHeight || !metrics.current.contentHeight) return;
     following.current = true;
-    setAwayFromLatest(false);
+    // Let onScroll hide the button on arrival, not before the scroll animation.
     // scrollToEnd approximates unmeasured rows; the measured content box is exact.
     const offset = Math.max(0, metrics.current.contentHeight - metrics.current.viewportHeight);
     if (!animated) metrics.current.offset = offset;
