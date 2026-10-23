@@ -1,5 +1,5 @@
-import { memo, useCallback, useRef, useState } from "react";
-import { Keyboard, View, useWindowDimensions } from "react-native";
+import { memo, useCallback, useState } from "react";
+import { Keyboard, useWindowDimensions } from "react-native";
 import { AppShell, type AppTab } from "./AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
 import { ChatProvider, type ChatStore } from "../chat/ChatProvider";
@@ -15,7 +15,7 @@ import {
   type UpdateSideChat,
 } from "../../../../../shared/side-chats";
 
-/** One app shell; keyed chat owners retain drafts, pending input identity and scroll. */
+/** One app shell; keyed chat owners retain data and drafts, not hidden lists. */
 export function MainScreen() {
   const [tab, setTab] = useState<AppTab>("Chat");
   const [selectedId, setSelectedId] = useState<string>();
@@ -169,24 +169,15 @@ const ChatConversation = memo(function ChatConversation({
   active: boolean;
   visible: boolean;
   onActiveChat: (id: string | undefined, chat: ChatStore) => void;
-} & Omit<Parameters<typeof ChatTab>[0], "hidden">) {
-  // Hidden lists must not adopt another chat's composer insets.
-  const retainedLayout = useRef(layout);
-  if (visible) retainedLayout.current = layout;
+} & Parameters<typeof ChatTab>[0]) {
   return (
-    <View
-      style={{ flex: 1, display: visible ? "flex" : "none" }}
-      accessibilityElementsHidden={!visible}
-      importantForAccessibility={visible ? "auto" : "no-hide-descendants"}
+    <ChatProvider
+      conversationId={conversationId}
+      active={active}
+      onActiveChat={onActiveChat}
     >
-      <ChatProvider
-        conversationId={conversationId}
-        active={active}
-        onActiveChat={onActiveChat}
-      >
-        <ChatTab hidden={!visible} {...retainedLayout.current} />
-      </ChatProvider>
-    </View>
+      {visible ? <ChatTab {...layout} /> : null}
+    </ChatProvider>
   );
 });
 

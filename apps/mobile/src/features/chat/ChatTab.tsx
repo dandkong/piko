@@ -20,30 +20,31 @@ import { styles } from "./styles";
 import { formatTimestamp, shouldShowTimestamp } from "./time-divider";
 
 export const MESSAGE_GAP = 13;
-/** Distance from the bottom that still counts as following the newest message. */
-const BOTTOM_THRESHOLD = 100;
+const MessageSeparator = () => <View style={{ height: MESSAGE_GAP }} />;
 
-/** The conversation stays mounted while another tab is shown, keeping draft and scroll position. */
-export function ChatTab({ hidden, headerHeight, footerHeight }: {
-  hidden: boolean;
+/** Only the visible conversation mounts a list; each visit starts at the latest message. */
+export function ChatTab({ headerHeight, footerHeight }: {
   headerHeight: number;
   footerHeight: number;
 }) {
-  const { messages, loading, busy, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
+  const { messages, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const listRef = useRef<FlatList<Message>>(null);
   const following = useRef(true);
-  const metrics = useRef({ contentHeight: 0, viewportHeight: 0 });
+  const dragging = useRef(false);
+  const metrics = useRef({ contentHeight: 0, viewportHeight: 0, offset: 0 });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
 
   const scrollToLatest = (animated: boolean) => {
+    if (dragging.current || !metrics.current.viewportHeight || !metrics.current.contentHeight) return;
     following.current = true;
     setAwayFromLatest(false);
     // scrollToEnd approximates unmeasured rows; the measured content box is exact.
     const offset = Math.max(0, metrics.current.contentHeight - metrics.current.viewportHeight);
+    if (!animated) metrics.current.offset = offset;
     listRef.current?.scrollToOffset({ offset, animated });
   };
-  // Sending while reading history should reveal the new exchange.
-  useEffect(() => { if (busy) scrollToLatest(false); }, [busy]);
+  // Only a local send reveals the new exchange; resuming a busy snapshot does not.
+  useEffect(() => { if (submitting) scrollToLatest(false); }, [submitting]);
 
   const fetchOlder = () => void loadOlder();
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
@@ -79,7 +80,7 @@ export function ChatTab({ hidden, headerHeight, footerHeight }: {
   };
 
   return (
-    <View style={[styles.main, hidden && { display: "none" }]}>
+    <View style={styles.main}>
       <View testID="chat-conversation-viewport" style={styles.conversationViewport}>
         <FlatList
           testID="chat-list"
@@ -93,7 +94,7 @@ export function ChatTab({ hidden, headerHeight, footerHeight }: {
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
-          ItemSeparatorComponent={() => <View style={{ height: MESSAGE_GAP }} />}
+          ItemSeparatorComponent={MessageSeparator}
           // Reserve one message gap at each measured content boundary; fade extents are visual only.
           contentContainerStyle={[styles.messageList, {
             paddingTop: headerHeight + MESSAGE_GAP,
@@ -101,22 +102,41 @@ export function ChatTab({ hidden, headerHeight, footerHeight }: {
           }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={() => {
+            dragging.current = true;
+            following.current = false;
+          }}
+          onScrollEndDrag={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+            dragging.current = false;
+            if (!layoutMeasurement.height) return;
+            // A short upward drag is still reading intent, even inside the follow threshold.
+            const atBottom = contentSize.height - contentOffset.y - layoutMeasurement.height <= 1;
+            following.current = atBottom;
+            setAwayFromLatest(!atBottom);
+          }}
           onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            const nearBottom = contentSize.height - contentOffset.y - layoutMeasurement.height < BOTTOM_THRESHOLD;
-            if (nearBottom !== following.current) {
-              following.current = nearBottom;
-              setAwayFromLatest(!nearBottom);
-            }
+            if (!layoutMeasurement.height) return;
+            const movingUp = contentOffset.y < metrics.current.offset - 0.5;
+            metrics.current.offset = contentOffset.y;
+            const distance = contentSize.height - contentOffset.y - layoutMeasurement.height;
+            // Web wheels do not emit begin/end drag. Detach on upward movement too.
+            const follow = !dragging.current && !movingUp && distance <= 1;
+            following.current = follow;
+            setAwayFromLatest(!follow);
             if (contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
           }}
-          scrollEventThrottle={100}
+          scrollEventThrottle={16}
           onLayout={({ nativeEvent: { layout } }) => {
+            if (!layout.height) return;
             metrics.current.viewportHeight = layout.height;
-          }}
-          // Follow growth only while the reader is already at the bottom.
-          onContentSizeChange={(_, height) => {
-            metrics.current.contentHeight = height;
             if (following.current) scrollToLatest(false);
+          }}
+          // Layout callbacks are not new messages and must never override a drag.
+          onContentSizeChange={(_, height) => {
+            if (!height) return;
+            const changed = height !== metrics.current.contentHeight;
+            metrics.current.contentHeight = height;
+            if (changed && following.current && !dragging.current) scrollToLatest(false);
           }}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>

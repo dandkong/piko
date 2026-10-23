@@ -37,7 +37,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 
 ## 代码边界
 
-- `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。应用只有一个 features/shell/AppShell，抽屉动画完成控制挂载，不另用超时器猜测；访问过的聊天保留各自 ChatProvider/useChat、草稿/输入身份和滚动，不为每个聊天复制导航或键盘监听。
+- `apps/mobile/src/features/` 按功能组织 UI；页面 → Hook/API → HTTP/SSE。应用只有一个 features/shell/AppShell，抽屉动画完成控制挂载，不另用超时器猜测；访问过的聊天保留各自 ChatProvider/useChat、草稿/附件和输入身份，但只挂载当前可见消息列表，切回滚到最新，不保存跨切换的滚动位置或隐藏列表测量值；不为每个聊天复制导航或键盘监听。
 - 服务端路由 → 业务服务 → 运行时接口 → Pi 适配器。输入、停止、维护、完整归档和内部报告统一由 ConversationControl 接纳线协调；不得绕过父会话控制器直接回报。ConversationStore 只负责输出合并和观察，关闭观察不停止执行；runtime 唯一拥有控制器和 Harness 生命周期。通道回报提示独立于会话控制器，不重复维护锁或执行状态。Durable/pi-ai 类型、事件与配置细节集中在 `server/runtime/`；`shared/runtime.ts` 只保留普通跨端类型。
 - `shared/` 保存跨端契约，不依赖 React Native、Bun 或 Pi SDK。
 - RN 请求身份使用 UUID，原生实体 ID 由 Durable 分配并按不透明字符串跨端传输，Unix 毫秒数用于时间；首次使用时才建立新领域模块，不提前搭空目录或通用框架。
