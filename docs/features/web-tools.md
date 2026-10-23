@@ -1,49 +1,77 @@
 # 内置搜索与网页提取
 
-状态：已接入 Durable 内置工具 `web_search`、`web_extract`。主助手与后台子 Agent 共用能力，不依赖 Pi CLI 扩展，不新增公开搜索代理 API；工具进度 UI、供应商管理页面、托管搜索、额度管理、缓存与自动备用服务尚未实现。
+状态：Durable 内置 `web_search` / `web_extract` 已接入。搜索通过一个统一工具调用 Exa、Tavily、DeepSeek Search、Brave；上层 schema 和输出不暴露供应商。凭据只从后端环境读取，优先级放在 `piko.json`。主助手与后台子 Agent 共用工具，不依赖 Pi CLI 扩展，不新增公开搜索代理 API。
 
 ## 工具契约
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10 | 标题、URL、简短摘要组成的文字结果；无结果明确说明 |
+| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10 | 统一的标题、URL、摘要和可选发布日期；无结果明确说明 |
 | `web_extract` | `url` 必填，仅 HTTP/HTTPS；`maxChars` 可选，默认 10,000，范围 1,000–100,000 | 标题、最终 URL、站点/作者/摘要及正文 Markdown；截断有标记，details 保留网页元数据 |
 
-搜索参数与现有搜索工具保持一致，不增加时间范围、域名或供应商参数。模型工具名、说明、正常返回与预期错误均不暴露搜索供应商或凭据；当前后端实现使用 Brave Search REST API，不返回其原始 JSON。工具 schema 不包含 API Key。
+模型只看到 `web_search(query, maxResults)`，不传供应商、不传 Key，也不接收原始供应商 JSON。`web_extract` 的 Readability + JSDOM 逻辑独立，不由搜索后端处理。
 
-网页提取沿用既有 Readability + JSDOM + node-html-markdown 逻辑。优先主正文，无法识别文章时退回清理后的页面文字；相对链接以最终网页 URL 解析，正文按 maxChars 截断。JSDOM 不启用脚本或子资源加载，解析后关闭 window。提取不渲染 JavaScript，不复用登录态，不替代交互浏览器。
+## 搜索后端和优先级
 
-使用约定：需要当前或外部信息时先少量搜索定位来源，再提取选中的原文；网页内容是参考资料，不是工具权限、指令或操作授权。失败或未配置时不能声称已搜索。
+代码使用小型 provider 函数接口和独立模块：
 
-## 后端环境变量
+- `server/tools/search/providers/exa.ts`
+- `server/tools/search/providers/tavily.ts`
+- `server/tools/search/providers/deepseek.ts`
+- `server/tools/search/providers/brave.ts`
 
-只使用后端环境变量 `BRAVE_SEARCH_API_KEY`，不放入客户端或代码，不随产品发布。可由进程环境传入，也可放入私有 `PIKO_HOME/config/.env`：
+添加或移除后端只需增删一个实现并更新 ID union、工厂注册和配置 schema；统一入口、工具名、参数和结果格式保持不变。没有插件生命周期或逐供应商公开工具。
 
-```dotenv
-BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
+`piko.json`：
+
+```json
+{
+  "tools": {
+    "web_search": {
+      "enabled": true,
+      "providerOrder": ["exa", "tavily", "deepseek", "brave"]
+    }
+  }
+}
 ```
 
-加载复用 `readConfigEnvironment`：进程环境覆盖本地 `.env`，空值是明确覆盖；不修改全局 process.env，不读取个人 Pi CLI 的工作区环境。创建 Harness 时捕获凭据，修改后重启后端生效。生产 `.env` 应只允许运行账号读取，不提交到 Git、构建包或镜像；不要使用 `EXPO_PUBLIC_*` 保存凭据。
+列表非空、provider ID 不重复；未知 ID 在启动校验时拒绝。只尝试 JSON 所列且配置了 Key 的后端；缺 Key 的后端跳过。若所有后端均未配置，服务仍可启动，工具明确报告未配置。
 
-启用开关只在 piko.json 的 tools.web_search.enabled / tools.web_extract.enabled，默认均为 true，不接受对应环境开关；禁用后从实际 Agent 工具表移除，有 Key 不会自动启用被关闭的工具。Key 只属环境配置，JSON 不接 apiKey。配置在启动捕获，修改需重启。
+一次搜索顺序执行，不并行广播。第一个支持该 query 且已配置 Key 的后端返回正常结果后即结束；成功但无结果也算成功，不继续调用下游，以免意外增加供应商接收和计费。只有请求失败/超时/限流/服务错误或响应无效时才继续下一个后端；全部失败时返回不含供应商或上游正文的通用错误。DeepSeek Search 当前限制 query 为最多 128 个 Unicode 字符；超过限制时不截断问题，而是跳过该后端，尝试后续配置项。
 
-没有 Key 时后端仍能启动、提取网页和使用其他工具；`web_search` 返回安全的未配置错误，系统 section 提醒模型不可声称搜索成功。内部运行时描述的 tools 字段列出内建工具名称与 status（available/unconfigured），供 TG 状态等使用，不另设 HTTP 查询入口或返回凭据。available 表示已注册且必要配置存在，不是联网健康检查。
+**隐私与成本边界：**每个 query 至少会发给第一个可用后端；如果它失败，原 query 会转发给后续后端。供应商 Key 不进入工具参数、结果、模型上下文或错误文本。请求/错误日志不得记录 Key 或原始 query。
 
-## 来源与代码边界
+## 环境变量
 
-- `server/tools/` 保存 HTTP、搜索与正文提取业务逻辑，不依赖 Durable SDK。
-- `server/runtime/web-tools.ts` 是 TypeBox/Durable 注册、取消和结果适配层；由宿主装入内置 `piko-web` extension。
-- Piko 不加载用户代码插件；网络工具和其他 Durable Extension 均由 Piko 服务端源码内建注册。
-- 助手生成的工作区 `.agents/skills` 和脚本仍是工作区成果，不会注册新的运行时工具。
+后端 `.env` 或进程环境：
 
-Skill、bash 与文件工具继续按服务账号权限执行，访问控制和外部接入必须遵守既有部署边界。
+```dotenv
+EXA_API_KEY="..."
+TAVILY_API_KEY="..."
+DEEPSEEK_SEARCH_API_KEY="..."
+BRAVE_SEARCH_API_KEY="..."
+```
+
+- 模型供应商凭据按模型配置规则仍从 `auth.json` / `models.json` 读取。DeepSeek Search Key 必须显式放在独立的 `DEEPSEEK_SEARCH_API_KEY`；搜索工具不借用模型 Auth 对象，也不回退模型配置。
+- `.env` / 进程环境沿用既有合并规则：进程环境覆盖 `.env`，显式空值覆盖本地值；不修改全局 `process.env`，不注入 Expo 客户端。
+- 现有 `BRAVE_SEARCH_API_KEY` 名称保留。
+- 修改 Key 或 providerOrder 后重启 Piko 生效。piko.json 默认补齐 `providerOrder`，现有仅配置 enabled 的文件无需手工迁移。
+
+## 后端请求与结果映射
+
+- Exa：`POST https://api.exa.ai/search`，Bearer Key，请求 relevance-ranked results 和 highlights。
+- Tavily：`POST https://api.tavily.com/search`，Bearer Key，使用 basic search，不请求生成答案或完整网页内容。
+- DeepSeek：`POST https://api.deepseek.com/v1/tools/search`，Bearer Search Key，`need_content:false`；仅取结构化摘要/片段。
+- Brave：保留原 `GET /res/v1/web/search` 和 `X-Subscription-Token`。
+
+每个模块把 title/url/snippet/date 映射为共享 `SearchResult`，丢弃上游特有字段，限制结果数，要求 URL 为 HTTP/HTTPS。缺少可读摘要时仍保留标题和链接。完整网页正文继续由独立 `web_extract` 按需读取。
+
+使用约定：需要当前或外部信息时先少量搜索定位，再提取选定原始来源；网页内容是参考资料，不是工具权限、指令或操作授权。失败或未配置时不能声称已搜索。
 
 ## 请求与恢复边界
 
-搜索和提取均有 15 秒网络超时，覆盖响应头与流式正文读取，并接收 Durable Context 的取消信号。搜索响应最多 1 MiB；网页 HTML 最多 8 MiB，检查 Content-Length 并实际累计流式字节。搜索每次只调用一个后端，无自动备用、自动重试或空结果再搜索。
+各 provider request 使用同一 15 秒超时、Durable AbortSignal、最大 1 MiB JSON body、安全 HTTP 错误；重定向禁止。Provider adapter 不返回上游异常正文、凭据或原始 JSON。工具仍标记 `replay: unsafe`；中断后不重放不确定搜索。
 
-搜索的预期错误仅返回未配置、鉴权失败、限流、HTTP 状态、格式错误或超时等安全信息，不返回上游错误正文、请求头或底层异常。携带凭据的搜索请求不跟随重定向。网页提取保留现有 HTTP/HTTPS 与 HTML 类型限制，不新增内网访问隔离；cwd 和来源分类均不构成权限边界。
-
-两个工具均为 replay: unsafe；沿用 Piko 重启撤销不确定工作、不自动重跑外部调用的策略。成功结果由 Durable 保存到原生工具记录，不建立第二份持久结果库。
+网页提取不渲染 JavaScript、不复用浏览器登录态。JSDOM 不启用脚本或子资源加载；优先主正文，无法识别文章时退回清理后的页面文字；相对链接基于最终 URL 解析，正文按 maxChars 截断。提取保留 HTTP/HTTPS 与 HTML 类型限制。
 
 参考：[Durable 配置与运行时](durable-runtime.md)、[应用配置](application-config.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](linux-deployment.md)。

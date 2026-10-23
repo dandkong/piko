@@ -26,7 +26,10 @@ bun run dev
 模型凭据只认 config/auth.json 与 config/models.json 的 `providers.<id>.apiKey`，不读环境变量；部署参数、通道与工具凭据仍在后端环境或私有 config/.env：
 
 ```dotenv
-BRAVE_SEARCH_API_KEY="填写你的搜索 API Key"
+EXA_API_KEY="可选：Exa Search Key"
+TAVILY_API_KEY="可选：Tavily Search Key"
+DEEPSEEK_SEARCH_API_KEY="可选：DeepSeek Search Key"
+BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 ```
 
 环境与 JSON 不提供同一字段的双入口；分工和旧部署调整见 [应用配置](application-config.md)。

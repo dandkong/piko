@@ -23,13 +23,20 @@ export type PikoConfig = {
 };
 const text = Type.String({ minLength: 1 });
 const tool = object({ enabled: Type.Boolean() });
+const searchProvider = Type.Union([
+  Type.Literal("exa"), Type.Literal("tavily"), Type.Literal("deepseek"), Type.Literal("brave"),
+]);
+const webSearchTool = object({
+  enabled: Type.Boolean(),
+  providerOrder: Type.Array(searchProvider, { minItems: 1, uniqueItems: true }),
+});
 const applicationSchema = object({
   version: Type.Literal(1),
   agent: agentSchema,
   channels: object({
     telegram: object({ enabled: Type.Boolean(), userId: Type.Optional(text) }),
   }),
-  tools: object({ web_search: tool, web_extract: tool }),
+  tools: object({ web_search: webSearchTool, web_extract: tool }),
 });
 export type ApplicationSettings = Static<typeof applicationSchema>;
 export type WebToolsConfig = ApplicationSettings["tools"];

@@ -3,7 +3,7 @@ export const defaultPikoFile = {
   version: 1,
   agent: { profiles: {} },
   channels: { telegram: { enabled: false } },
-  tools: { web_search: { enabled: true }, web_extract: { enabled: true } },
+  tools: { web_search: { enabled: true, providerOrder: ["exa", "tavily", "deepseek", "brave"] }, web_extract: { enabled: true } },
 };
 
 /** Deployment defaults are never serialized into application JSON. */

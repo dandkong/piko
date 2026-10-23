@@ -36,7 +36,7 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
     }
   },
   "tools": {
-    "web_search": { "enabled": true },
+    "web_search": { "enabled": true, "providerOrder": ["exa", "tavily", "deepseek", "brave"] },
     "web_extract": { "enabled": true }
   }
 }
@@ -44,6 +44,7 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
 
 - Telegram 默认关闭；enabled 和允许访问的 userId 仅由 JSON 管理。有 Token 不自动启用通道。
 - 两个网络工具默认启用。关闭时从主/子 Agent 的实际工具表移除；即使有搜索 Key，也不会反向启用被关闭的工具。正常运行时工具清单不列出已禁用工具。
+- `tools.web_search.providerOrder` 是非敏感的搜索后端优先级，默认 `exa → tavily → deepseek → brave`；只尝试列出的且有 Key 的后端。顺序非空、不得重复，未知名称拒绝启动。一次查询顺序调用：仅上游错误时回退；空结果是成功，不继续广播到其他后端。
 - 模型预设固定为 agent.profiles.main（主会话初始选择）和 agent.profiles.background（后台工作、任务执行、记忆整理等后台子 Agent），不接受其他名字，两者模型与思考级别启动时校验；可选 agent.stream 保留模型连接参数，没有环境覆盖入口。主会话当前选择另保存在 Durable Agent 文档中，profiles.main 不覆盖已有选择；省略 background 时后台继承主会话，省略 main 时新会话选第一个可用模型。
 - 不再配置 retry/compaction，Piko 不覆盖 Durable 的默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
 - models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值。供应商凭据写 `providers.<id>.apiKey`（内联，格式与 Pi 一致），或放在 auth.json；`keyless` 与 `apiKey` 互斥，两者都不配置时供应商视为未配置。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
@@ -57,7 +58,10 @@ PIKO_HOST=127.0.0.1
 PIKO_PORT=8787
 # 可选：工作区绝对路径；默认 PIKO_HOME/workspace
 # PIKO_WORKSPACE=/absolute/assistant-workspace
-BRAVE_SEARCH_API_KEY="填写自己的搜索 API Key"
+EXA_API_KEY="填写自己的 Exa API Key"
+TAVILY_API_KEY="填写自己的 Tavily API Key"
+DEEPSEEK_SEARCH_API_KEY="填写自己的 DeepSeek Search API Key"
+BRAVE_SEARCH_API_KEY="填写自己的 Brave Search API Key"
 PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 ```
 
@@ -68,7 +72,7 @@ PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 | PIKO_HOST | 后端监听地址，默认 127.0.0.1 |
 | PIKO_PORT | 后端监听端口，默认 8787；整数 1–65535 |
 | PIKO_TELEGRAM_BOT_TOKEN | Telegram 敏感凭据；仅 JSON enabled=true 时需要 |
-| BRAVE_SEARCH_API_KEY | 内置搜索凭据；缺失不阻止启动，工具反馈未配置 |
+| EXA_API_KEY / TAVILY_API_KEY / DEEPSEEK_SEARCH_API_KEY / BRAVE_SEARCH_API_KEY | 各搜索后端凭据；均缺失不阻止启动，`web_search` 返回未配置；DeepSeek Search 凭据独立于模型供应商 auth.json/models.json |
 | headersEnv 引用的变量 | HTTP header 值，仅在后端解析，不进入工具 schema |
 
 只有环境体系内部存在 `config/.env < 进程环境` 的优先级：未设置保留本地值，显式空值覆盖本地值。此规则不影响 JSON 行为。可使用引号、export 前缀与行尾注释；读取不修改全局 process.env，不把后端值注入 Expo。**模型供应商凭据不读环境变量**：只认 auth.json 与 models.json。
