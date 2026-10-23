@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import markdownItCjkFriendly from "markdown-it-cjk-friendly";
 import remend from "remend";
 
 export const assistantMarkdown = new MarkdownIt({
@@ -6,7 +7,7 @@ export const assistantMarkdown = new MarkdownIt({
   linkify: true,
   breaks: true,
   typographer: false,
-});
+}).use(markdownItCjkFriendly);
 
 // Completion is only for the active reply's display, never for stored content.
 export function prepareAssistantMarkdown(content: string, streaming: boolean): string {
