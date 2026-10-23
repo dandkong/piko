@@ -53,8 +53,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 │   ├── backend.lock             # 单后端写进程
 │   ├── tmp/                     # 工具溢出与临时文件
 │   └── durable/
-│       ├── main.jsonl           # 会话、entries、任务、submissions
-│       └── doc-*.jsonl          # Durable 原生文档
+│       └── session.sqlite      # Durable 原生会话、entries、任务、submissions、文档（运行期另有 WAL/SHM）
 └── workspace/
     ├── AGENTS.md
     ├── MEMORY.md
@@ -66,7 +65,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
         └── MEMORY.md              # 任务总览；执行产物直接写在同一目录
 ```
 
-初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。当前使用固定 state/durable，不迁移旧 SQLite 或 durable-sessions 布局，也不读取其聊天历史。清理旧数据须先停止后端，配置和工作区不随数据库清理删除。
+初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。当前源码使用固定 state/durable/session.sqlite；当前 Durable JSONL 须按 [SQLite 存储](features/sqlite-storage.md) 显式离线迁移，更旧的 Piko 自建 SQLite 或 durable-sessions 不由此脚本导入。清理旧数据须先停止后端，配置和工作区不随数据库清理删除。
 
 ## 模型、资源与内建扩展
 
@@ -130,7 +129,7 @@ SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再�
 
 ## 恢复、退出与备份
 
-启动先取得锁、打开固定原生存储、校验 root/cwd，再接收 HTTP/TG。完整损坏记录或剩余 doc 日志缺少 main.jsonl 时拒绝继续；Durable 原生处理残尾及 sidecar 恢复。整个目录被移除视为新会话，无另一个数据库可恢复正文。
+启动先取得锁、打开固定原生存储、校验 root/cwd，再接收 HTTP/TG。数据库损坏、目录仍含旧 JSONL 或非空目录缺少 session.sqlite 时拒绝继续；SQLite 原生处理 WAL 事务恢复。整个目录被移除视为新会话，无另一个数据库可恢复正文。
 
 启用调度前撤回遗留输入并用原生 abortTask 取消不确定执行；保留已经完成回答的 Reporter report 阶段，随后 resume 回传结果，不重放主/子模型或工具执行。有遗留生成或输入时，将中断提示存入 piko.recovery 并添加隐藏上下文说明，不触发模型；已保存历史继续展示。尚未保存的流式文字不承诺恢复，不回滚外部工具副作用。
 

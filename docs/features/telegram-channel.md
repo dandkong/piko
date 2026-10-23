@@ -1,6 +1,6 @@
 # RN 与 Telegram 双通道
 
-状态：文本首期已实现，共用原生主会话、提交去重和执行状态；Piko 不再维护 SQLite 或 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)。
+状态：文本首期已实现，共用原生主会话、提交去重和执行状态；使用 Durable 原生 SQLite，不维护 Piko 自建消息或 Run 表。架构见 [ARCHITECTURE](../ARCHITECTURE.md)。
 
 ## 目标与当前范围
 

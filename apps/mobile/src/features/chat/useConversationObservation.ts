@@ -15,6 +15,7 @@ export function useConversationObservation(
   onSnapshot: (snapshot: ConversationResponse) => void,
   onMessage: (event: MessageEvent) => void,
   onError: (error: string) => void,
+  onDeleted: () => void,
 ) {
   const [foreground, setForeground] = useState(
     AppState.currentState === "active",
@@ -70,7 +71,13 @@ export function useConversationObservation(
           onEvent: (event) => {
             if (!active) return;
             version.current++;
-            if (event.type === "snapshot") onSnapshot(event.conversation);
+            if (event.type === "deleted") {
+              active = false;
+              setConnected(false);
+              setReconnecting(false);
+              onDeleted();
+              controller.abort();
+            } else if (event.type === "snapshot") onSnapshot(event.conversation);
             else if (event.type === "message") onMessage(event);
             else if (event.type === "error") onError(event.message);
           },
@@ -82,6 +89,6 @@ export function useConversationObservation(
       active = false;
       controller.abort();
     };
-  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onError]);
+  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onError, onDeleted]);
   return { connected, reconnecting, modelReady, version };
 }

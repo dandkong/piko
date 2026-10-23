@@ -36,14 +36,14 @@ export function createApp({
         new Response(null, {
           status: 204,
           headers: {
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Accept, Content-Type",
           },
         }),
       );
     try {
       const response =
-        (await sideChatRequest(request, runtime)) ??
+        (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
         (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")
           ? await taskRequest(request, runtime, config.maxRequestBytes)

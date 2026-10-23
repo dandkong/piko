@@ -13,6 +13,11 @@ export class ConversationStores {
     if (!store) { store = new ConversationStore(this.runtime, id); this.sides.set(id, store); }
     return store;
   }
+  async forget(id: string) {
+    const store = this.sides.get(id);
+    this.sides.delete(id);
+    await store?.close();
+  }
   async close() {
     await Promise.allSettled([this.main, ...this.sides.values()].map(store => store.close()));
     this.sides.clear();

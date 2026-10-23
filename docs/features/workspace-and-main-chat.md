@@ -1,6 +1,6 @@
 # 工作区与主会话模型
 
-状态：已实现原生存储简化，使用 pi-durable / pi-ai 1.3.0。Piko 不再维护 SQLite 和 Run。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与运行时见 [Durable 配置](durable-runtime.md)。
+状态：源码使用 Durable 原生 SQLite，不维护 Piko 自建消息/Run 表；JSONL 副本核验及线上停机迁移已完成，见 [SQLite 存储](sqlite-storage.md)。架构见 [ARCHITECTURE](../ARCHITECTURE.md)，模型与运行时见 [Durable 配置](durable-runtime.md)。
 
 ## 范围与初始化
 
@@ -13,12 +13,12 @@
 | config/piko.json、.env | 应用配置与可选覆盖 |
 | config/piko.json、models.json | 统一的非敏感 Agent/通道/工具行为，以及独立模型目录；不再生成 settings.json |
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
-| state/durable/ | main.jsonl 与 doc-*.jsonl，唯一持久会话与执行状态来源 |
+| state/durable/ | session.sqlite（及运行期 WAL/SHM），唯一持久会话与执行状态来源 |
 | state/tmp/ | 工具溢出与可清理临时文件 |
 | 当前进程内存 | 流式消息、输出合并、Session 中待挂接的后台回传、TG 投递身份 |
 | workspace/ | AGENTS.md、MEMORY.md、memory/ 每日记忆、技能与工作成果 |
 
-没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。旧 SQLite 和 durable-sessions 不迁移，也不作为当前主会话来源。
+没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。更旧的 Piko 自建 SQLite 和 durable-sessions 不作为当前来源；本次仅提供当前 Durable JSONL 到原生 SQLite 的显式迁移。
 
 ## 展示与上下文
 
@@ -76,17 +76,17 @@ read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell �
 
 ## 中断与损坏恢复
 
-1. 启动取得锁、打开固定 state/durable，校验日志、root 与工作区关联。
-2. 完整损坏记录拒绝继续；剩余 doc 日志但 main.jsonl 缺失时明确报错。Durable 自行恢复残尾与未确认 sidecar 事务。
+1. 启动取得锁、打开固定 state/durable/session.sqlite，校验原生存储、root 与工作区关联。
+2. 损坏数据库拒绝继续；目录含旧 JSONL，或非空目录缺少 session.sqlite，明确报错，不初始化空会话或静默回退。SQLite 处理 WAL 事务恢复。
 3. 启用调度前撤回遗留输入并取消不确定执行；仅保留已完成子任务的 Reporter report 阶段，随后 resume 回传结果，不自动重跑模型和工具。
 4. 有遗留生成或输入时写原生 piko.recovery 中断提示和隐藏上下文说明，不复制输入、不调用模型；下一次接纳清除提示。
 5. 已保存历史继续展示；尚未保存的文字不保证恢复。恢复不回滚工具的外部副作用。
 
 ## 开发数据与备份
 
-当前布局不兼容旧版元数据，不迁移旧聊天；旧 durable-sessions 保留但不读取，新主会话在 state/durable 初始化。旧 piko.sqlite 及其 WAL/SHM 可在停止后端后删除，配置、模型凭据、工作区文件和技能不随清理删除。需要完全重置新会话时，先备份并停止后端，再清理整个 state/durable，不能只删除 main.jsonl。
+当前原生 JSONL 可按 [迁移说明](sqlite-storage.md) 离线导入独立目录并停机切换，不自动迁移更旧的 Piko 自建数据库。配置、模型凭据、工作区文件和技能不随存储切换删除。重置须明确确认并先备份、停止后端，不可只删除数据库主文件而保留 WAL。
 
-备份停止 API 后复制整个 PIKO_HOME 和单独指定的工作区，main.jsonl 与 doc-*.jsonl 成套保存；恢复保留原工作区绝对路径。
+备份停止 API 后复制整个 PIKO_HOME 和单独指定的工作区；SQLite 目录成套保存，恢复保留原工作区绝对路径。迁移前 JSONL 和历史备份仍含原始隐私内容，切换不等于清除它们。
 
 ## 后续与验证
 

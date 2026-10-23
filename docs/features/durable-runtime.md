@@ -2,13 +2,13 @@
 
 状态：服务端已接入 pi-durable / pi-ai 1.3.0，配套 chord 同为 1.3.0，使用 Piko 原有 HTTP/SSE 和 UI。无需 Pi CLI，不读取 `~/.pi/agent`。TG 已提供模型/思考强度按钮与压缩命令；RN 配置管理界面尚未实现，可编辑 JSON 并调用控制 API。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
-原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。此次升级继续使用原生 JSONL 存储，保留重启中断后不自动重跑的语义。
+原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。当前源码使用 Durable 原生 SQLite 存储，JSONL 的显式迁移见 [SQLite 存储](sqlite-storage.md)，保留重启中断后不自动重跑的语义。
 
 ## 实时事件与历史
 
 实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`，替代直接解析 `subscribeCommits` / `pi.live`。Pi 适配器把 `message_start/update/end` 转成 Piko 的独立 message 更新，包含消息身份、完整文字、提交标记与临时身份替换关系；SDK 类型与事件只留在 `server/runtime/`。RN 和 TG 按助手消息更新展示，不累计整轮回答。
 
-初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整 JSONL entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。输入使用原生 submission 独立结算；会话快照从原生事务读取历史与状态，不再维护 Piko Run 终态。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
+初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整原生 entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。输入使用原生 submission 独立结算；会话快照从原生事务读取历史与状态，不再维护 Piko Run 终态。原生已保存的失败尝试仍遵循原有历史投影规则，不因 retry 事件自行删除。
 
 会话关闭时停止事件订阅；订阅异常会报告并阻止该会话继续接纳新生成，避免静默丢失实时输出。工具、思考、压缩和 usage 事件已有原生来源，但本次只消费消息与提交状态，不新增这些内容的产品展示，不另建永久事件存储。`watchEvents` 的实验性协议通过运行时适配器隔离，后续升级依赖时需验证事件映射和 snapshot 行为。
 

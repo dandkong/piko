@@ -14,7 +14,7 @@ export class ConversationControl {
   private admission: Promise<unknown> = Promise.resolve();
   private maintenance?: Promise<unknown>;
   private stopping = false;
-  private archiving = false;
+  private deleting = false;
   private disposed = false;
   private closing?: Promise<void>;
   running = false;
@@ -32,12 +32,12 @@ export class ConversationControl {
   }
   get isBusy() {
     return (
-      !!this.maintenance || this.stopping || this.archiving || this.running
+      !!this.maintenance || this.stopping || this.deleting || this.running
     );
   }
   get canReport() {
     return (
-      !this.maintenance && !this.stopping && !this.archiving && !this.disposed
+      !this.maintenance && !this.stopping && !this.deleting && !this.disposed
     );
   }
   assertInput() {
@@ -46,7 +46,7 @@ export class ConversationControl {
     const error = this.observationError();
     if (error) throw error;
   }
-  /** Reserve internal admission on the same line as user input, maintenance and archive. */
+  /** Reserve internal admission on the same line as user input, maintenance and deletion. */
   async receiveReport(operation: () => Promise<void>): Promise<boolean> {
     return this.serial(async () => {
       if (!this.canReport) return false;
@@ -57,19 +57,23 @@ export class ConversationControl {
       return true;
     });
   }
-  async archive(operation: () => Promise<void>) {
-    return this.serial(async () => {
-      if (this.disposed || this.maintenance) throw new RuntimeBusyError();
-      this.archiving = true;
+  async remove(operation: () => Promise<void>) {
+    await this.serial(async () => {
+      if (this.disposed || this.maintenance || this.deleting || this.stopping) throw new RuntimeBusyError();
+      this.deleting = true;
       this.changed();
-      try {
-        await this.abortCurrent();
-        await operation();
-      } finally {
-        this.archiving = false;
-        this.changed();
-      }
     });
+    // Reserve admission, but release the serial line before waiting: a reporter
+    // already waiting on this owner must be able to observe the closed gate.
+    try {
+      await this.conversation.abort(ctx, { background: true });
+      await this.conversation.waitForIdle(ctx);
+      this.disposed = true;
+      await operation();
+    } finally {
+      this.deleting = false;
+      this.changed();
+    }
   }
 
   serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -78,7 +82,10 @@ export class ConversationControl {
     return task;
   }
   abort(commandId?: string): Promise<boolean> {
-    return this.serial(() => this.abortCurrent(commandId));
+    return this.serial(() => {
+      if (this.disposed || this.deleting) throw new RuntimeBusyError();
+      return this.abortCurrent(commandId);
+    });
   }
   async abortCurrent(commandId?: string): Promise<boolean> {
     const wasActive = this.isBusy;

@@ -22,6 +22,7 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
     try {
       touch();
       const response = await transport.fetch(`${path}/events`, { signal: controller.signal });
+      if (response.status === 404 && path.startsWith("/api/side-chats/")) { options.onEvent({ type: "deleted" }); return; }
       if (!response.ok) throw new HttpStreamError("无法接收对话内容。", response.status);
       if (!response.body) throw new Error("流式响应不可用。");
       reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
@@ -30,7 +31,10 @@ export async function observeConversation(options: { signal: AbortSignal; onEven
         options.onReconnecting(false); failures = 0;
         buffer += decoder.decode(chunk.value, { stream: true });
         const parsed = consumeSse(buffer); buffer = parsed.remainder;
-        for (const event of parsed.events) options.onEvent(event);
+        for (const event of parsed.events) {
+          options.onEvent(event);
+          if (event.type === "deleted") return;
+        }
       }
       if (options.signal.aborted) return;
       throw new Error("对话连接已断开。");

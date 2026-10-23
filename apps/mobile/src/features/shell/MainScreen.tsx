@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { Keyboard, useWindowDimensions } from "react-native";
 import { AppShell, type AppTab } from "./AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
@@ -33,8 +33,6 @@ export function MainScreen() {
   const sides = useSideChats(menuOpen);
   const activeId = tab === "Chat" ? selectedId : undefined;
   const chat = activeChat?.id === activeId ? activeChat?.chat : undefined;
-  const archived =
-    sides.items.find((item) => item.id === activeId)?.archivedAt != null;
   const onActiveChat = useCallback(
     (id: string | undefined, value: ChatStore) => {
       setActiveChat({ id, chat: value });
@@ -58,12 +56,21 @@ export function MainScreen() {
   };
   const updateChat = async (id: string, change: UpdateSideChat) => {
     if (!(await sides.update(id, change))) return false;
-    if (change.archived) {
-      setSelectedId((current) => (current === id ? undefined : current));
-      setVisited((current) => current.filter((value) => value !== id));
-    }
     return true;
   };
+  const removeChat = async (id: string) => {
+    if (!(await sides.remove(id))) return false;
+    setSelectedId(current => current === id ? undefined : current);
+    setVisited(current => current.filter(value => value !== id));
+    return true;
+  };
+  useEffect(() => {
+    const id = activeChat?.id;
+    if (!id || !activeChat.chat.deleted) return;
+    setSelectedId(current => current === id ? undefined : current);
+    setVisited(current => current.filter(value => value !== id));
+    void sides.refresh();
+  }, [activeChat?.id, activeChat?.chat.deleted, sides.refresh]);
   return (
     <AppShell
       wide={width >= 900}
@@ -92,6 +99,7 @@ export function MainScreen() {
             if (value) selectChat(value.id);
           }}
           onUpdateSideChat={updateChat}
+          onDeleteSideChat={removeChat}
           onOpenSettings={() => setSettingsOpen(true)}
           covered={settingsOpen}
         />
@@ -102,7 +110,7 @@ export function MainScreen() {
           onClose={() => setSettingsOpen(false)}
         />
       }
-      status={archived ? "已归档 · 只读" : (chat?.status ?? "")}
+      status={chat?.status ?? ""}
       headerHeight={headerHeight}
       footerHeight={footerHeight}
       onHeaderHeightChange={(value) => {
@@ -113,7 +121,7 @@ export function MainScreen() {
         setFooterHeight(value);
       }}
       composer={
-        tab === "Chat" && !archived && chat ? (
+        tab === "Chat" && chat ? (
           <ChatComposer
             key={activeId ?? "main"}
             draft={chat.draft}

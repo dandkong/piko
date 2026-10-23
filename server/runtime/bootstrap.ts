@@ -1,5 +1,4 @@
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import {
   configure,
@@ -10,10 +9,9 @@ import {
   type ConversationId,
   type Registry,
 } from "@earendil-works/pi-durable";
-import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import type { WorkspacePaths } from "../workspace";
 import { TaskFiles } from "../task-files";
-import { sessionDirectory } from "./storage-path";
+import { openRuntimeStorage } from "./storage";
 import { runtimePaths } from "./config/paths";
 import { Recovery } from "./conversation-docs";
 import { prepareRestart } from "./subagents/recovery";
@@ -34,9 +32,7 @@ export async function openRuntime(
   config: WorkspaceModelConfig,
   registry: Registry,
 ) {
-  const directory = sessionDirectory(runtimePaths(paths.home).sessions);
-  const persisted = existsSync(join(directory, "main.jsonl"));
-  const storage = await openNodeJsonlStorage(directory, ctx, { fsync: true });
+  const { storage, persisted, maintenance } = await openRuntimeStorage(runtimePaths(paths.home).sessions);
   let harness: Harness;
   try {
     harness = await Harness.open(
@@ -63,6 +59,7 @@ export async function openRuntime(
     throw error;
   }
   try {
+    await maintenance.recover(harness);
     const existing = await harness.conversation(ROOT_CONVERSATION_ID, ctx);
     if (persisted && !existing)
       throw new Error("Durable root conversation is missing.");
@@ -167,7 +164,7 @@ export async function openRuntime(
         });
       }
     }, ctx);
-    return { storage, harness };
+    return { storage, harness, maintenance };
   } catch (error) {
     await harness.close(ctx);
     throw error;

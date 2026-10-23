@@ -10,7 +10,7 @@ export function consumeSse(buffer: string, flush = false): { events: StreamEvent
     if (!value || typeof value !== "object") continue;
     if (value.type === "snapshot" && value.conversation && Array.isArray(value.conversation.messages) && typeof value.conversation.busy === "boolean") events.push(value);
     else if (value.type === "message" && value.message && typeof value.message.id === "string" && typeof value.message.content === "string" && typeof value.final === "boolean") events.push(value);
-    else if (value.type === "refresh" || value.type === "error" && typeof value.message === "string") events.push(value);
+    else if (value.type === "refresh" || value.type === "deleted" || value.type === "error" && typeof value.message === "string") events.push(value);
   }
   return { events, remainder };
 }

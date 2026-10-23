@@ -40,6 +40,7 @@ export class ConversationStore {
     return (this.opening ??= this.runtime
       .createSession(this.conversationId)
       .then((session) => {
+        if (this.closing) throw new Error("Conversation is closed.");
         this.session = session;
         this.unsubscribe = session.subscribe((event) => {
           // Tool activity is live-only and channel-specific; it never changes history.
@@ -49,6 +50,11 @@ export class ConversationStore {
             event.type === "compaction"
           )
             return;
+          if (event.type === "deleted") {
+            this.publish(event);
+            void this.close();
+            return;
+          }
           if (event.type === "error") this.publish(event);
           else if (event.type === "message") {
             if (event.previousId) this.messages.delete(event.previousId);
@@ -195,5 +201,8 @@ export class ConversationStore {
     await this.pump;
     this.messages.clear();
     this.listeners.clear();
+    this.session = undefined;
+    this.opening = undefined;
+    this.unsubscribe = undefined;
   }
 }

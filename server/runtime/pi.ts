@@ -108,8 +108,12 @@ class PikoRuntime {
     this.sideChats = new SideChats(
       harness,
       this.paths.workspace,
-      children,
+      opened.maintenance,
       (id) => this.session(id),
+      async id => {
+        const opening = this.sessions.get(id);
+        if (opening && (await opening).closed && this.sessions.get(id) === opening) this.sessions.delete(id);
+      },
       () => this.main.native.agent(ctx),
     );
     try {
@@ -199,6 +203,7 @@ class PikoRuntime {
     this.closed = (async () => {
       this.memory?.close();
       try {
+        await this.sideChats?.close();
         await this.tasks?.close();
         await Promise.allSettled(
           [...this.sessions.values()].map(async (value) =>
@@ -247,6 +252,7 @@ export function createPiRuntime(
       create: async (requestId, title) =>
         (await get()).sideChats.create(requestId, title),
       update: async (id, change) => (await get()).sideChats.update(id, change),
+      remove: async id => (await get()).sideChats.remove(id),
     },
     isModelReady: async () => (await session()).modelReady(),
     createSession: session,

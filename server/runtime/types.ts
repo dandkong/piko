@@ -35,6 +35,7 @@ export interface ChatRuntime {
     list(): Promise<SideChat[]>;
     create(requestId: string, title: string): Promise<SideChat>;
     update(id: string, change: UpdateSideChat): Promise<SideChat>;
+    remove(id: string): Promise<void>;
   };
   createSession(conversationId?: string): Promise<ChatSession>;
   describe(conversationId?: string): Promise<RuntimeDescription>;

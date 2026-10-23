@@ -6,6 +6,7 @@ import { json, readObjectBody } from "../http";
 export async function sideChatRequest(
   request: Request,
   runtime: ChatRuntime,
+  forget?: (id: string) => Promise<void>,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (
@@ -14,6 +15,12 @@ export async function sideChatRequest(
   ) {
     if (request.method === "GET" && url.pathname === "/api/side-chats")
       return json(await runtime.sideChats.list());
+    if (request.method === "DELETE" && url.pathname !== "/api/side-chats") {
+      const id = url.pathname.split("/").at(-1)!;
+      await runtime.sideChats.remove(id);
+      await forget?.(id);
+      return new Response(null, { status: 204 });
+    }
     if (request.method !== "POST") return json({ error: "Not found." }, 404);
     const input = await readObjectBody(request, 8000);
     if (
@@ -36,18 +43,12 @@ export async function sideChatRequest(
       );
     }
     if (
-      (input.archived !== undefined && typeof input.archived !== "boolean") ||
-      !Object.keys(input).length ||
-      Object.keys(input).some((key) => !["title", "archived"].includes(key))
+      typeof input.title !== "string" ||
+      Object.keys(input).some((key) => key !== "title")
     )
       return json({ error: "Invalid side chat change." }, 422);
     return json(
-      await runtime.sideChats.update(url.pathname.split("/").at(-1)!, {
-        ...(typeof input.title === "string" && { title: input.title }),
-        ...(typeof input.archived === "boolean" && {
-          archived: input.archived,
-        }),
-      }),
+      await runtime.sideChats.update(url.pathname.split("/").at(-1)!, { title: input.title }),
     );
   }
   return undefined;

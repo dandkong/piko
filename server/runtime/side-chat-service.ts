@@ -11,8 +11,7 @@ import {
   type UpdateSideChat,
 } from "../../shared/side-chats";
 import { sideChatScope } from "./background";
-import type { SubagentRuntime } from "./subagents/runtime";
-import { activeSubagentIds } from "./subagents/queries";
+import type { StorageMaintenance } from "./storage-maintenance";
 import {
   SideChatDoc,
   SideChatCreates,
@@ -24,17 +23,21 @@ import {
 
 /** Side-chat product rules; Runtime supplies lifetime and conversation admission. */
 export class SideChats {
+  private deletionLine: Promise<unknown> = Promise.resolve();
   constructor(
     private readonly harness: Harness,
     private readonly workspace: string,
-    private readonly children: SubagentRuntime,
+    private readonly maintenance: StorageMaintenance,
     private readonly session: (
       id: ConversationId,
-    ) => Promise<{ archive(operation: () => Promise<void>): Promise<void> }>,
+    ) => Promise<{ remove(operation: () => Promise<void>): Promise<void> }>,
+    private readonly forget: (id: ConversationId) => Promise<void>,
     private readonly rootAgent: () => Promise<Agent>,
   ) {}
   async list() {
-    return this.harness.commit((tx) => sideChats(tx), ctx);
+    return this.harness.commit(async tx => (await sideChats(tx))
+      .filter(chat => chat.archivedAt === null)
+      .map(({ id, title, createdAt }) => ({ id, title, createdAt })), ctx);
   }
   async create(requestId: string, title: string): Promise<SideChat> {
     const rootAgent = await this.rootAgent();
@@ -43,7 +46,7 @@ export class SideChats {
       const existing = request.conversationId;
       if (existing !== null) {
         const found = await requireSideChat(tx, String(existing));
-        return { id: String(found.id), ...found.metadata };
+        return { id: String(found.id), title: found.metadata.title, createdAt: found.metadata.createdAt };
       }
       const created = await tx.createConversation({
         ownership: { kind: "ownerless" },
@@ -59,7 +62,7 @@ export class SideChats {
       metadata.title = validTitle(title);
       metadata.createdAt = Date.now();
       request.conversationId = Number(created.id);
-      return { id: String(created.id), ...metadata };
+      return { id: String(created.id), title: metadata.title, createdAt: metadata.createdAt };
     }, ctx);
   }
   async update(value: string, change: UpdateSideChat): Promise<SideChat> {
@@ -72,32 +75,45 @@ export class SideChats {
         const { metadata } = await requireSideChat(tx, value);
         if (change.title !== undefined)
           metadata.title = validTitle(change.title);
-        if (change.archived !== undefined)
-          metadata.archivedAt = change.archived
-            ? (metadata.archivedAt ?? Date.now())
-            : null;
       }, ctx);
-    // Archive and input admission use the SAME conversation gate, avoiding submit/archive races.
-    if (change.archived === true)
-      await (
-        await this.session(id)
-      ).archive(async () => {
-        const jobs = await this.harness.commit(
-          (tx) => activeSubagentIds(tx, id),
-          ctx,
-        );
-        if (jobs.length) await this.children.stop(this.harness, id, jobs, ctx);
-        await save();
-      });
-    else await save();
+    await save();
     return this.harness.commit(
-      async (tx) => ({
-        id: value,
-        ...(await requireSideChat(tx, value)).metadata,
-      }),
+      async tx => {
+        const { metadata } = await requireSideChat(tx, value);
+        return { id: value, title: metadata.title, createdAt: metadata.createdAt };
+      },
       ctx,
     );
   }
+  remove(value: string): Promise<void> {
+    const deletion = this.deletionLine.catch(() => {}).then(async () => {
+      let plan;
+      try {
+        plan = await this.harness.commit(() => this.maintenance.planSideChat(value), ctx);
+      } catch (error) {
+        // Retrying a successful delete is safe, including a previous checkpoint failure.
+        if (error instanceof SideChatError && error.status === 404 && /^[1-9]\d*$/.test(value) && Number(value) !== 1 &&
+          Number.isSafeInteger(Number(value)) && !(await this.harness.conversation(Number(value) as ConversationId, ctx))) {
+          await this.maintenance.compact(this.harness);
+          return;
+        }
+        throw error;
+      }
+      // Re-plan after cancellation; finalizers may have created task documents.
+      const purge = () => this.maintenance.erase(this.harness, value);
+      const id = Number(value) as ConversationId;
+      try {
+        if (plan.retired) await purge(); // Finish an interrupted physical purge.
+        else await (await this.session(id)).remove(purge);
+      } finally {
+        await this.forget(id);
+      }
+      await this.maintenance.compact(this.harness);
+    });
+    this.deletionLine = deletion;
+    return deletion;
+  }
+  async close() { await this.deletionLine.catch(() => {}); }
 }
 function validTitle(title: string) {
   if (

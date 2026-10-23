@@ -13,7 +13,7 @@ export function chatStream(store: ConversationStore, request: Request): Response
       void store.observe(event => {
         if (closed) return;
         if ((controller.desiredSize ?? 0) <= 0) { close(); return; }
-        try { controller.enqueue(encoder.encode(encodeSse(event))); } catch { close(); }
+        try { controller.enqueue(encoder.encode(encodeSse(event))); if (event.type === "deleted") close(); } catch { close(); }
       }).then(stop => { unsubscribe = stop; if (closed) stop(); }).catch(() => close());
     },
     cancel() { cleanup(); },

@@ -17,7 +17,7 @@ Agent 运行时使用 pi-durable 1.3.0，模型适配使用 pi-ai 1.3.0，Bun �
 | [工作区与主会话模型](docs/features/workspace-and-main-chat.md) | 已实现范围、原生历史投影、存储、恢复和验收；复杂功能方案放在 docs/features/ |
 | [Durable 配置与运行时](docs/features/durable-runtime.md) | 模型、凭据、预设、思考强度、技能与运行时控制 API |
 | [内置搜索与网页提取](docs/features/web-tools.md) | 搜索/提取契约、后端环境凭据、能力来源、取消与请求限制 |
-| [旁聊](docs/features/side-chats.md) | 独立聊天、共享资源、抽屉管理、归档与恢复 |
+| [旁聊](docs/features/side-chats.md) | 独立聊天、共享资源、抽屉管理与不可恢复删除 |
 | [后台子 Agent](docs/features/background-subagents.md) | 共享资源、持久化子会话、私有回传与停止/恢复范围 |
 | [任务与执行记录](docs/features/tasks.md) | 保存可手动/定时运行的任务、任务记忆、归档与恢复 |
 | [RN 与 Telegram 双通道](docs/features/telegram-channel.md) | 共享主会话、TG 私聊配置与命令、去重、回复投递与 RN 同步 |
@@ -45,7 +45,7 @@ RN 客户端位于 `apps/mobile`；跨端契约位于 `shared/`，SSE 编解码�
 - 与 Expo SDK 57 兼容的 Expo Go，或者相应的开发客户端。
 - Android Emulator 或 iOS Simulator。iOS Simulator 需要 macOS；Windows 上可使用 Android Emulator。
 
-不需要安装或登录 Pi CLI，也不读取 `~/.pi/agent`。首次启动自动补齐空配置文件，模型配置示例见 [Durable 配置](docs/features/durable-runtime.md)。当前使用固定 `state/durable`；旧 SQLite / `durable-sessions` 不迁移，新布局会初始化新主会话，模型配置和工作区文件继续保留。
+不需要安装或登录 Pi CLI，也不读取 `~/.pi/agent`。首次启动自动补齐空配置文件，模型配置示例见 [Durable 配置](docs/features/durable-runtime.md)。当前源码使用固定 `state/durable/session.sqlite` 原生 SQLite；已有 JSONL 须先显式离线迁移，不能直接启动生成空会话。迁移步骤和线上切换边界见 [SQLite 存储](docs/features/sqlite-storage.md)。更旧的 Piko 自建 SQLite / `durable-sessions` 不由该脚本导入，模型配置和工作区文件继续保留。
 
 ## 本地运行
 
@@ -125,13 +125,13 @@ $env:PIKO_WORKSPACE = "D:\AssistantWorkspace"
 bun run dev
 ```
 
-`PIKO_HOME/config` 保存统一行为 piko.json、模型目录 models.json，以及私有部署/凭据 .env；不再读取 auth.json。Piko 不加载用户代码插件；用户 skill 放在助手工作区 `.agents/skills`。`state/durable/` 的原生 JSONL 是会话内容的唯一来源，其中 `main.jsonl` 是会话及提交日志，`doc-*.jsonl` 保存 Durable 原生文档。备份时须保留整个会话目录。输入去重、执行状态与待应用输入均由 Durable 保存，Piko 不再使用 SQLite。state 必须在工作区之外；同一状态目录只启动一个后端。
+`PIKO_HOME/config` 保存统一行为 piko.json、模型目录 models.json，以及私有部署/凭据 .env；不再读取 auth.json。Piko 不加载用户代码插件；用户 skill 放在助手工作区 `.agents/skills`。`state/durable/session.sqlite` 的 Durable 原生记录是会话内容的唯一来源，包含 conversation、entries、task、submission 和文档；不另建 Piko 消息或 Run 表。使用 WAL/FULL 和 secure_delete；备份须停机并成套保存整个存储目录，不能遗漏 WAL。输入去重、执行状态与待应用输入均由 Durable 保存。state 必须在工作区之外；同一状态目录只启动一个后端。
 
 工作区的主文件包括 AGENTS.md（如何表达和做事）、MEMORY.md（稳定长期事实与结论）以及 `memory/YYYY-MM-DD.md`（每日讨论、决定、进展与未完线索）。前两者按有限长度在模型请求前加载；每日记忆按需 read/search。一个后台记忆整理 在主会话闲置 30 分钟后读取增量，由专用子 Agent 使用 read/write/edit 直接维护每日和长期记忆；仅由后台闲置调度触发，不提供专用手动触发工具。技能来自应用内建与工作区 `.agents/skills`，同名时工作区技能优先。助手可使用 read、write、edit、bash，读取技能正文、保存文件、创建技能并运行脚本；新技能在下一次请求刷新索引。Bash 使用本机 Shell，搜索和目录列表通过 Bash 命令完成。
 
-工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Pi 原生 JSONL；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。每日与长期记忆的后台整理已接入；专门的记忆浏览/检索 UI 尚未实现。
+工具使用后端进程的本机权限，相对路径默认从助手工作区解析；当前没有工作区沙箱或单独的操作审批界面。工具调用与结果保留在 Durable 原生 SQLite entries；聊天界面目前显示文本回复，专门的工具进度与产物查看后续接入。每日与长期记忆的后台整理已接入；专门的记忆浏览/检索 UI 尚未实现。
 
-备份时先停止 API，再一起复制整个 `PIKO_HOME` 和单独指定的工作区；恢复保留原工作区绝对路径。已有会话的工作区路径与配置不一致时拒绝启动。旧 `piko.sqlite` 及 WAL/SHM 可在停止后端后删除，旧原生目录保留但不再读取；当前新主会话不迁移旧聊天。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
+备份时先停止 API，再一起复制整个 `PIKO_HOME` 和单独指定的工作区；恢复保留原工作区绝对路径。已有会话的工作区路径与配置不一致时拒绝启动。更旧的 Piko 自建 `piko.sqlite` 不作当前事实源；当前原生 JSONL 已按显式迁移流程导入 SQLite，旧存储的保留或清除需明确授权，不自动回退。操作细节见 [功能说明](docs/features/workspace-and-main-chat.md)。
 
 实体设备通过 `EXPO_PUBLIC_PIKO_API_URL` 设置可访问的 API 地址。API 默认只监听 `127.0.0.1` 且没有登录验证；实体设备接入应先提供受保护的访问通道和身份验证，不要直接将 API 暴露到不可信网络。
 
@@ -184,13 +184,13 @@ bun run build:web
 
 ## 当前边界
 
-- 工作区、主会话和旁聊已持久化；同一 Harness 中旁聊使用独立 ownerless conversation，支持一键默认名新建、切换、三点菜单重命名/归档及独立停止；顶部名字固定 Piko，归档后隐藏，暂不提供恢复入口。共享记忆/技能/通用工具，不继承主聊天记录、不自动回传、不提取旁聊记忆、不开放任务管理；支持结果只回原旁聊的后台委派。见 [旁聊](docs/features/side-chats.md)。
+- 工作区、主会话和旁聊已持久化；同一 Harness 中旁聊使用独立 ownerless conversation，支持一键默认名新建、切换、三点菜单重命名/不可恢复删除及独立停止；顶部名字固定 Piko，删除会清理旁聊及所属后台运行数据，不删除附件、工作区文件或历史备份。共享记忆/技能/通用工具，不继承主聊天记录、不自动回传、不提取旁聊记忆、不开放任务管理；支持结果只回原旁聊的后台委派。见 [旁聊](docs/features/side-chats.md)。
 - 后台子 Agent 共用模型、基本工具、全局指导和技能；禁止嵌套。普通委派共用工作区、不单独展示，任务执行则有固定目录、独立记忆和 Tasks 执行记录。一次委派一个持久化子会话，结果私下交回主 Agent，由它决定回复或保持安静；普通停止不取消独立子工作。
 - 当前支持聊天、流式回复、独立停止、错误重试，以及断线、页面刷新和回到前台后的回复恢复。连接断开只停止订阅，服务端继续执行；停止按钮通过会话停止接口终止当前工作，也可取消手动压缩。
-- Pi JSONL 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 每次连接先加载最新快照，再接收实时更新，不维护事件游标或重放缓存。同 `requestId` 的重复提交由 Durable 去重，重启后仍不会重复执行；启动撤销不确定工作并显示中断提示，不自动重跑；已完成子任务的纯回传阶段可以恢复。
+- Durable SQLite 保存原生消息、工具与结果、压缩和自定义消息；模型压缩不删除 UI 历史。SSE 每次连接先加载最新快照，再接收实时更新，不维护事件游标或重放缓存。同 `requestId` 的重复提交由 Durable 去重，重启后仍不会重复执行；启动撤销不确定工作并显示中断提示，不自动重跑；已完成子任务的纯回传阶段可以恢复。
 - 重启保留 Pi 已保存的消息，尚未保存的流式文字可能丢失。原生 inbox 中尚未应用的输入会在启动时撤回，用户需要主动重新发送；不从另一套日志重建正文。
 - JSON 模型配置、思考强度、模型预设和手动压缩已接入；TG 通过内部运行时提供模型/思考按钮与压缩命令，不另设 HTTP 管理接口，配置修改后重启生效，RN 配置管理界面尚未实现。Durable Extension 仅用于 Piko 内建运行时能力，不加载用户插件代码。
 - Telegram 与 App 的附件（图片、文档、音视频）共用 `PIKO_HOME/state/attachments`，服务端只负责接收和给出路径，模型自行决定用 `read` 还是 bash 检查；图片由 Photon 处理并返回图片块。非视觉模型会收到占位说明。RN 选图尚未接入。见 [附件与图片读取](docs/features/attachments.md)。
 - Tasks 首版支持手动、一次性、每天/自定义 Cron；任务在 Chat 内创建，页面按进行中/已归档分组展示时间标签与已结束的执行记录，通过图标归档/恢复；归档停止未来调度，不等于本次执行完成。去重、同任务串行和重启中断已接入；首版没有独立语义阻塞、自动重试整个任务、执行预算或失败熔断；详情见任务与执行记录说明。
-- 顶部菜单现在打开层叠式导航抽屉，主界面仅向右平移，左侧为全高底层菜单而非悬浮卡片，四个页签与底部导航共用配置；设置入口移至抽屉左下角（禁用占位），右下角一键默认名新建旁聊并直接进入；列表右侧三点菜单提供重命名与归档，不展示已归档或恢复入口。通知尚未接入。服务端附件接口与 Telegram 图片已可用。Posts 与 Artifacts 页签已启用，但分别只有空状态/标题占位，不展示模拟帖子。
+- 顶部菜单现在打开层叠式导航抽屉，主界面仅向右平移，左侧为全高底层菜单而非悬浮卡片，四个页签与底部导航共用配置；设置入口移至抽屉左下角（禁用占位），右下角一键默认名新建旁聊并直接进入；列表右侧三点菜单提供重命名与删除；删除需确认，不提供归档或恢复入口。通知尚未接入。服务端附件接口与 Telegram 图片已可用。Posts 与 Artifacts 页签已启用，但分别只有空状态/标题占位，不展示模拟帖子。
 - Feed 的完整能力、Browser、全局文件/产物管理、登录、多用户和连接器按路线图逐步加入；记忆的专门浏览与版本管理 UI 尚待设计。

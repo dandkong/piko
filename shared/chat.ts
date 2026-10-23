@@ -19,6 +19,7 @@ export type StreamEvent =
   | { type: "tool"; activity: ToolActivity }
   | { type: "tool-clear" }
   | { type: "refresh" }
+  | { type: "deleted" }
   | { type: "snapshot"; conversation: ConversationResponse }
   | { type: "error"; message: string };
 export type HealthResponse = { ok: boolean; app: "Piko"; runtime: "Pi"; modelReady: boolean; activeSessions: number };

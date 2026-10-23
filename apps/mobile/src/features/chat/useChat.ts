@@ -28,6 +28,8 @@ import {
 export function useChat(conversationId?: string, observing = true) {
   const [history, setHistory] = useState<HistoryPage>({ messages: [] });
   const [draft, setDraft] = useState("");
+  const [deleted, setDeleted] = useState(false);
+  const deletedRef = useRef(false);
   const messages = history.messages;
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -51,7 +53,7 @@ export function useChat(conversationId?: string, observing = true) {
   const lastMessage = useRef("");
   const stopId = useRef<string | undefined>(undefined);
   const apply = useCallback((snapshot: ConversationResponse) => {
-    if (!mounted.current) return;
+    if (!mounted.current || deletedRef.current) return;
     const input = pending.current;
     if (
       input &&
@@ -90,6 +92,7 @@ export function useChat(conversationId?: string, observing = true) {
   }, []);
   const onMessage = useCallback(
     (event: Extract<StreamEvent, { type: "message" }>) => {
+      if (deletedRef.current) return;
       setHistory((current) => ({
         ...current,
         messages: applyMessageEvent(current.messages, event),
@@ -97,6 +100,20 @@ export function useChat(conversationId?: string, observing = true) {
     },
     [],
   );
+  const { attachments, setAttachments, attaching, attach, removeAttachment } =
+    useChatAttachments(loading, sending, mounted, setError);
+  const onDeleted = useCallback(() => {
+    deletedRef.current = true;
+    pending.current = null;
+    submitController.current?.abort();
+    olderController.current?.abort();
+    setHistory({ messages: [] });
+    setDraft("");
+    setAttachments([]);
+    setBusy(false);
+    setLoading(false);
+    setDeleted(true);
+  }, [setAttachments]);
   const {
     connected,
     reconnecting,
@@ -104,13 +121,12 @@ export function useChat(conversationId?: string, observing = true) {
     version: observedVersion,
   } = useConversationObservation(
     conversationId,
-    observing,
+    observing && !deleted,
     apply,
     onMessage,
     setError,
+    onDeleted,
   );
-  const { attachments, setAttachments, attaching, attach, removeAttachment } =
-    useChatAttachments(loading, sending, mounted, setError);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -127,7 +143,7 @@ export function useChat(conversationId?: string, observing = true) {
   const loadOlder = useCallback(
     async (beforePrepend?: () => void) => {
       const before = historyRef.current.nextBefore;
-      if (!before || olderController.current || loading) return;
+      if (deletedRef.current || !before || olderController.current || loading) return;
       const controller = new AbortController();
       olderController.current = controller;
       setLoadingOlder(true);
@@ -138,7 +154,7 @@ export function useChat(conversationId?: string, observing = true) {
           controller.signal,
           conversationId,
         );
-        if (!mounted.current || controller.signal.aborted) return;
+        if (!mounted.current || deletedRef.current || controller.signal.aborted) return;
         if (historyRef.current.nextBefore === before && page.messages.length)
           beforePrepend?.();
         setHistory((current) => prependHistoryPage(current, page, before));
@@ -173,6 +189,7 @@ export function useChat(conversationId?: string, observing = true) {
               attachments,
             };
       if (
+        deletedRef.current ||
         (!input.message && !input.attachments.length) ||
         sending.current ||
         stopping ||
@@ -279,7 +296,8 @@ export function useChat(conversationId?: string, observing = true) {
               ? ""
               : "等待连接";
   return {
-    ready: !loading && modelReady,
+    ready: !deleted && !loading && modelReady,
+    deleted,
     messages,
     draft,
     setDraft,

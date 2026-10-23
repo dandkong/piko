@@ -82,7 +82,7 @@ bun run build:web
 sudo systemctl start piko
 ```
 
-源码由运行账号管理，更新不删除状态和工作区。备份停止服务后成套保存 main.jsonl 和 doc 日志。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次 Linux 部署使用新的 PIKO_HOME，不迁移旧聊天。
+源码由运行账号管理，更新不删除状态和工作区。备份停止服务后成套保存原生 SQLite 存储目录及工作区，不能遗漏 WAL；当前 JSONL 的停机迁移与回滚见 [SQLite 存储](sqlite-storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次 Linux 部署使用新的 PIKO_HOME，不迁移旧聊天。
 
 ## 访问与反向代理
 

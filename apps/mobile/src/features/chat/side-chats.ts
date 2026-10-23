@@ -7,20 +7,20 @@ import type {
 import { apiFetch, readJson } from "../../api/client";
 import { randomUUID } from "expo-crypto";
 
-async function request<T>(path: string, value?: unknown): Promise<T> {
+async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST"): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    return await readJson<T>(
-      await apiFetch(path, {
+    const response = await apiFetch(path, {
+        method,
         signal: controller.signal,
         ...(value !== undefined && {
-          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(value),
         }),
-      }),
-    );
+      });
+    if (response.status === 204) return undefined as T;
+    return await readJson<T>(response);
   } finally {
     clearTimeout(timer);
   }
@@ -68,7 +68,7 @@ export function useSideChats(open: boolean) {
     });
     return () => listener.remove();
   }, [open, refresh]);
-  const mutate = async (operation: () => Promise<SideChat>) => {
+  const mutate = async <T extends SideChat | { deletedId: string }>(operation: () => Promise<T>): Promise<T | undefined> => {
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
@@ -77,12 +77,13 @@ export function useSideChats(open: boolean) {
     try {
       const value = await operation();
       version.current++;
-      if (mounted.current)
-        setItems((current) =>
-          [value, ...current.filter((item) => item.id !== value.id)].sort(
-            (a, b) => b.createdAt - a.createdAt,
-          ),
-        );
+      if (mounted.current) {
+        if ("deletedId" in value) setItems(current => current.filter(item => item.id !== value.deletedId));
+        else {
+          const chat = value as SideChat;
+          setItems(current => [chat, ...current.filter(item => item.id !== chat.id)].sort((a, b) => b.createdAt - a.createdAt));
+        }
+      }
       return value;
     } catch (cause) {
       if (mounted.current)
@@ -110,6 +111,10 @@ export function useSideChats(open: boolean) {
         creation.current = undefined;
         return result;
       }),
+    remove: (id: string) => mutate(async () => {
+      await request<void>(`/api/side-chats/${encodeURIComponent(id)}`, undefined, "DELETE");
+      return { deletedId: id };
+    }),
     update: (id: string, change: UpdateSideChat) =>
       mutate(() =>
         request<SideChat>(`/api/side-chats/${encodeURIComponent(id)}`, change),

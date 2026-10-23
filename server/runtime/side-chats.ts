@@ -42,8 +42,8 @@ export class SideChatError extends Error {
     super(message);
   }
 }
-export async function sideChats(tx: Tx): Promise<SideChat[]> {
-  const items: SideChat[] = [];
+export async function sideChats(tx: Tx): Promise<(SideChat & { archivedAt: number | null })[]> {
+  const items: (SideChat & { archivedAt: number | null })[] = [];
   let cursor: Cursor | undefined;
   do {
     const page = await tx.scanConversations({}, 200, cursor);

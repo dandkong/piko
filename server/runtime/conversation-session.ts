@@ -97,6 +97,7 @@ export class DurableChatSession implements ChatSession {
   get isStreaming() {
     return this.control.isBusy;
   }
+  get closed() { return this.control.closed; }
   get messages() {
     return this.view.messages;
   }
@@ -115,8 +116,16 @@ export class DurableChatSession implements ChatSession {
   receiveReport(operation: () => Promise<void>) {
     return this.control.receiveReport(operation);
   }
-  archive(operation: () => Promise<void>) {
-    return this.control.archive(operation);
+  async remove(operation: () => Promise<void>) {
+    try {
+      await this.control.remove(operation);
+      this.emit({ type: "deleted" });
+    } finally {
+      if (this.control.closed) {
+        await this.view.close();
+        this.listeners.clear();
+      }
+    }
   }
   async ensureReady() {
     await this.requireCurrentAgent();
