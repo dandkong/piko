@@ -77,9 +77,6 @@ function taskListView(all: AssistantTask[], requestedPage: number): View {
   const page = Math.min(Math.max(requestedPage, 0), pages - 1);
   const visible = tasks.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const lines = [
-    `Active tasks (${tasks.length})${pages > 1 ? ` · Page ${page + 1}/${pages}` : ""}`,
-    "Choose a task to view its details and recent executions:",
-    "",
     ...visible.map(task =>
       `#${shortId(task, ids)} · ${singleLine(task.title, 72) ?? "Untitled"} · ${singleLine(task.scheduleText, 40) ?? "Manual"}`,
     ),
