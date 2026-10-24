@@ -44,6 +44,7 @@ export async function openRuntime(
           new WorkspaceExecutionEnv(
             cwd ?? paths.workspace,
             runtimePaths(paths.home).tmp,
+            paths.home,
           ),
         settings: {
           ...config.harnessSettings,
