@@ -3,6 +3,8 @@ import { defineExtension, defineTool, section } from "@earendil-works/pi-durable
 import { extractWebPage, extractedPageMarkdown } from "../tools/web-extract";
 import { searchWeb } from "../tools/web-search";
 import { createSearchProviders, hasSearchCredentials } from "../tools/search/providers";
+import { createWebExtractProviders } from "../tools/extract/providers";
+import { REMOTE_WEB_EXTRACT_PROVIDER_IDS, type WebExtractProviderId } from "../tools/extract/providers/types";
 import type { WebFetch } from "../tools/http";
 import type { WebToolsConfig } from "../config";
 import { defaultPikoFile } from "../config/defaults";
@@ -18,6 +20,17 @@ export function createWebTools(env: Record<string, string | undefined>, options:
   const configuredProviders = options.settings?.web_search.providers ?? ["brave", "exa", "tavily", "deepseek"] as const;
   const providers = createSearchProviders(configuredProviders, searchCredentials, { fetch: options.fetch });
   const searchConfigured = hasSearchCredentials(configuredProviders, searchCredentials);
+  const extractProviders = createWebExtractProviders({
+    firecrawl: env.FIRECRAWL_API_KEY,
+    exa: env.EXA_API_KEY,
+    deepseek: env.DEEPSEEK_SEARCH_API_KEY,
+  }, { fetch: options.fetch });
+  const availableExtractProviders: WebExtractProviderId[] = ["built-in",
+    ...REMOTE_WEB_EXTRACT_PROVIDER_IDS.filter(id => extractProviders.has(id))];
+  const extractProviderSchema = Type.Optional(Type.Unsafe<WebExtractProviderId>({
+    type: "string", enum: availableExtractProviders,
+    description: "Extractor to use for this call.",
+  }));
   const search = defineTool({
     name: "web_search",
     description: "Search the web for current or external information and return concise results. Use freshness or published dates for recent material, and domains to restrict sources. Use web_extract to read selected sources in full.",
@@ -42,16 +55,17 @@ export function createWebTools(env: Record<string, string | undefined>, options:
   });
   const extract = defineTool({
     name: "web_extract",
-    description: "Fetch a web page and extract its main readable content as Markdown. Use this for a specific URL to read, summarize, or inspect its content.",
+    description: "Extract the main readable content from a specific HTTP/HTTPS URL as Markdown.",
     parameters: Type.Object({
       url: Type.String({ minLength: 1, description: "URL of the web page to extract. HTTP and HTTPS only." }),
       maxChars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 100000, default: 10000,
         description: "Maximum output characters per URL. Defaults to 10000, max 100000." })),
+      provider: extractProviderSchema,
     }),
     replay: "unsafe",
     outputLimits: { maxBytes: 512 * 1024, maxLines: 100100 },
     execute: async (args, _api, context) => {
-      const page = await extractWebPage(args, options, context.abortSignal);
+      const page = await extractWebPage(args, { fetch: options.fetch, providers: extractProviders }, context.abortSignal);
       return { output: [{ type: "text", text: extractedPageMarkdown(page) }],
         details: JSON.parse(JSON.stringify({ url: page.url, maxChars: args.maxChars ?? 10000, page })) };
     },
