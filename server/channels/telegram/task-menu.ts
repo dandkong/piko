@@ -45,7 +45,7 @@ function statusLabel(status: TaskExecution["status"]): string {
 function shortTaskIds(tasks: AssistantTask[]): Map<string, string> {
   const ids = tasks.map(task => ({ id: task.id, value: task.id.replace(/-/g, "") }));
   return new Map(ids.map(item => {
-    let length = Math.min(5, item.value.length);
+    let length = Math.min(6, item.value.length);
     while (length < item.value.length && ids.some(other =>
       other.id !== item.id && other.value.startsWith(item.value.slice(0, length)),
     )) length++;
@@ -53,7 +53,16 @@ function shortTaskIds(tasks: AssistantTask[]): Map<string, string> {
   }));
 }
 function shortId(task: AssistantTask, ids: Map<string, string>): string {
-  return ids.get(task.id) ?? task.id.replace(/-/g, "").slice(0, 5);
+  return ids.get(task.id) ?? task.id.replace(/-/g, "").slice(0, 6);
+}
+function shortRunIds(runs: TaskExecution[]): Map<string, string> {
+  return new Map(runs.map(run => {
+    let length = Math.min(4, run.id.length);
+    while (length < run.id.length && runs.some(other =>
+      other.id !== run.id && other.id.endsWith(run.id.slice(-length)),
+    )) length++;
+    return [run.id, run.id.slice(-length)];
+  }));
 }
 function taskButton(task: AssistantTask, page: number, id: string) {
   return {
@@ -90,6 +99,7 @@ function taskListView(all: AssistantTask[], requestedPage: number): View {
 function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): View {
   const { task } = detail;
   const executions = detail.executions.slice(0, EXECUTION_LIMIT);
+  const runIds = shortRunIds(executions);
   const lines = [
     `#${id} · ${task.title}`,
     `Status: Active`,
@@ -101,14 +111,14 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
     "",
     "Recent executions:",
     ...(executions.length ? executions.map(run =>
-      `${statusIcon(run.status)} ${dateTime(run.startedAt)} · ${statusLabel(run.status)}${run.preview ? ` — ${singleLine(run.preview, 100)}` : ""}`,
+      `#${runIds.get(run.id)} · ${statusIcon(run.status)} ${dateTime(run.startedAt)} · ${statusLabel(run.status)}${run.preview ? ` — ${singleLine(run.preview, 100)}` : ""}`,
     ) : ["No executions yet."]),
   ];
   const buttons: TelegramKeyboard = [];
   const resultButtons = executions
     .filter(run => run.status !== "running")
     .map(run => ({
-      text: `${statusIcon(run.status)} ${dateTime(run.startedAt)} · #${run.id.slice(-4)}`,
+      text: `#${runIds.get(run.id)}`,
       callbackData: assertCallbackData(taskResultKey(task.id, run.id, page)),
     }));
   for (let i = 0; i < resultButtons.length; i += 2)
@@ -153,8 +163,9 @@ export class TelegramTaskMenus {
     const [result, detail, all] = await Promise.all([service.result(id, runId), service.detail(id), service.list()]);
     if (detail.task.status !== "active") throw new TaskMenuNotice("Archived tasks aren't shown in /task.");
     const answer = truncateResult(result.answer.trim() || "No text result.");
+    const runIdShort = shortRunIds(detail.executions.slice(0, EXECUTION_LIMIT)).get(runId) ?? runId.slice(-4);
     const text = [
-      `#${shortId(detail.task, shortTaskIds(all))} · ${detail.task.title} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`,
+      `#${shortId(detail.task, shortTaskIds(all))} · ${detail.task.title} · Run #${runIdShort} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`,
       "",
       answer,
     ].join("\n");
