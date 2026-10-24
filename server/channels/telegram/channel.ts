@@ -8,6 +8,7 @@ import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus";
+import { TelegramSubagentMenus } from "./subagent-menu";
 import { WELCOME, busyMessage, formatCompaction, formatHelp, formatRecent, formatStatus } from "./command-format";
 export { TELEGRAM_COMMANDS } from "./command-format";
 
@@ -28,6 +29,7 @@ export class TelegramChannel {
   private readonly tasks = new Set<Promise<void>>();
   private readonly deliveries = new Map<string, Promise<void>>();
   private readonly menus: TelegramMenus;
+  private readonly subagentMenus: TelegramSubagentMenus;
   private pendingReports = new Map<string, Set<string>>();
   private unsubscribeReplies?: () => void;
   private unsubscribeTools?: () => void;
@@ -38,6 +40,7 @@ export class TelegramChannel {
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
     private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
+    this.subagentMenus = new TelegramSubagentMenus(runtime, api);
     this.compactionReady = conversations.subscribeCompactions(event => this.queueCompaction(event))
       .then(unsubscribe => { if (this.accepting) this.unsubscribeCompactions = unsubscribe; else unsubscribe(); });
     this.track(this.compactionReady);
@@ -60,10 +63,14 @@ export class TelegramChannel {
     if (!this.accepting || callback.actorId !== this.identity.userId || callback.chatType !== "private" ||
       callback.topic || callback.business) return;
     this.notificationChatId = callback.chatId;
-    this.track(this.menus.handle(callback).catch(async error => {
-      if (!(error instanceof TelegramMenuError)) throw error;
-      await this.api.answerCallback(callback.callbackId, error.message, true);
-    }));
+    if (callback.data.startsWith("s:")) {
+      this.track(this.subagentMenus.handle(callback));
+    } else {
+      this.track(this.menus.handle(callback).catch(async error => {
+        if (!(error instanceof TelegramMenuError)) throw error;
+        await this.api.answerCallback(callback.callbackId, error.message, true);
+      }));
+    }
   }
 
   async handle(message: TelegramMessage): Promise<void> {
@@ -175,6 +182,8 @@ export class TelegramChannel {
       text = formatStatus(await this.conversations.snapshot(), await this.runtime.describe());
     } else if (command === "models" || command === "thinking") {
       await this.menus.open(message, command); return;
+    } else if (command === "subagent") {
+      await this.subagentMenus.open(message); return;
     } else if (command === "compact") {
       await this.compactionReady;
       const snapshot = await this.conversations.snapshot();

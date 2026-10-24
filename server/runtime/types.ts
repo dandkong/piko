@@ -28,8 +28,16 @@ export interface AssistantTasksRuntime {
   command(command: AssistantTaskCommand, source?: InputSource): Promise<AssistantTaskReceipt>;
   result(id: string, executionId: string): Promise<TaskExecutionDetail>;
 }
+export type SubagentStatus = "working" | "interrupted" | "stopped" | "failed" | "finished";
+export type SubagentListItem = { id: string; task: string; status: SubagentStatus };
+export type SubagentDetail = { id: string; status: SubagentStatus; detail?: string; recentSteps: string[] };
+export interface AssistantSubagentsRuntime {
+  list(): Promise<SubagentListItem[]>;
+  status(id: string): Promise<SubagentDetail | undefined>;
+}
 export interface ChatRuntime {
   tasks(): Promise<AssistantTasksRuntime>;
+  subagents(): Promise<AssistantSubagentsRuntime>;
   isModelReady(): Promise<boolean>;
   sideChats: {
     list(): Promise<SideChat[]>;

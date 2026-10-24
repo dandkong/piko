@@ -8,10 +8,11 @@ import {
   type Storage,
 } from "@earendil-works/pi-durable";
 import type { WorkspacePaths } from "../workspace";
-import type { ChatRuntime } from "./types";
+import type { AssistantSubagentsRuntime, ChatRuntime } from "./types";
 import { RuntimeBusyError } from "./types";
 import { DurableChatSession } from "./conversation-session";
 import { createSubagentRuntime } from "./subagents/runtime";
+import { delegationStatus, listDelegations } from "./subagents/queries";
 import { createSubagentTools } from "./subagents/tools";
 import { DurableAssistantTasks } from "./tasks/service";
 import { createTaskTools } from "./tasks/tools";
@@ -197,6 +198,12 @@ class PikoRuntime {
   tasksService() {
     return this.tasks;
   }
+  subagentsService(): AssistantSubagentsRuntime {
+    return {
+      list: () => this.harness.commit(tx => listDelegations(tx, ROOT_CONVERSATION_ID), ctx),
+      status: id => this.harness.commit(tx => delegationStatus(tx, ROOT_CONVERSATION_ID, id), ctx),
+    };
+  }
   close(): Promise<void> {
     if (this.closed) return this.closed;
     this.closing = true;
@@ -247,6 +254,7 @@ export function createPiRuntime(
   };
   return {
     tasks: async () => (await get()).tasksService(),
+    subagents: async () => (await get()).subagentsService(),
     sideChats: {
       list: async () => (await get()).sideChats.list(),
       create: async (requestId, title) =>
