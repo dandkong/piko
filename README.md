@@ -106,7 +106,7 @@ bun run android
 
 - 配置按字段独立分工：JSON 管应用/Agent 行为及非敏感工具设置，环境变量/.env 管部署参数及敏感凭据；同一字段不支持两边配置，放错位置报错。piko.json 统一管理 agent 预设、通道与工具行为，models.json 管模型目录；不再生成/读取 settings.json，自动压缩与重试直接使用 Durable 默认策略；修改后重启 API。见 [应用配置](docs/features/application-config.md)。
 - `PIKO_HOST`、`PIKO_PORT` 配置 API 监听地址与端口（仅环境入口），默认 `127.0.0.1:8787`。Piko 不执行 Origin 白名单或访问认证；对外部署须由反向代理或网络边界控制访问。自定义 API 地址或端口时同时设置客户端地址。
-- `web_search` 后端优先顺序由 piko.json 的 `tools.web_search.providerOrder` 控制；Exa/Tavily/DeepSeek Search/Brave 凭据只从后端环境或私有 `PIKO_HOME/config/.env` 读取。启用开关仍由 JSON 管理。缺少所有 Search Key 不阻止启动和网页提取；修改配置后重启 API。凭据不进入工具参数、前端或发布包。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
+- `web_search` 后端优先顺序由 piko.json 的 `tools.web_search.providers` 控制；Exa/Tavily/DeepSeek Search/Brave 凭据只从后端环境或私有 `PIKO_HOME/config/.env` 读取。启用开关仍由 JSON 管理。缺少所有 Search Key 不阻止启动和网页提取；修改配置后重启 API。凭据不进入工具参数、前端或发布包。接口与边界见 [内置网络工具](docs/features/web-tools.md)。
 - `EXPO_PUBLIC_PIKO_API_URL` 指定客户端 API 地址。Expo 配置变化后重新启动 Metro。
 - `JAVA_HOME` 指向 JDK 根目录，`ANDROID_HOME` 指向 Android SDK 根目录；设置后重新打开终端。必要时在本机生成工程中使用已忽略的 `local.properties` 指定 SDK 路径。
 - 8081 是 Expo 开发服务。请求 Android / iOS 资源时可能返回 manifest JSON，这是正常的；Web 使用 `bun run dev:web` 打开。

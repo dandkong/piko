@@ -31,13 +31,13 @@
   "tools": {
     "web_search": {
       "enabled": true,
-      "providerOrder": ["exa", "tavily", "deepseek", "brave"]
+      "providers": ["brave", "exa", "tavily", "deepseek"]
     }
   }
 }
 ```
 
-列表非空、provider ID 不重复；未知 ID 在启动校验时拒绝。只尝试 JSON 所列且配置了 Key 的后端；缺 Key 的后端跳过。若所有后端均未配置，服务仍可启动，工具明确报告未配置。
+列表非空、provider ID 不重复；未知 ID 在启动校验时拒绝。只尝试 JSON `providers` 所列且配置了 Key 的后端；缺 Key 的后端跳过。若所有后端均未配置，服务仍可启动，工具明确报告未配置。
 
 一次搜索顺序执行，不并行广播。第一个支持该 query 且已配置 Key 的后端返回正常结果后即结束；成功但无结果也算成功，不继续调用下游，以免意外增加供应商接收和计费。只有请求失败/超时/限流/服务错误或响应无效时才继续下一个后端；全部失败时返回不含供应商或上游正文的通用错误。DeepSeek Search 当前限制 query 为最多 128 个 Unicode 字符；超过限制时不截断问题，而是跳过该后端，尝试后续配置项。
 
@@ -57,7 +57,7 @@ BRAVE_SEARCH_API_KEY="..."
 - 模型供应商凭据按模型配置规则仍从 `auth.json` / `models.json` 读取。DeepSeek Search Key 必须显式放在独立的 `DEEPSEEK_SEARCH_API_KEY`；搜索工具不借用模型 Auth 对象，也不回退模型配置。
 - `.env` / 进程环境沿用既有合并规则：进程环境覆盖 `.env`，显式空值覆盖本地值；不修改全局 `process.env`，不注入 Expo 客户端。
 - 现有 `BRAVE_SEARCH_API_KEY` 名称保留。
-- 修改 Key 或 providerOrder 后重启 Piko 生效。piko.json 默认补齐 `providerOrder`，现有仅配置 enabled 的文件无需手工迁移。
+- 修改 Key 或 providers 后重启 Piko 生效。piko.json 默认补齐 `providers`，现有仅配置 enabled 的文件无需手工迁移。
 
 ## 后端请求与结果映射
 

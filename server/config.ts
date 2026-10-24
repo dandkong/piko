@@ -28,7 +28,7 @@ const searchProvider = Type.Union([
 ]);
 const webSearchTool = object({
   enabled: Type.Boolean(),
-  providerOrder: Type.Array(searchProvider, { minItems: 1, uniqueItems: true }),
+  providers: Type.Array(searchProvider, { minItems: 1, uniqueItems: true }),
 });
 const applicationSchema = object({
   version: Type.Literal(1),

@@ -15,9 +15,9 @@ export function createWebTools(env: Record<string, string | undefined>, options:
     deepseek: env.DEEPSEEK_SEARCH_API_KEY,
     brave: env.BRAVE_SEARCH_API_KEY,
   };
-  const providerOrder = options.settings?.web_search.providerOrder ?? ["exa", "tavily", "deepseek", "brave"] as const;
-  const providers = createSearchProviders(providerOrder, searchCredentials, { fetch: options.fetch });
-  const searchConfigured = hasSearchCredentials(providerOrder, searchCredentials);
+  const configuredProviders = options.settings?.web_search.providers ?? ["brave", "exa", "tavily", "deepseek"] as const;
+  const providers = createSearchProviders(configuredProviders, searchCredentials, { fetch: options.fetch });
+  const searchConfigured = hasSearchCredentials(configuredProviders, searchCredentials);
   const search = defineTool({
     name: "web_search",
     description: "Search the web for current or external information and return concise results. Use freshness or published dates for recent material, and domains to restrict sources. Use web_extract to read selected sources in full.",
