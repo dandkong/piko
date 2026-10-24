@@ -150,7 +150,7 @@ export class TelegramTaskMenus {
   private async editTaskDetail(callback: TelegramCallback, id: string, page: number): Promise<void> {
     const service = await this.runtime.tasks();
     const [detail, all] = await Promise.all([service.detail(id), service.list()]);
-    if (detail.task.status !== "active") throw new TaskMenuNotice("Archived tasks aren't shown in /task.");
+    if (detail.task.status !== "active") throw new TaskMenuNotice("Task archived.");
     const view = taskDetailView(detail, page, shortId(detail.task, shortTaskIds(all)));
     await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
   }
@@ -158,7 +158,7 @@ export class TelegramTaskMenus {
   private async editExecutionResult(callback: TelegramCallback, id: string, runId: string, page: number): Promise<void> {
     const service = await this.runtime.tasks();
     const [result, detail, all] = await Promise.all([service.result(id, runId), service.detail(id), service.list()]);
-    if (detail.task.status !== "active") throw new TaskMenuNotice("Archived tasks aren't shown in /task.");
+    if (detail.task.status !== "active") throw new TaskMenuNotice("Task archived.");
     const answer = truncateResult(result.answer.trim() || "No text result.");
     const runIdShort = shortRunIds(detail.executions.slice(0, EXECUTION_LIMIT)).get(runId) ?? runId.slice(-4);
     const text = [
@@ -180,7 +180,7 @@ export class TelegramTaskMenus {
     const detail = /^t:d:([a-zA-Z0-9-]{1,80}):([0-9a-z]+)$/.exec(callback.data);
     const result = /^t:r:([a-zA-Z0-9-]{1,80}):([1-9][0-9]*):([0-9a-z]+)$/.exec(callback.data);
     if (!list && !detail && !result) {
-      await this.api.answerCallback(callback.callbackId, "This task menu is no longer available. Reopen /task.", true);
+      await this.api.answerCallback(callback.callbackId, "Menu expired. Reopen /task.", false);
       return;
     }
     const messageKey = `${callback.chatId}:${callback.messageId}`;
@@ -195,7 +195,7 @@ export class TelegramTaskMenus {
       else await this.editExecutionResult(callback, result![1], result![2], parseInt(result![3], 36));
       await this.api.answerCallback(callback.callbackId);
     } catch (error) {
-      await this.api.answerCallback(callback.callbackId, error instanceof TaskMenuNotice ? error.message : "Couldn't load this task view. Reopen /task and try again.", true);
+      await this.api.answerCallback(callback.callbackId, error instanceof TaskMenuNotice ? error.message : "Couldn't load task. Reopen /task.", false);
     } finally {
       this.working.delete(messageKey);
     }

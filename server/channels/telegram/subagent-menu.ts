@@ -84,7 +84,7 @@ export class TelegramSubagentMenus {
         : undefined;
     const id = current?.[2] ?? legacy?.[2];
     if (!action || action === "detail" && !id) {
-      await this.api.answerCallback(callback.callbackId, "This menu is no longer available. Reopen /subagent.", true);
+      await this.api.answerCallback(callback.callbackId, "Menu expired. Reopen /subagent.", false);
       return;
     }
     const messageKey = `${callback.chatId}:${callback.messageId}`;
@@ -105,7 +105,7 @@ export class TelegramSubagentMenus {
         ]);
         const item = items.find(value => value.id === id);
         if (!item || !detail) {
-          await this.api.answerCallback(callback.callbackId, "This subagent is no longer available. Reopen /subagent.", true);
+          await this.api.answerCallback(callback.callbackId, "Subagent unavailable.", false);
           return;
         }
         const view = detailView(item, detail);
@@ -113,7 +113,7 @@ export class TelegramSubagentMenus {
       }
       await this.api.answerCallback(callback.callbackId);
     } catch {
-      await this.api.answerCallback(callback.callbackId, "Couldn't refresh /subagent. Reopen the command and try again.", true);
+      await this.api.answerCallback(callback.callbackId, "Couldn't refresh /subagent. Try again.", false);
     } finally {
       this.working.delete(messageKey);
     }

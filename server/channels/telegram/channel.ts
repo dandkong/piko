@@ -74,7 +74,7 @@ export class TelegramChannel {
     } else {
       this.track(this.menus.handle(callback).catch(async error => {
         if (!(error instanceof TelegramMenuError)) throw error;
-        await this.api.answerCallback(callback.callbackId, error.message, true);
+        await this.api.answerCallback(callback.callbackId, error.message, false);
       }));
     }
   }

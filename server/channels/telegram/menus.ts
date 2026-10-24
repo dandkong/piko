@@ -2,7 +2,7 @@ import type { RuntimeDescription } from "../../../shared/runtime";
 import type { ConversationStore } from "../../chat/conversations";
 import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
-import { busyMessage, sameModel, selectionText } from "./command-format";
+import { sameModel, selectionText } from "./command-format";
 
 type Address = { chatId: string; messageId: string };
 export type TelegramCallback = Address & {
@@ -78,7 +78,7 @@ export class TelegramMenus {
     const match = /^p:([\da-f-]{12}):(home|provider:\d+|model:\d+|think:\d+)$/.exec(callback.data);
     const menu = match && this.menus.get(match[1]);
     if (!menu || menu.chatId !== callback.chatId || menu.messageId !== callback.messageId || !menu.actions.has(callback.data)) {
-      await this.api.answerCallback(callback.callbackId, `This menu has expired. Reopen ${menu?.kind === "thinking" ? "/thinking" : menu ? "/models" : "/models or /thinking"}.`, true); return;
+      await this.api.answerCallback(callback.callbackId, `Menu expired. Reopen ${menu?.kind === "thinking" ? "/thinking" : menu ? "/models" : "the command"}.`, false); return;
     }
     if (menu.working) { await this.api.answerCallback(callback.callbackId, "One moment…"); return; }
     menu.working = true;
@@ -100,15 +100,15 @@ export class TelegramMenus {
         if (setting === "model") {
           const target = menu.description.models[index];
           const model = current.models.find(model => model.provider === target.provider && model.id === target.id);
-          if (!model) throw new TelegramMenuError("This model is no longer available. Reopen /models to choose another.");
+          if (!model) throw new TelegramMenuError("Model unavailable. Reopen /models.");
           await this.runtime.configure({ provider: model.provider, model: model.id });
         } else {
-          if (!sameModel(current.selection, menu.description.selection)) throw new TelegramMenuError("The current model has changed. Reopen /thinking to see its supported levels.");
+          if (!sameModel(current.selection, menu.description.selection)) throw new TelegramMenuError("Model changed. Reopen /thinking.");
           const selected = menu.description.selection!;
           const model = menu.description.models.find(model => model.provider === selected.provider && model.id === selected.model)!;
           const thinking = model.thinkingLevels[index];
           if (!current.models.find(model => sameModel({ provider: model.provider, model: model.id }, selected))?.thinkingLevels.includes(thinking))
-            throw new TelegramMenuError("This thinking level is no longer available. Reopen /thinking to choose again.");
+            throw new TelegramMenuError("Thinking level unavailable. Reopen /thinking.");
           await this.runtime.configure({ thinking });
         }
         applied = true;
@@ -130,12 +130,12 @@ export class TelegramMenus {
       }
     } catch (error) {
       if (error instanceof TelegramMenuError) throw error;
-      if (error instanceof RuntimeBusyError) throw new TelegramMenuError(busyMessage(setting));
-      if (applied) throw new TelegramMenuError(`${setting === "model" ? "Model" : "Thinking level"} updated, but the menu could not refresh. Use /status to check it, then reopen /${menu.kind}.`);
+      if (error instanceof RuntimeBusyError) throw new TelegramMenuError("Piko is busy. Try again later.");
+      if (applied) throw new TelegramMenuError("Updated. Check /status if needed.");
       // A transport/storage failure is not proof that nothing was persisted. Do not promise rollback.
       throw new TelegramMenuError(action === "home" || action.startsWith("provider:")
-        ? "Couldn't refresh this menu. Reopen /models and try again."
-        : `Couldn't confirm the ${setting} change. Use /status to check it, then reopen /${menu.kind} to retry.`);
+        ? "Couldn't refresh. Reopen /models."
+        : "Couldn't confirm. Check /status.");
     } finally { menu.working = false; }
   }
 }
