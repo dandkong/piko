@@ -6,20 +6,15 @@ import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./
 
 type Address = { chatId: string; messageId: string };
 type View = { text: string; buttons?: TelegramKeyboard };
-type TaskFilter = "active" | "archived";
+class TaskMenuNotice extends Error {}
 
 const PAGE_SIZE = 6;
 const EXECUTION_LIMIT = 5;
 const RESULT_TEXT_LIMIT = 3500;
-const filterCode = (filter: TaskFilter) => filter === "active" ? "a" : "r";
-const decodeFilter = (value: string): TaskFilter | undefined => value === "a" ? "active" : value === "r" ? "archived" : undefined;
-const taskKey = (id: string, filter: TaskFilter, page: number) => `t:d:${id}:${filterCode(filter)}:${page.toString(36)}`;
-
-function taskListKey(filter: TaskFilter, page: number): string {
-  return `t:l:${filterCode(filter)}:${page.toString(36)}`;
-}
-function taskResultKey(taskId: string, runId: string, filter: TaskFilter, page: number): string {
-  return `t:r:${taskId}:${runId}:${filterCode(filter)}:${page.toString(36)}`;
+const taskKey = (id: string, page: number) => `t:d:${id}:${page.toString(36)}`;
+function taskListKey(page: number): string { return `t:l:${page.toString(36)}`; }
+function taskResultKey(taskId: string, runId: string, page: number): string {
+  return `t:r:${taskId}:${runId}:${page.toString(36)}`;
 }
 function assertCallbackData(value: string): string {
   if (new TextEncoder().encode(value).byteLength > 64)
@@ -47,50 +42,57 @@ function statusLabel(status: TaskExecution["status"]): string {
     case "interrupted": return "Interrupted";
   }
 }
-function shortId(id: string): string { return id.replace(/-/g, "").slice(0, 8); }
-function taskButton(task: AssistantTask, filter: TaskFilter, page: number) {
+function shortTaskIds(tasks: AssistantTask[]): Map<string, string> {
+  const ids = tasks.map(task => ({ id: task.id, value: task.id.replace(/-/g, "") }));
+  return new Map(ids.map(item => {
+    let length = Math.min(5, item.value.length);
+    while (length < item.value.length && ids.some(other =>
+      other.id !== item.id && other.value.startsWith(item.value.slice(0, length)),
+    )) length++;
+    return [item.id, item.value.slice(0, length)];
+  }));
+}
+function shortId(task: AssistantTask, ids: Map<string, string>): string {
+  return ids.get(task.id) ?? task.id.replace(/-/g, "").slice(0, 5);
+}
+function taskButton(task: AssistantTask, page: number, id: string) {
   return {
-    text: `${singleLine(task.title, 34) ?? "Untitled"} · #${shortId(task.id)}`,
-    callbackData: assertCallbackData(taskKey(task.id, filter, page)),
+    text: `#${id}`,
+    callbackData: assertCallbackData(taskKey(task.id, page)),
   };
 }
-function taskListView(all: AssistantTask[], filter: TaskFilter, requestedPage: number): View {
-  const filtered = all.filter(task => task.status === filter);
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+function taskListView(all: AssistantTask[], requestedPage: number): View {
+  const ids = shortTaskIds(all);
+  const tasks = all.filter(task => task.status === "active").sort((a, b) => b.updatedAt - a.updatedAt);
+  const pages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
   const page = Math.min(Math.max(requestedPage, 0), pages - 1);
-  const tasks = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const archivedCount = all.filter(task => task.status === "archived").length;
-  const activeCount = all.length - archivedCount;
+  const visible = tasks.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const lines = [
-    `${filter === "active" ? "Active" : "Archived"} tasks (${filtered.length})${pages > 1 ? ` · Page ${page + 1}/${pages}` : ""}`,
+    `Active tasks (${tasks.length})${pages > 1 ? ` · Page ${page + 1}/${pages}` : ""}`,
     "Choose a task to view its details and recent executions:",
     "",
-    ...tasks.map(task => {
-      const latest = task.latest
-        ? ` · ${statusIcon(task.latest.status)} ${statusLabel(task.latest.status)}${task.latest.preview ? ` — ${singleLine(task.latest.preview, 72)}` : ""}`
-        : " · No executions";
-      return `• ${singleLine(task.title, 72) ?? "Untitled"} · ${singleLine(task.scheduleText, 40) ?? "Manual"}${latest}`;
-    }),
-    ...(!tasks.length ? [filter === "active" ? "No active tasks." : "No archived tasks."] : []),
+    ...visible.map(task =>
+      `#${shortId(task, ids)} · ${singleLine(task.title, 72) ?? "Untitled"} · ${singleLine(task.scheduleText, 40) ?? "Manual"}`,
+    ),
+    ...(!visible.length ? ["No active tasks."] : []),
   ];
   const buttons: TelegramKeyboard = [];
-  for (let i = 0; i < tasks.length; i += 2)
-    buttons.push(tasks.slice(i, i + 2).map(task => taskButton(task, filter, page)));
-  buttons.push([{ text: filter === "active" ? `Show archived (${archivedCount})` : `Show active (${activeCount})`, callbackData: taskListKey(filter === "active" ? "archived" : "active", 0) }]);
+  for (let i = 0; i < visible.length; i += 2)
+    buttons.push(visible.slice(i, i + 2).map(task => taskButton(task, page, shortId(task, ids))));
   if (pages > 1) {
     const navigation: TelegramKeyboard[number] = [];
-    if (page > 0) navigation.push({ text: "‹ Previous", callbackData: taskListKey(filter, page - 1) });
-    if (page < pages - 1) navigation.push({ text: "Next ›", callbackData: taskListKey(filter, page + 1) });
+    if (page > 0) navigation.push({ text: "‹ Previous", callbackData: taskListKey(page - 1) });
+    if (page < pages - 1) navigation.push({ text: "Next ›", callbackData: taskListKey(page + 1) });
     buttons.push(navigation);
   }
   return { text: lines.join("\n"), buttons };
 }
-function taskDetailView(detail: AssistantTaskDetail, filter: TaskFilter, page: number): View {
+function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): View {
   const { task } = detail;
   const executions = detail.executions.slice(0, EXECUTION_LIMIT);
   const lines = [
-    `${task.title} · #${shortId(task.id)}`,
-    `Status: ${task.status === "active" ? "Active" : "Archived"}`,
+    `#${id} · ${task.title}`,
+    `Status: Active`,
     `Schedule: ${task.scheduleText}`,
     ...(task.nextDueAt === null ? [] : [`Next run: ${dateTime(task.nextDueAt)}`]),
     "",
@@ -107,11 +109,11 @@ function taskDetailView(detail: AssistantTaskDetail, filter: TaskFilter, page: n
     .filter(run => run.status !== "running")
     .map(run => ({
       text: `${statusIcon(run.status)} ${dateTime(run.startedAt)} · #${run.id.slice(-4)}`,
-      callbackData: assertCallbackData(taskResultKey(task.id, run.id, filter, page)),
+      callbackData: assertCallbackData(taskResultKey(task.id, run.id, page)),
     }));
   for (let i = 0; i < resultButtons.length; i += 2)
     buttons.push(resultButtons.slice(i, i + 2));
-  buttons.push([{ text: "Back to task list", callbackData: taskListKey(filter, page) }]);
+  buttons.push([{ text: "Back to task list", callbackData: taskListKey(page) }]);
   return { text: lines.join("\n"), buttons };
 }
 function truncateResult(value: string): string {
@@ -128,32 +130,35 @@ export class TelegramTaskMenus {
 
   async open(address: Address): Promise<void> {
     const all = await (await this.runtime.tasks()).list();
-    const view = taskListView(all, "active", 0);
+    const view = taskListView(all, 0);
     await this.api.send(address.chatId, view.text, false, view.buttons);
   }
 
-  private async editTaskList(callback: TelegramCallback, filter: TaskFilter, page: number): Promise<void> {
+  private async editTaskList(callback: TelegramCallback, page: number): Promise<void> {
     const all = await (await this.runtime.tasks()).list();
-    const view = taskListView(all, filter, page);
+    const view = taskListView(all, page);
     await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
   }
 
-  private async editTaskDetail(callback: TelegramCallback, id: string, filter: TaskFilter, page: number): Promise<void> {
-    const detail = await (await this.runtime.tasks()).detail(id);
-    const view = taskDetailView(detail, filter, page);
-    await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
-  }
-
-  private async editExecutionResult(callback: TelegramCallback, id: string, runId: string, filter: TaskFilter, page: number): Promise<void> {
+  private async editTaskDetail(callback: TelegramCallback, id: string, page: number): Promise<void> {
     const service = await this.runtime.tasks();
-    const [result, detail] = await Promise.all([service.result(id, runId), service.detail(id)]);
+    const [detail, all] = await Promise.all([service.detail(id), service.list()]);
+    if (detail.task.status !== "active") throw new TaskMenuNotice("Archived tasks aren't shown in /task.");
+    const view = taskDetailView(detail, page, shortId(detail.task, shortTaskIds(all)));
+    await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+  }
+
+  private async editExecutionResult(callback: TelegramCallback, id: string, runId: string, page: number): Promise<void> {
+    const service = await this.runtime.tasks();
+    const [result, detail, all] = await Promise.all([service.result(id, runId), service.detail(id), service.list()]);
+    if (detail.task.status !== "active") throw new TaskMenuNotice("Archived tasks aren't shown in /task.");
     const answer = truncateResult(result.answer.trim() || "No text result.");
     const text = [
-      `${detail.task.title} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`,
+      `#${shortId(detail.task, shortTaskIds(all))} · ${detail.task.title} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`,
       "",
       answer,
     ].join("\n");
-    const buttons: TelegramKeyboard = [[{ text: "Back to task", callbackData: assertCallbackData(taskKey(id, filter, page)) }]];
+    const buttons: TelegramKeyboard = [[{ text: "Back to task", callbackData: assertCallbackData(taskKey(id, page)) }]];
     try {
       await this.api.edit(callback.chatId, callback.messageId, text, true, buttons);
     } catch (error) {
@@ -163,9 +168,9 @@ export class TelegramTaskMenus {
   }
 
   async handle(callback: TelegramCallback): Promise<void> {
-    const list = /^t:l:([ar]):([0-9a-z]+)$/.exec(callback.data);
-    const detail = /^t:d:([a-zA-Z0-9-]{1,80}):([ar]):([0-9a-z]+)$/.exec(callback.data);
-    const result = /^t:r:([a-zA-Z0-9-]{1,80}):([1-9][0-9]*):([ar]):([0-9a-z]+)$/.exec(callback.data);
+    const list = /^t:l:([0-9a-z]+)$/.exec(callback.data);
+    const detail = /^t:d:([a-zA-Z0-9-]{1,80}):([0-9a-z]+)$/.exec(callback.data);
+    const result = /^t:r:([a-zA-Z0-9-]{1,80}):([1-9][0-9]*):([0-9a-z]+)$/.exec(callback.data);
     if (!list && !detail && !result) {
       await this.api.answerCallback(callback.callbackId, "This task menu is no longer available. Reopen /task.", true);
       return;
@@ -177,12 +182,12 @@ export class TelegramTaskMenus {
     }
     this.working.add(messageKey);
     try {
-      if (list) await this.editTaskList(callback, decodeFilter(list[1])!, parseInt(list[2], 36));
-      else if (detail) await this.editTaskDetail(callback, detail[1], decodeFilter(detail[2])!, parseInt(detail[3], 36));
-      else await this.editExecutionResult(callback, result![1], result![2], decodeFilter(result![3])!, parseInt(result![4], 36));
+      if (list) await this.editTaskList(callback, parseInt(list[1], 36));
+      else if (detail) await this.editTaskDetail(callback, detail[1], parseInt(detail[2], 36));
+      else await this.editExecutionResult(callback, result![1], result![2], parseInt(result![3], 36));
       await this.api.answerCallback(callback.callbackId);
-    } catch {
-      await this.api.answerCallback(callback.callbackId, "Couldn't load this task view. Reopen /task and try again.", true);
+    } catch (error) {
+      await this.api.answerCallback(callback.callbackId, error instanceof TaskMenuNotice ? error.message : "Couldn't load this task view. Reopen /task and try again.", true);
     } finally {
       this.working.delete(messageKey);
     }
