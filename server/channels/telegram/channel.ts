@@ -37,6 +37,7 @@ export class TelegramChannel {
   private unsubscribeTools?: () => void;
   private toolQueue = Promise.resolve();
   private readonly toolMessages = new Map<string, string>();
+  private readonly stopNoticeSuppressions = new Map<string, Set<string>>();
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
@@ -92,10 +93,21 @@ export class TelegramChannel {
       }
       // Stop admission/control is awaited; network presentation is always independent.
       if (match[1].toLowerCase() === "stop") {
+        let submissionId: string | undefined;
+        let addedSuppression = false;
         try {
+          const snapshot = await this.conversations.snapshot();
+          if (snapshot.latest?.status === "queued" || snapshot.latest?.status === "placed") {
+            submissionId = snapshot.latest.id;
+            addedSuppression = this.addStopNoticeSuppression(message.chatId, submissionId);
+          }
           const stopped = await this.conversations.stop(`telegram:${this.identity.botId}:${message.chatId}:${message.messageId}:stop`);
-          this.feedback(message, stopped ? "Current reply or maintenance stopped. Background work is unchanged." : "Nothing to stop — no reply or maintenance is running.");
-        } catch { this.feedback(message, "Couldn't stop the reply. Try /stop again."); }
+          if (!stopped && addedSuppression && submissionId) this.removeStopNoticeSuppression(message.chatId, submissionId);
+          this.feedback(message, stopped ? "Stopped." : "Nothing to stop.");
+        } catch {
+          if (addedSuppression && submissionId) this.removeStopNoticeSuppression(message.chatId, submissionId);
+          this.feedback(message, "Couldn't stop. Try again.");
+        }
       } else this.track(this.command(message, match[1].toLowerCase()));
       return;
     }
@@ -161,10 +173,35 @@ export class TelegramChannel {
         if (receipt?.status === "done" || receipt?.status === "unanswered") pending.delete(id);
       }
       return pending.size === 0;
-    })
-      .finally(() => { if (this.deliveries.get(chatId) === task) this.deliveries.delete(chatId); this.pendingReports.delete(chatId); });
+    }, submissionId => this.shouldNotifyStopped(chatId, submissionId))
+      .finally(() => {
+        if (this.deliveries.get(chatId) === task) this.deliveries.delete(chatId);
+        this.pendingReports.delete(chatId);
+        this.stopNoticeSuppressions.delete(chatId);
+      });
     this.deliveries.set(chatId, task); this.track(task);
   }
+  private addStopNoticeSuppression(chatId: string, submissionId: string): boolean {
+    const requests = this.stopNoticeSuppressions.get(chatId) ?? new Set<string>();
+    const added = !requests.has(submissionId);
+    requests.add(submissionId);
+    this.stopNoticeSuppressions.set(chatId, requests);
+    return added;
+  }
+
+  private removeStopNoticeSuppression(chatId: string, submissionId: string): void {
+    const requests = this.stopNoticeSuppressions.get(chatId);
+    if (!requests?.delete(submissionId)) return;
+    if (!requests.size) this.stopNoticeSuppressions.delete(chatId);
+  }
+
+  private shouldNotifyStopped(chatId: string, submissionId: string): boolean {
+    const requests = this.stopNoticeSuppressions.get(chatId);
+    if (!requests?.delete(submissionId)) return true;
+    if (!requests.size) this.stopNoticeSuppressions.delete(chatId);
+    return false;
+  }
+
   private async command(message: TelegramMessage, command: string): Promise<void> {
     try { await this.executeCommand(message, command); }
     catch (error) {

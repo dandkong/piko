@@ -18,10 +18,7 @@ export const TELEGRAM_COMMANDS = [
 export const WELCOME = "Welcome. Send a request directly, or use /help to see available commands.\nYour main conversation is shared with the Piko app.";
 export function formatHelp(): string {
   return ["Available commands:", ...TELEGRAM_COMMANDS.map(item => `/${item.command} - ${item.description}`), "",
-    "You can also send a request directly.",
-    "Model and thinking changes apply to the shared main conversation, not side chats or the background model profile.",
-    "Changes and /compact require Piko to be idle. /stop cancels the current reply or maintenance, not independent background work.",
-    "Use /recent for message summaries; open the Piko app for full history."].join("\n");
+    "You can also send a request directly."].join("\n");
 }
 export function sameModel(a?: ModelSelection, b?: ModelSelection): boolean {
   return !!a && !!b && a.provider === b.provider && a.model === b.model;

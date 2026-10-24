@@ -102,7 +102,8 @@ export class TelegramMessageOutput {
 
 /** Conversation output is independent of the submission that enabled delivery. */
 export async function deliverConversation(store: ConversationStore, api: TelegramTransport, chatId: string,
-  signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS, awaitStart = false, finished: () => Promise<boolean> = async () => true): Promise<void> {
+  signal: AbortSignal, known: Set<string>, intervalMs = TELEGRAM_STREAM_INTERVAL_MS, awaitStart = false,
+  finished: () => Promise<boolean> = async () => true, shouldNotifyStopped: (submissionId: string) => boolean = () => true): Promise<void> {
   const output = new TelegramMessageOutput(api, chatId);
   let conversation = await store.snapshot({ limit: CHAT_PAGE_SIZE }); let dirty = true;
   let started = !awaitStart || conversation.busy || conversation.messages.some(message => message.role === "assistant" && !known.has(message.id));
@@ -139,8 +140,11 @@ export async function deliverConversation(store: ConversationStore, api: Telegra
           message.id === snapshot.messages[index].id && message.content === snapshot.messages[index].content);
         if (current.busy || !sameMessages || current.latest?.status !== snapshot.latest?.status) { conversation = current; dirty = true; continue; }
         if (snapshot !== conversation || dirty) continue;
-        if (snapshot.latest?.status === "unanswered") await api.send(chatId,
-          snapshot.latest.error === "aborted" ? "Reply stopped." : "Reply failed. Check the Piko app or /recent for saved messages.", false);
+        if (snapshot.latest?.status === "unanswered") {
+          if (snapshot.latest.error === "aborted") {
+            if (shouldNotifyStopped(snapshot.latest.id)) await api.send(chatId, "Stopped.", false);
+          } else await api.send(chatId, "Reply failed. Check the Piko app or /recent for saved messages.", false);
+        }
         return;
       }
       if (Date.now() - typing >= 4000) { typing = Date.now(); await api.typing(chatId).catch(() => {}); }
