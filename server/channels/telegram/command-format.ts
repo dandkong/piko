@@ -10,6 +10,7 @@ export const TELEGRAM_COMMANDS = [
   { command: "stop", description: "Stop the current reply" },
   { command: "recent", description: "Show recent messages" },
   { command: "subagent", description: "Browse background work" },
+  { command: "task", description: "Browse tasks and executions" },
   { command: "skills", description: "Browse skills" },
   { command: "help", description: "Show available commands" },
   { command: "start", description: "Welcome and quick start" },

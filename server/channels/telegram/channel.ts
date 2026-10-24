@@ -9,6 +9,7 @@ import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus";
 import { TelegramSubagentMenus } from "./subagent-menu";
+import { TelegramTaskMenus } from "./task-menu";
 import { WELCOME, busyMessage, formatCompaction, formatHelp, formatRecent, formatStatus } from "./command-format";
 export { TELEGRAM_COMMANDS } from "./command-format";
 
@@ -30,6 +31,7 @@ export class TelegramChannel {
   private readonly deliveries = new Map<string, Promise<void>>();
   private readonly menus: TelegramMenus;
   private readonly subagentMenus: TelegramSubagentMenus;
+  private readonly taskMenus: TelegramTaskMenus;
   private pendingReports = new Map<string, Set<string>>();
   private unsubscribeReplies?: () => void;
   private unsubscribeTools?: () => void;
@@ -41,6 +43,7 @@ export class TelegramChannel {
     private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
     this.subagentMenus = new TelegramSubagentMenus(runtime, api);
+    this.taskMenus = new TelegramTaskMenus(runtime, api);
     this.compactionReady = conversations.subscribeCompactions(event => this.queueCompaction(event))
       .then(unsubscribe => { if (this.accepting) this.unsubscribeCompactions = unsubscribe; else unsubscribe(); });
     this.track(this.compactionReady);
@@ -65,6 +68,8 @@ export class TelegramChannel {
     this.notificationChatId = callback.chatId;
     if (callback.data.startsWith("s:")) {
       this.track(this.subagentMenus.handle(callback));
+    } else if (callback.data.startsWith("t:")) {
+      this.track(this.taskMenus.handle(callback));
     } else {
       this.track(this.menus.handle(callback).catch(async error => {
         if (!(error instanceof TelegramMenuError)) throw error;
@@ -184,6 +189,8 @@ export class TelegramChannel {
       await this.menus.open(message, command); return;
     } else if (command === "subagent") {
       await this.subagentMenus.open(message); return;
+    } else if (command === "task") {
+      await this.taskMenus.open(message); return;
     } else if (command === "compact") {
       await this.compactionReady;
       const snapshot = await this.conversations.snapshot();
