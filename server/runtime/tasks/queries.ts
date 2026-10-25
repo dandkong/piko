@@ -14,6 +14,7 @@ import {
   type JobFacts,
 } from "../subagents/queries";
 import { messageText } from "../pi-history";
+import { DETAIL_TEXT_LIMIT, truncateText } from "../text";
 
 function execution(
   child: ConversationId,
@@ -54,11 +55,13 @@ async function answerText(tx: Tx, facts: JobFacts): Promise<string> {
 async function summary(tx: Tx, jobs: BackgroundJobs, child: ConversationId) {
   const facts = await jobFacts(tx, jobs, child);
   const answer = await answerText(tx, facts);
-  const preview = answer
-    .replace(/[#*_`>]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 160);
+  const preview = truncateText(
+    answer
+      .replace(/[#*_`>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+    DETAIL_TEXT_LIMIT,
+  );
   return { execution: execution(child, facts, preview), answer };
 }
 

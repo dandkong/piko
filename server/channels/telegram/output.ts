@@ -3,9 +3,10 @@ import { isFormatError, type TelegramTransport } from "./api";
 import remend from "remend";
 import { applyMessageEvent, type MessageEvent } from "../../../shared/messages";
 import { CHAT_PAGE_SIZE, type Message } from "../../../shared/chat";
+import { TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
 
 export const TELEGRAM_RICH_LIMIT = 30_000;
-export const TELEGRAM_PLAIN_LIMIT = 4096;
+export const TELEGRAM_PLAIN_LIMIT = TELEGRAM_MENU_TEXT_LIMIT;
 export const TELEGRAM_STREAM_INTERVAL_MS = 800;
 export type TelegramRenderMode = "markdown" | "plain";
 

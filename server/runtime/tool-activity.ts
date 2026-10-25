@@ -1,11 +1,4 @@
-/** One Telegram line per call: whitespace collapsed, bounded length. */
-const LIMIT = 100;
-
-export function singleLine(value: string | undefined, limit = LIMIT): string | undefined {
-  if (!value) return undefined;
-  const text = value.replace(/\s+/g, " ").trim();
-  return text ? (text.length > limit ? `${text.slice(0, limit - 3)}...` : text) : undefined;
-}
+import { SUMMARY_TEXT_LIMIT, singleLine } from "./text";
 
 function pick(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
@@ -43,7 +36,7 @@ export function toolDisplayName(name: string): string {
 export function summarizeToolArgs(toolName: string, args: unknown): string {
   if (!args || typeof args !== "object" || Array.isArray(args)) return "";
   // Every tool shares one bound: branches may build longer text from several fields.
-  return singleLine(summarize(toolName, args as Record<string, unknown>), LIMIT) ?? "";
+  return singleLine(summarize(toolName, args as Record<string, unknown>), SUMMARY_TEXT_LIMIT) ?? "";
 }
 
 function summarize(toolName: string, record: Record<string, unknown>): string {
@@ -58,12 +51,12 @@ function summarize(toolName: string, record: Record<string, unknown>): string {
   if (toolName === "web_extract") return pick(record, "url") ?? "";
   if (toolName.startsWith("subagent_")) {
     const id = pick(record, "id");
-    const task = singleLine(pick(record, "task") ?? pick(record, "message"), 70);
+    const task = pick(record, "task") ?? pick(record, "message");
     return [id && `#${id}`, task].filter(Boolean).join(" ");
   }
   if (toolName.startsWith("task_")) {
     const id = pick(record, "id");
-    const detail = singleLine(pick(record, "title") ?? pick(record, "prompt"), 70);
+    const detail = pick(record, "title") ?? pick(record, "prompt");
     return [id && `#${id.slice(0, 8)}`, detail].filter(Boolean).join(" ");
   }
   const entries = Object.entries(record).slice(0, 2).filter(([, value]) => typeof value === "string");

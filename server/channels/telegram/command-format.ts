@@ -1,5 +1,6 @@
 import type { ConversationResponse, Message } from "../../../shared/chat";
 import type { CompactionEvent, ModelSelection, RuntimeDescription } from "../../../shared/runtime";
+import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 
 // One order for both setMyCommands and /help. Frequent controls first, onboarding last.
 export const TELEGRAM_COMMANDS = [
@@ -27,7 +28,8 @@ export function currentModel(description: RuntimeDescription): string {
   const selected = description.selection;
   if (!selected) return "No model selected";
   const model = description.models.find(item => item.provider === selected.provider && item.id === selected.model);
-  return `${selected.provider}/${model?.name ?? selected.model} • ${selected.thinking ?? "off"}`;
+  return singleLine(`${selected.provider}/${model?.name ?? selected.model} • ${selected.thinking ?? "off"}`, DETAIL_TEXT_LIMIT)
+    ?? "No model selected";
 }
 export function selectionText(description: RuntimeDescription): string { return `Current: ${currentModel(description)}`; }
 export function busyMessage(action: "model" | "thinking" | "compact"): string {
@@ -60,9 +62,8 @@ export function formatRecent(messages: readonly Message[]): string {
   const recent = messages.filter(item => !item.id.startsWith("live-") && !item.id.startsWith("input-")).slice(-10);
   if (!recent.length) return "No recent user or assistant messages.";
   return recent.map(item => {
-    const text = item.content.replace(/\s+/g, " ").trim() || (item.attachments?.length ? `[${item.attachments.length} attachment(s)]` : "(empty message)");
-    const chars = Array.from(text);
-    const summary = chars.length > 100 ? chars.slice(0, 97).join("") + "..." : text;
+    const summary = singleLine(item.content, SUMMARY_TEXT_LIMIT)
+      ?? (item.attachments?.length ? `[${item.attachments.length} attachment(s)]` : "(empty message)");
     return `${item.role === "user" ? "👤" : "🧑‍💻"} ${summary}`;
   }).join("\n");
 }

@@ -4,11 +4,13 @@ import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "..
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
 import { toolDisplayName, toolIcon } from "../../runtime/tool-activity";
+import { SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus";
 import { TelegramSubagentMenus } from "./subagent-menu";
+import { TelegramSkillMenus } from "./skills-menu";
 import { TelegramTaskMenus } from "./task-menu";
 import { WELCOME, busyMessage, formatCompaction, formatHelp, formatRecent, formatStatus } from "./command-format";
 export { TELEGRAM_COMMANDS } from "./command-format";
@@ -31,6 +33,7 @@ export class TelegramChannel {
   private readonly deliveries = new Map<string, Promise<void>>();
   private readonly menus: TelegramMenus;
   private readonly subagentMenus: TelegramSubagentMenus;
+  private readonly skillMenus: TelegramSkillMenus;
   private readonly taskMenus: TelegramTaskMenus;
   private pendingReports = new Map<string, Set<string>>();
   private unsubscribeReplies?: () => void;
@@ -47,6 +50,7 @@ export class TelegramChannel {
     private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
     this.menus = new TelegramMenus(conversations, runtime, api);
     this.subagentMenus = new TelegramSubagentMenus(runtime, api);
+    this.skillMenus = new TelegramSkillMenus(runtime, api);
     this.taskMenus = new TelegramTaskMenus(runtime, api);
     this.compactionReady = conversations.subscribeCompactions(event => this.queueCompaction(event))
       .then(unsubscribe => { if (this.accepting) this.unsubscribeCompactions = unsubscribe; else unsubscribe(); });
@@ -72,6 +76,8 @@ export class TelegramChannel {
     this.notificationChatId = callback.chatId;
     if (callback.data.startsWith("s:")) {
       this.track(this.subagentMenus.handle(callback));
+    } else if (callback.data.startsWith("k:")) {
+      this.track(this.skillMenus.handle(callback));
     } else if (callback.data.startsWith("t:")) {
       this.track(this.taskMenus.handle(callback));
     } else {
@@ -165,7 +171,10 @@ export class TelegramChannel {
     }
     if (!this.accepting || event.activity.status !== "running") return;
     const { name, summary } = event.activity;
-    this.toolLines.set(event.activity.callId, `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`);
+    this.toolLines.set(event.activity.callId, singleLine(
+      `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`,
+      SUMMARY_TEXT_LIMIT,
+    )!);
     this.toolReply ??= new TelegramReply(this.api, chatId, "plain");
     await this.toolReply.update([...this.toolLines.values()].join("\n"), true);
   }
@@ -256,6 +265,8 @@ export class TelegramChannel {
       await this.subagentMenus.open(message); return;
     } else if (command === "task") {
       await this.taskMenus.open(message); return;
+    } else if (command === "skills") {
+      await this.skillMenus.open(message); return;
     } else if (command === "compact") {
       await this.compactionReady;
       const snapshot = await this.conversations.snapshot();
@@ -267,9 +278,6 @@ export class TelegramChannel {
       }
     } else if (command === "recent") {
       text = formatRecent((await this.conversations.snapshot({ limit: 50 })).messages);
-    } else if (command === "skills") {
-      const description = await this.runtime.describe();
-      text = description.skills.map(item => `${item.name} — ${item.description}`).join("\n") || "No skills available.";
     } else text = "Unknown command. Use /help to see what's available.";
     await new TelegramReply(this.api, message.chatId, "plain").update(text, true);
   }

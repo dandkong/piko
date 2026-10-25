@@ -15,7 +15,8 @@ import {
   type ReporterState,
   type ReporterResult,
 } from "./documents";
-import { summarizeToolArgs, toolIcon, singleLine } from "../tool-activity";
+import { summarizeToolArgs, toolIcon } from "../tool-activity";
+import { DETAIL_TEXT_LIMIT, singleLine } from "../text";
 import { requireSideChat, SideChatError } from "../side-chats";
 
 export async function taskRecords(
@@ -55,7 +56,7 @@ export async function subagentIds(
   return result;
 }
 
-const ACTIVITY_TEXT_LIMIT = 160;
+const ACTIVITY_TEXT_LIMIT = DETAIL_TEXT_LIMIT;
 
 /** Last assistant text and tool calls of a child, oldest first; bounds both per-step text and step count. */
 export async function recentActivity(
@@ -88,9 +89,10 @@ export async function recentActivity(
             if (text) steps.push(text);
           } else if (block.type === "toolCall") {
             const summary = summarizeToolArgs(block.name, block.arguments);
-            steps.push(
+            steps.push(singleLine(
               `${toolIcon(block.name)} ${block.name}${summary ? `: ${summary}` : ""}`,
-            );
+              ACTIVITY_TEXT_LIMIT,
+            )!);
           }
         }
       }
@@ -219,7 +221,7 @@ export async function jobFacts(
     task:
       singleLine(
         reporters[0] && (reporters[0].input as ReporterInput).message,
-        160,
+        DETAIL_TEXT_LIMIT,
       ) ?? "",
   };
 }
@@ -229,7 +231,7 @@ function delegationState(facts: JobFacts) {
   if (facts.binding?.interrupted) return { status: "interrupted" as const };
   if (facts.stopped) return { status: "stopped" as const };
   return facts.error
-    ? { status: "failed" as const, detail: singleLine(facts.error, 80) }
+    ? { status: "failed" as const, detail: singleLine(facts.error, DETAIL_TEXT_LIMIT) }
     : { status: "finished" as const };
 }
 export async function ownedJobId(tx: Tx, owner: ConversationId, value: string) {

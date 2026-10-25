@@ -1,5 +1,5 @@
 import type { ChatRuntime, SubagentDetail, SubagentListItem } from "../../runtime/types";
-import { singleLine } from "../../runtime/tool-activity";
+import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 
@@ -34,9 +34,10 @@ function listView(all: SubagentListItem[]): View {
       `Background subagents · showing ${items.length} of ${all.length}`,
       "Newest first. Choose an ID to view its latest status and five recent steps:",
       "",
-      ...items.map(item =>
-        `${statusIcon(item.status)} #${item.id} · ${item.status}\n   ${singleLine(item.task, 100) ?? "(no task description)"}`,
-      ),
+      ...items.map(item => singleLine(
+        `${statusIcon(item.status)} #${item.id} · ${item.status} · ${item.task.trim() || "(no task description)"}`,
+        SUMMARY_TEXT_LIMIT,
+      )!),
     ].join("\n"),
     buttons: [items.map(item => ({
       text: `#${item.id}`,
@@ -49,12 +50,14 @@ function detailView(item: SubagentListItem, detail: SubagentDetail): View {
   return {
     text: [
       `Background subagent #${detail.id}`,
-      `Task: ${singleLine(item.task, 160) ?? "(no task description)"}`,
+      `Task: ${singleLine(item.task, DETAIL_TEXT_LIMIT) ?? "(no task description)"}`,
       `Status: ${detail.status}`,
-      ...(detail.detail ? [`Detail: ${singleLine(detail.detail, 160)}`] : []),
+      ...(detail.detail ? [`Detail: ${singleLine(detail.detail, DETAIL_TEXT_LIMIT)}`] : []),
       "",
       "Recent steps:",
-      ...(detail.recentSteps.length ? detail.recentSteps.map(step => `• ${step}`) : ["(none yet)"]),
+      ...(detail.recentSteps.length
+        ? detail.recentSteps.map(step => singleLine(`• ${step}`, DETAIL_TEXT_LIMIT)!)
+        : ["(none yet)"]),
     ].join("\n"),
     buttons: [[{ text: "Back to list", callbackData: "s:list" }]],
   };

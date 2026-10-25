@@ -1,16 +1,15 @@
 import type { AssistantTask, AssistantTaskDetail, TaskExecution } from "../../../shared/tasks";
 import type { ChatRuntime } from "../../runtime/types";
-import { singleLine } from "../../runtime/tool-activity";
+import { DETAIL_TEXT_LIMIT, LONG_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./api";
+import { TELEGRAM_MENU_PAGE_SIZE, TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
 
 type Address = { chatId: string; messageId: string };
 type View = { text: string; buttons?: TelegramKeyboard };
 class TaskMenuNotice extends Error {}
 
-const PAGE_SIZE = 6;
 const EXECUTION_LIMIT = 5;
-const RESULT_TEXT_LIMIT = 3500;
 const taskKey = (id: string, page: number) => `t:d:${id}:${page.toString(36)}`;
 function taskListKey(page: number): string { return `t:l:${page.toString(36)}`; }
 function taskResultKey(taskId: string, runId: string, page: number): string {
@@ -73,13 +72,15 @@ function taskButton(task: AssistantTask, page: number, id: string) {
 function taskListView(all: AssistantTask[], requestedPage: number): View {
   const ids = shortTaskIds(all);
   const tasks = all.filter(task => task.status === "active").sort((a, b) => b.updatedAt - a.updatedAt);
-  const pages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(tasks.length / TELEGRAM_MENU_PAGE_SIZE));
   const page = Math.min(Math.max(requestedPage, 0), pages - 1);
-  const visible = tasks.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const visible = tasks.slice(page * TELEGRAM_MENU_PAGE_SIZE, (page + 1) * TELEGRAM_MENU_PAGE_SIZE);
   const lines = [
-    ...visible.map(task =>
-      `#${shortId(task, ids)} · ${singleLine(task.title, 72) ?? "Untitled"} · ${singleLine(task.scheduleText, 40) ?? "Manual"}`,
-    ),
+    `Active tasks · ${tasks.length}${pages > 1 ? ` · Page ${page + 1}/${pages}` : ""}`,
+    ...visible.map(task => singleLine(
+      `#${shortId(task, ids)} · ${task.title.trim() || "Untitled"} · ${task.scheduleText.trim() || "Manual"}`,
+      SUMMARY_TEXT_LIMIT,
+    )!),
     ...(!visible.length ? ["No active tasks."] : []),
   ];
   const buttons: TelegramKeyboard = [];
@@ -97,20 +98,28 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
   const { task } = detail;
   const executions = detail.executions.slice(0, EXECUTION_LIMIT);
   const runIds = shortRunIds(executions);
-  const lines = [
-    `#${id} · ${task.title}`,
+  const beforePrompt = [
+    `#${id} · ${singleLine(task.title, DETAIL_TEXT_LIMIT) ?? "Untitled"}`,
     `Status: Active`,
-    `Schedule: ${task.scheduleText}`,
+    `Schedule: ${singleLine(task.scheduleText, DETAIL_TEXT_LIMIT) ?? "Manual"}`,
     ...(task.nextDueAt === null ? [] : [`Next run: ${dateTime(task.nextDueAt)}`]),
     "",
     "Instructions:",
-    singleLine(task.prompt, 900) ?? "(empty)",
+  ];
+  const afterPrompt = [
     "",
     "Recent executions:",
-    ...(executions.length ? executions.map(run =>
-      `#${runIds.get(run.id)} · ${statusIcon(run.status)} ${dateTime(run.startedAt)} · ${statusLabel(run.status)}${run.preview ? ` — ${singleLine(run.preview, 100)}` : ""}`,
-    ) : ["No executions yet."]),
+    ...(executions.length ? executions.map(run => singleLine(
+      `#${runIds.get(run.id)} · ${statusIcon(run.status)} ${dateTime(run.startedAt)} · ${statusLabel(run.status)}${run.preview ? ` — ${run.preview}` : ""}`,
+      SUMMARY_TEXT_LIMIT,
+    )!) : ["No executions yet."]),
   ];
+  const fixedLength = [...beforePrompt, "", ...afterPrompt].join("\n").length;
+  const promptLimit = Math.max(0, Math.min(LONG_TEXT_LIMIT, TELEGRAM_MENU_TEXT_LIMIT - fixedLength));
+  const prompt = task.prompt.trim()
+    ? truncateUtf16Text(task.prompt.trim(), promptLimit, "\n\n[Instructions shortened for Telegram.]")
+    : "(empty)";
+  const lines = [...beforePrompt, prompt, ...afterPrompt];
   const buttons: TelegramKeyboard = [];
   const resultButtons = executions
     .filter(run => run.status !== "running")
@@ -123,11 +132,8 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
   buttons.push([{ text: "Back to task list", callbackData: taskListKey(page) }]);
   return { text: lines.join("\n"), buttons };
 }
-function truncateResult(value: string): string {
-  if (value.length <= RESULT_TEXT_LIMIT) return value;
-  let end = RESULT_TEXT_LIMIT - 64;
-  if (end > 0 && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff) end--;
-  return `${value.slice(0, end)}\n\n… Result truncated. Open Piko to read the full execution.`;
+function truncateResult(value: string, limit = LONG_TEXT_LIMIT): string {
+  return truncateUtf16Text(value, limit, "\n\n… Result truncated. Open Piko to read the full execution.");
 }
 
 /** Stateless task/list/execution callbacks re-read the persisted task facts on every click. */
@@ -159,13 +165,11 @@ export class TelegramTaskMenus {
     const service = await this.runtime.tasks();
     const [result, detail, all] = await Promise.all([service.result(id, runId), service.detail(id), service.list()]);
     if (detail.task.status !== "active") throw new TaskMenuNotice("Task archived.");
-    const answer = truncateResult(result.answer.trim() || "No text result.");
     const runIdShort = shortRunIds(detail.executions.slice(0, EXECUTION_LIMIT)).get(runId) ?? runId.slice(-4);
-    const text = [
-      `#${shortId(detail.task, shortTaskIds(all))} · ${detail.task.title} · Run #${runIdShort} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`,
-      "",
-      answer,
-    ].join("\n");
+    const heading = `#${shortId(detail.task, shortTaskIds(all))} · ${singleLine(detail.task.title, DETAIL_TEXT_LIMIT) ?? "Untitled"} · Run #${runIdShort} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`;
+    const answerLimit = Math.max(0, Math.min(LONG_TEXT_LIMIT, TELEGRAM_MENU_TEXT_LIMIT - heading.length - 2));
+    const answer = truncateResult(result.answer.trim() || "No text result.", answerLimit);
+    const text = `${heading}\n\n${answer}`;
     const buttons: TelegramKeyboard = [[{ text: "Back to task", callbackData: assertCallbackData(taskKey(id, page)) }]];
     try {
       await this.api.edit(callback.chatId, callback.messageId, text, true, buttons);
