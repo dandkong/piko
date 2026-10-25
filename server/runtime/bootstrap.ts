@@ -16,6 +16,7 @@ import { runtimePaths } from "./config/paths";
 import { Recovery } from "./conversation-docs";
 import { prepareRestart } from "./subagents/recovery";
 import { subagentIds } from "./subagents/queries";
+import { SubagentPromptScope } from "./subagents/documents";
 import { childScope, sideChatScope } from "./background";
 import { TaskContext } from "./tasks/context";
 import {
@@ -124,6 +125,7 @@ export async function openRuntime(
         const parent = parentAgents.get(owner) ?? rootAgent;
         const scope = childScope(parent);
         for (const id of await subagentIds(tx, owner)) {
+          (await tx.doc(SubagentPromptScope, id)).isSubagent = true;
           const binding = (await tx.doc(TaskContext, id)).binding;
           await configure(tx, id, {
             ...(selection

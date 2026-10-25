@@ -13,6 +13,14 @@ export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   fork: "initial",
   initial: () => ({ epoch: 0, reported: [] }),
 });
+export const SubagentPromptScope = defineDoc<{ isSubagent: boolean }>({
+  kind: "piko.subagent-prompt-scope",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({ isSubagent: false }),
+});
 export const ANCHOR_KIND = "piko.subagent-anchor";
 export const REPORTER_KIND = "piko.subagent-reporter";
 

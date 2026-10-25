@@ -4,6 +4,7 @@ import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../workspace";
 import { TaskFiles } from "../task-files";
 import { TaskContext } from "./tasks/context";
+import { SubagentPromptScope } from "./subagents/documents";
 import type { WorkspaceSkillDetail } from "./types";
 
 export type WorkspaceSkill = {
@@ -151,8 +152,16 @@ async function loadWorkspaceResourcesInternal(
 export async function loadWorkspaceResources(
   paths: WorkspacePaths,
   signal?: AbortSignal,
+  options: { includeGuidance?: boolean } = {},
 ): Promise<WorkspaceResources> {
-  return (await loadWorkspaceResourcesInternal(paths, signal)).resources;
+  return (
+    await loadWorkspaceResourcesInternal(
+      paths,
+      signal,
+      undefined,
+      options.includeGuidance ?? true,
+    )
+  ).resources;
 }
 
 export async function loadWorkspaceSkill(
@@ -200,10 +209,18 @@ Time zone: ${timeZone}`;
         if (!binding) return undefined;
         return `<instructions_file role="memory" path="${escape(new TaskFiles(paths.workspace).directory(binding.itemId))}/MEMORY.md">\n${await new TaskFiles(paths.workspace).memory(binding.itemId)}\n</instructions_file>`;
       }),
-      section("workspace_resources", async (_input, context) => {
+      section("workspace_resources", async (input, context) => {
+        const isSubagent = (
+          await input.read.snapshot(
+            SubagentPromptScope,
+            input.conversationId,
+            context,
+          )
+        )?.isSubagent;
         const resources = await loadWorkspaceResources(
           paths,
           context.abortSignal,
+          { includeGuidance: !isSubagent },
         );
         for (const diagnostic of resources.diagnostics) {
           const key = `${diagnostic.path}:${diagnostic.message}`;

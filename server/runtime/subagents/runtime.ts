@@ -26,6 +26,7 @@ import {
 } from "../background";
 import {
   JobControl,
+  SubagentPromptScope,
   ANCHOR_KIND,
   REPORTER_KIND,
   type ReporterInput,
@@ -378,8 +379,9 @@ export function createSubagentRuntime(options: {
       cwd: task ? new TaskFiles(agent.cwd!).directory(task.itemId) : agent.cwd,
       ...childScope(agent),
       instructions:
-        "You are a background workspace assistant delegated from a conversation. Complete the assigned work and return your findings to that conversation only. Share its workspace resources and tools. You cannot delegate. Your answer is internal; the delegating assistant decides what to tell the user.",
+        "You are a background workspace assistant delegated from a conversation. Complete the assigned work using the provided task context and available tools, then return your findings to that conversation only. You do not receive the parent conversation or its global memory. Your answer is internal; the delegating assistant decides what to tell the user.",
     });
+    (await tx.doc(SubagentPromptScope, child)).isSubagent = true;
     if (task) (await tx.doc(TaskContext, child)).binding = task;
     const instruction = task
       ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.itemId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.`
