@@ -31,6 +31,7 @@ import {
   MemoryCurationService,
 } from "./memory-curation";
 import { createPikoCodingTools } from "./coding-tools";
+import { createSessionSearchTools } from "./session-search-tools";
 import { SideChatError, requireSideChat } from "./side-chats";
 import { SideChats } from "./side-chat-service";
 import { openRuntime } from "./bootstrap";
@@ -91,6 +92,12 @@ class PikoRuntime {
       coding,
     });
     const web = createWebTools(env, { settings: settings.tools });
+    const sessionSearch = createSessionSearchTools({
+      search: async (conversationId, query, limit) =>
+        (await this.session(conversationId)).searchHistory(query, limit),
+      history: async (conversationId, messageId, limit) =>
+        (await this.session(conversationId)).historyAround(messageId, limit),
+    });
     this.searchConfigured = web.searchConfigured;
     const registry = createRegistry();
     for (const extension of [
@@ -101,6 +108,7 @@ class PikoRuntime {
       createSubagentTools(children),
       createTaskTools(() => this.tasks),
       memory.extension,
+      sessionSearch,
     ])
       registry.install(extension);
     const opened = await openRuntime(this.paths, config, registry);

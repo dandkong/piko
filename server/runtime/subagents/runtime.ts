@@ -283,7 +283,7 @@ export function createSubagentRuntime(options: {
             await entriesFromTransaction(tx, task.conversationId)
           )
             .filter((entry) => entry.kind === "pi.assistant")
-            .map((entry) => `pi-${entry.id}`);
+            .map((entry) => String(entry.id));
           const binding = (await tx.doc(TaskContext, task.input.child)).binding;
           // Provenance: saved-task execution carries its task; ordinary delegation carries its job id.
           const heading = binding

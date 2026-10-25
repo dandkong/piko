@@ -102,7 +102,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 原生 ID 由 Durable 分配；跨端按不透明字符串传输。RN 输入和停止请求使用 UUID，TG 输入使用 telegram:<botId>:<chatId>:<messageId>。网络重投保留原 requestId；用户主动重试是新请求。相同 requestId 返回原生提交，调用方不能用它表达新内容；去重不依赖输入哈希。
 
-历史在原生 commit 线上按不可变 entry ID 游标读取原始 entries 并投影；最近快照和向前分页每页至多 50 条可见已保存消息，提交绑定从原生 submission 初始化并随 commit 更新。不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 为 pi-<entry ID>，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。只投影原生用户/助手消息，不为尚无写入端的被动结果预留展示分支。
+历史在原生 commit 线上按不可变 entry ID 游标读取原始 entries 并投影；最近快照和向前分页每页至多 50 条可见已保存消息，提交绑定从原生 submission 初始化并随 commit 更新。不能使用压缩后的 conversation.context() 作为 UI 历史。用户/助手文本 ID 直接使用 Durable 原生 entry ID，时间来自原生消息；工具、思考、隐藏标记和摘要不形成气泡。只投影原生用户/助手消息，不为尚无写入端的被动结果预留展示分支。
 
 生成中使用临时消息身份，保存后原位替换为原生身份。快照包含已保存历史、当前未提交文字和原生 inbox 中待应用输入；临时投影不落盘。输入与助手消息各自展示，不分组、不强行配对，压缩和 reset 不删除原始展示历史。
 

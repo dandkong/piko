@@ -22,6 +22,8 @@ import {
   inputsFromStorage,
   messageText,
   projectPiHistory,
+  historyAroundPiMessage,
+  searchPiHistory,
   readPiEntries,
   readPiInputs,
 } from "./pi-history";
@@ -305,6 +307,18 @@ export class ConversationView {
       );
       return page;
     }, ctx);
+  }
+  search(query: string, limit: number) {
+    return this.harness.commit(
+      tx => searchPiHistory(tx, this.inputEntries, query, limit, this.conversation.id),
+      ctx,
+    );
+  }
+  historyAround(messageId: string, limit: number) {
+    return this.harness.commit(
+      tx => historyAroundPiMessage(tx, this.inputEntries, messageId, limit, this.conversation.id),
+      ctx,
+    );
   }
   async snapshot(options?: { limit: number }) {
     const state = await this.harness.commit(async (tx) => {

@@ -4,6 +4,7 @@ import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
 import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
 import { detectExtension } from "../attachments";
+import { truncateText } from "./text";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -66,7 +67,7 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
   } while (cursor && messages.length <= limit);
   const selected = messages.slice(0, limit).reverse();
   const result: HistoryPage = { messages: selected,
-    ...(messages.length > limit && { nextBefore: selected[0]!.id.slice(3) }) };
+    ...(messages.length > limit && { nextBefore: selected[0]!.id }) };
   return { ...result, entries };
 }
 
@@ -82,7 +83,11 @@ function splitAttachments(content: string): { text: string; attachments?: Messag
   return { text: content.slice(match[0].length).trim(), ...(attachments.length && { attachments }) };
 }
 
-export function projectPiHistory(entries: readonly EntryRecord[], inputs = new Map<number, string>(), hidden = new Set<number>()) {
+export function projectPiHistory(
+  entries: readonly EntryRecord[],
+  inputs: ReadonlyMap<number, string> = new Map<number, string>(),
+  hidden: ReadonlySet<number> = new Set<number>(),
+) {
   const messages: Message[] = [];
   for (const entry of entries) {
     if (hidden.has(entry.id)) continue;
@@ -92,10 +97,189 @@ export function projectPiHistory(entries: readonly EntryRecord[], inputs = new M
         const raw = messageText(message.content);
         const { text, attachments } = message.role === "user" ? splitAttachments(raw) : { text: raw };
         const requestId = message.role === "user" ? inputs.get(entry.id) : undefined;
-        if (text.trim() || attachments?.length) messages.push({ id: "pi-" + entry.id, role: message.role, content: text,
+        if (text.trim() || attachments?.length) messages.push({ id: String(entry.id), role: message.role, content: text,
           createdAt: message.timestamp, ...(requestId && { requestId }), ...(attachments && { attachments }) });
       }
     }
   }
   return { messages };
+}
+
+export type SessionSearchHit = {
+  messageId: string;
+  role: Message["role"];
+  timestamp: number;
+  snippet: string;
+  score: number;
+};
+
+export type SessionHistoryWindow = {
+  messages: Pick<Message, "id" | "role" | "content" | "createdAt">[];
+  messagesBefore: number;
+  messagesAfter: number;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+};
+
+function normalizeSearchText(value: string): string {
+  return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function searchSnippet(content: string, terms: readonly string[], limit = 300): string {
+  const flattened = content.replace(/\s+/g, " ").trim();
+  const normalized = normalizeSearchText(flattened);
+  const matchAt = Math.min(...terms.map(term => normalized.indexOf(term)).filter(index => index >= 0));
+  const points = Array.from(flattened);
+  if (!Number.isFinite(matchAt)) return points.slice(0, limit).join("") + (points.length > limit ? "…" : "");
+  const codePointAt = Array.from(normalized.slice(0, matchAt)).length;
+  const start = Math.max(0, codePointAt - Math.floor(limit / 3));
+  const end = Math.min(points.length, start + limit);
+  return `${start ? "…" : ""}${points.slice(start, end).join("")}${end < points.length ? "…" : ""}`;
+}
+
+function searchScore(text: string, query: string, terms: readonly string[]): number | undefined {
+  if (!terms.every(term => text.includes(term))) return undefined;
+  let score = text.includes(query) ? 100 : 0;
+  for (const term of terms) {
+    let from = 0;
+    let count = 0;
+    while (count < 10) {
+      const index = text.indexOf(term, from);
+      if (index < 0) break;
+      count++;
+      from = index + Math.max(1, term.length);
+    }
+    score += count;
+  }
+  return score;
+}
+
+async function internalEntries(
+  tx: Tx,
+  inputs: ReadonlyMap<number, string>,
+  conversationId: ConversationId,
+): Promise<Set<number>> {
+  const hidden = new Set<number>();
+  for (const [entryId, requestId] of inputs) {
+    if (!await internalInput(tx, requestId, conversationId)) continue;
+    hidden.add(entryId);
+  }
+  return hidden;
+}
+
+function visibleEntryMessages(entry: EntryRecord, hidden: ReadonlySet<number>, inputs: ReadonlyMap<number, string>): Message[] {
+  if (hidden.has(entry.id) || (entry.kind !== "pi.user" && entry.kind !== "pi.assistant")) return [];
+  return projectPiHistory([entry], inputs).messages;
+}
+
+/** Search the visible transcript projection directly from native entries; no message index or copy is persisted. */
+export async function searchPiHistory(
+  tx: Tx,
+  inputs: ReadonlyMap<number, string>,
+  rawQuery: string,
+  limit: number,
+  conversationId = ROOT_CONVERSATION_ID,
+): Promise<{ results: SessionSearchHit[]; truncated: boolean }> {
+  const query = normalizeSearchText(rawQuery);
+  const terms = query.split(" ").filter(Boolean);
+  if (!terms.length) return { results: [], truncated: false };
+
+  const candidates: SessionSearchHit[] = [];
+  const hidden = await internalEntries(tx, inputs, conversationId);
+  let matches = 0;
+  let cursor: Cursor | undefined;
+  do {
+    const page = await tx.scanEntries({ conversationId, order: "descending" }, 100, cursor);
+    for (const entry of page.items) {
+      const messages = visibleEntryMessages(entry, hidden, inputs).reverse();
+      for (const message of messages) {
+        const text = normalizeSearchText(message.content);
+        if (!text) continue;
+        const score = searchScore(text, query, terms);
+        if (score === undefined) continue;
+        matches++;
+        candidates.push({ messageId: message.id, role: message.role, timestamp: message.createdAt,
+          snippet: searchSnippet(message.content, terms), score });
+        candidates.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp ||
+          Number(b.messageId) - Number(a.messageId));
+        if (candidates.length > limit) candidates.pop();
+      }
+    }
+    cursor = page.next;
+  } while (cursor);
+  return { results: candidates, truncated: matches > limit };
+}
+
+/** Read a bounded window around a visible message anchor from the native transcript. */
+export async function historyAroundPiMessage(
+  tx: Tx,
+  inputs: ReadonlyMap<number, string>,
+  messageId: string,
+  limit: number,
+  conversationId = ROOT_CONVERSATION_ID,
+): Promise<SessionHistoryWindow | undefined> {
+  const match = /^([1-9]\d*)$/.exec(messageId);
+  const entryId = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(entryId)) return undefined;
+
+  const anchorEntry = await tx.entry(entryId as EntryRecord["id"]);
+  if (!anchorEntry || anchorEntry.conversationId !== conversationId) return undefined;
+  const hidden = await internalEntries(tx, inputs, conversationId);
+  const anchorMessages = visibleEntryMessages(anchorEntry, hidden, inputs);
+  const anchorIndex = anchorMessages.findIndex(message => message.id === messageId);
+  if (anchorIndex < 0) return undefined;
+  const windowSize = Math.max(1, limit);
+  const targetBefore = Math.floor((windowSize - 1) / 2);
+  const targetAfter = windowSize - 1 - targetBefore;
+  const before: Message[] = anchorMessages.slice(0, anchorIndex).reverse();
+  const after: Message[] = anchorMessages.slice(anchorIndex + 1);
+  const collectAdjacent = async (side: "before" | "after") => {
+    let cursor: Cursor | undefined;
+    let hasMore = false;
+    do {
+      const page = await tx.scanEntries({
+        conversationId,
+        ...(side === "before"
+          ? { maxEntryId: (entryId - 1) as EntryRecord["id"], order: "descending" as const }
+          : { minEntryId: (entryId + 1) as EntryRecord["id"], order: "ascending" as const }),
+      }, 100, cursor);
+      for (const entry of page.items) {
+        const projected = visibleEntryMessages(entry, hidden, inputs);
+        const ordered = side === "before" ? projected.reverse() : projected;
+        (side === "before" ? before : after).push(...ordered);
+        if ((side === "before" ? before : after).length > windowSize) {
+          hasMore = true;
+          break;
+        }
+      }
+      if (hasMore) break;
+      cursor = page.next;
+    } while (cursor);
+    return hasMore;
+  };
+  const hasMoreBefore = entryId > 1 ? await collectAdjacent("before") : false;
+  const hasMoreAfter = entryId < Number.MAX_SAFE_INTEGER ? await collectAdjacent("after") : false;
+
+  let countBefore = Math.min(targetBefore, before.length);
+  let countAfter = Math.min(targetAfter, after.length);
+  let remaining = windowSize - 1 - countBefore - countAfter;
+  while (remaining > 0 && (countBefore < before.length || countAfter < after.length)) {
+    if (countBefore < before.length) countBefore++;
+    else if (countAfter < after.length) countAfter++;
+    remaining--;
+  }
+  const selectedMessages = [
+    ...before.slice(0, countBefore).reverse(),
+    anchorMessages[anchorIndex]!,
+    ...after.slice(0, countAfter),
+  ];
+  const selected = selectedMessages.map(({ id, role, content, createdAt }) => ({
+    id,
+    role,
+    content: truncateText(content, 500),
+    createdAt,
+  }));
+  return { messages: selected, messagesBefore: countBefore, messagesAfter: countAfter,
+    hasMoreBefore: hasMoreBefore || before.length > countBefore,
+    hasMoreAfter: hasMoreAfter || after.length > countAfter };
 }

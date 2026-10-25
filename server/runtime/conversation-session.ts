@@ -136,6 +136,12 @@ export class DurableChatSession implements ChatSession {
   history(before?: string, limit?: number) {
     return this.view.history(before, limit);
   }
+  searchHistory(query: string, limit: number) {
+    return this.view.search(query, limit);
+  }
+  historyAround(messageId: string, limit: number) {
+    return this.view.historyAround(messageId, limit);
+  }
   submission(requestId: string) {
     return this.view.submission(requestId);
   }

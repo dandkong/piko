@@ -12,9 +12,9 @@ export function backgroundAgent(selection: BackgroundSelection | undefined, pare
 }
 
 /** Background children never delegate or manage tasks, and never re-enter the curation task. */
-const CHILD_TOOL_PREFIXES = ["subagent_", "task_"];
+const CHILD_TOOL_PREFIXES = ["subagent_", "task_", "sessions_"];
 const TASK_TOOL_PREFIXES = ["task_"];
-const CHILD_EXTENSIONS = ["piko-subagents", "piko-subagent-tools", "piko-tasks", "piko-memory-curation"];
+const CHILD_EXTENSIONS = ["piko-subagents", "piko-subagent-tools", "piko-tasks", "piko-memory-curation", "piko-session-search"];
 const TASK_EXTENSIONS = ["piko-tasks", "piko-memory-curation"]
 
 /** One place for what a background child may inherit from the main agent. */

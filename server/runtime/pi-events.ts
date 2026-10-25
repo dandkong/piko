@@ -61,7 +61,7 @@ export class PiMessageEvents {
     const message = entry.model?.[0];
     if (message?.role !== "assistant") return;
     this.seen.add(entry.id);
-    this.emit({ type: "message", message: { id: `pi-${entry.id}`, role: "assistant",
+    this.emit({ type: "message", message: { id: String(entry.id), role: "assistant",
       content: messageText(message.content), createdAt: message.timestamp }, final: true,
       ...(this.current && { previousId: this.current.id }) });
     this.current = undefined; this.blocks.clear();

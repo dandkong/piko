@@ -1,7 +1,7 @@
-import type { ConversationResponse, HistoryPage } from "./chat";
+import { isHistoryCursor, type ConversationResponse, type HistoryPage } from "./chat";
 
 function entryId(id: string): number | undefined {
-  return /^pi-[1-9]\d*$/.test(id) ? Number(id.slice(3)) : undefined;
+  return isHistoryCursor(id) ? Number(id) : undefined;
 }
 
 /** Replace the recent authoritative window, including transient/withdrawn inputs.
