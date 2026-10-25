@@ -3,6 +3,7 @@ import { createUuidV4 } from "../../utils/uuid";
 import type {
   ConversationResponse,
   HistoryPage,
+  Message,
   StreamEvent,
 } from "../../../../../shared/chat";
 import {
@@ -31,6 +32,11 @@ export function useChat(conversationId?: string, observing = true) {
   const [deleted, setDeleted] = useState(false);
   const deletedRef = useRef(false);
   const messages = history.messages;
+  // View identity only: preserve mounted bubbles when a live entry is committed.
+  const displayKeys = useRef(new Map<string, string>());
+  const messageKey = useCallback((message: Message) => message.requestId
+    ? `input-${message.requestId}`
+    : displayKeys.current.get(message.id) ?? message.id, []);
   const historyRef = useRef(history);
   historyRef.current = history;
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -54,6 +60,8 @@ export function useChat(conversationId?: string, observing = true) {
   const stopId = useRef<string | undefined>(undefined);
   const apply = useCallback((snapshot: ConversationResponse) => {
     if (!mounted.current || deletedRef.current) return;
+    for (const [id, previous] of Object.entries(snapshot.previousIds ?? {}))
+      displayKeys.current.set(id, displayKeys.current.get(previous) ?? previous);
     const input = pending.current;
     if (
       input &&
@@ -93,6 +101,8 @@ export function useChat(conversationId?: string, observing = true) {
   const onMessage = useCallback(
     (event: Extract<StreamEvent, { type: "message" }>) => {
       if (deletedRef.current) return;
+      if (event.previousId)
+        displayKeys.current.set(event.message.id, displayKeys.current.get(event.previousId) ?? event.previousId);
       setHistory((current) => ({
         ...current,
         messages: applyMessageEvent(current.messages, event),
@@ -299,6 +309,7 @@ export function useChat(conversationId?: string, observing = true) {
     ready: !deleted && !loading && modelReady,
     deleted,
     messages,
+    messageKey,
     draft,
     setDraft,
     loading,

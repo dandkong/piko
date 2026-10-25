@@ -1,6 +1,13 @@
 import { memo, useMemo, useState } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
-import Markdown, { type MarkdownStyles, type RenderRules } from "react-native-markdown-renderer";
+import Markdown, {
+  AstRenderer,
+  renderRules as defaultRules,
+  styles as defaultStyles,
+  type ASTNode,
+  type MarkdownStyles,
+  type RenderRules,
+} from "react-native-markdown-renderer";
 import { colors } from "../../theme";
 import { assistantMarkdown, isAssistantLink, prepareAssistantMarkdown } from "./markdown";
 
@@ -29,6 +36,24 @@ const markdownStyles: MarkdownStyles = {
   codeInline: { color: colors.text, backgroundColor: "#E2E4E7", fontFamily: monospace, fontSize: 14, lineHeight: 24 },
   hr: { backgroundColor: "#D8DDE1", height: 1, marginVertical: 12 },
 };
+
+const resolvedMarkdownStyles: MarkdownStyles = {
+  ...defaultStyles,
+  ...Object.fromEntries(Object.entries(markdownStyles).map(([name, style]) => [
+    name,
+    StyleSheet.flatten([(defaultStyles as MarkdownStyles)[name], style]),
+  ])),
+};
+
+// The renderer's generated IDs (including its root key) change on every parse.
+// Structural keys retain existing blocks and horizontal code/table scroll state
+// while text grows; a genuine syntax/type change still replaces that node.
+function stableMarkdownKeys(nodes: ASTNode[], parent = "md") {
+  nodes.forEach((node, index) => {
+    node.key = `${parent}/${index}:${node.type}`;
+    stableMarkdownKeys(node.children, node.key);
+  });
+}
 
 const ui = StyleSheet.create({
   container: { minWidth: 0, flexShrink: 1, maxWidth: "100%" },
@@ -113,10 +138,21 @@ export const AssistantMessage = memo(function AssistantMessage({ content, stream
       image: (node) => <Text key={node.key} style={ui.imageAlt}>[{node.attributes.alt || node.content || "Image"}]</Text>,
     };
   }, []);
+  const renderMarkdown = useMemo(() => {
+    const renderer = new AstRenderer({ ...defaultRules, ...rules }, resolvedMarkdownStyles);
+    return (nodes: ASTNode[]) => {
+      stableMarkdownKeys(nodes);
+      return (
+        <View style={resolvedMarkdownStyles.root as ViewStyle}>
+          {nodes.map(node => renderer.renderNode(node, []))}
+        </View>
+      );
+    };
+  }, [rules]);
   return (
     <View style={ui.container}>
       <View style={ui.content}>
-        <Markdown markdownit={assistantMarkdown} style={markdownStyles} rules={rules}>{source}</Markdown>
+        <Markdown markdownit={assistantMarkdown} renderer={renderMarkdown}>{source}</Markdown>
       </View>
       {linkError && <Text accessibilityRole="alert" style={ui.error}>无法打开这个链接。</Text>}
     </View>

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -18,6 +17,7 @@ import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
 import { formatTimestamp, shouldShowTimestamp } from "./time-divider";
+import { useChatScroll } from "./useChatScroll";
 
 export const MESSAGE_GAP = 13;
 const MessageSeparator = () => <View style={{ height: MESSAGE_GAP }} />;
@@ -27,28 +27,19 @@ export function ChatTab({ headerHeight, footerHeight }: {
   headerHeight: number;
   footerHeight: number;
 }) {
-  const { messages, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
-  const listRef = useRef<FlatList<Message>>(null);
-  const following = useRef(true);
-  const dragging = useRef(false);
-  const metrics = useRef({ contentHeight: 0, viewportHeight: 0, offset: 0 });
-  const [awayFromLatest, setAwayFromLatest] = useState(false);
-
-  const scrollToLatest = (animated: boolean) => {
-    if (dragging.current || !metrics.current.viewportHeight || !metrics.current.contentHeight) return;
-    following.current = true;
-    // Let onScroll hide the button on arrival, not before the scroll animation.
-    // scrollToEnd approximates unmeasured rows; the measured content box is exact.
-    const offset = Math.max(0, metrics.current.contentHeight - metrics.current.viewportHeight);
-    if (!animated) metrics.current.offset = offset;
-    listRef.current?.scrollToOffset({ offset, animated });
-  };
-  // Only a local send reveals the new exchange; resuming a busy snapshot does not.
-  useEffect(() => { if (submitting) scrollToLatest(false); }, [submitting]);
-
-  const fetchOlder = () => void loadOlder();
+  const { messages, messageKey, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
+  const scroll = useChatScroll({
+    loading,
+    submitting,
+    onNearStart: () => {
+      if (hasOlder && !loadingOlder && !olderError) fetchOlder();
+    },
+  });
+  const fetchOlder = () => void loadOlder(scroll.beforePrepend);
+  const last = messages.at(-1);
+  const waitingId = busy && last?.role === "assistant" && !last.content.trim() ? last.id : undefined;
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
-    const waitingForText = busy && item.role === "assistant" && item.id === messages.at(-1)?.id && !item.content.trim();
+    const waitingForText = item.id === waitingId;
     const hasContent = !!item.content.trim();
     if (!hasContent && !item.attachments?.length && !waitingForText) return null;
     const previous = messages[index - 1];
@@ -84,7 +75,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
       <View testID="chat-conversation-viewport" style={styles.conversationViewport}>
         <FlatList
           testID="chat-list"
-          ref={listRef}
+          ref={scroll.listRef}
           // Mount a whole history page at once so the first paint already has its full height.
           initialNumToRender={CHAT_PAGE_SIZE}
           maxToRenderPerBatch={CHAT_PAGE_SIZE}
@@ -92,7 +83,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           updateCellsBatchingPeriod={0}
           style={styles.conversation}
           data={messages}
-          keyExtractor={(item) => item.id}
+          keyExtractor={messageKey}
           renderItem={renderMessage}
           ItemSeparatorComponent={MessageSeparator}
           // Reserve one message gap at each measured content boundary; fade extents are visual only.
@@ -102,42 +93,8 @@ export function ChatTab({ headerHeight, footerHeight }: {
           }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={() => {
-            dragging.current = true;
-            following.current = false;
-          }}
-          onScrollEndDrag={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            dragging.current = false;
-            if (!layoutMeasurement.height) return;
-            // A short upward drag is still reading intent, even inside the follow threshold.
-            const atBottom = contentSize.height - contentOffset.y - layoutMeasurement.height <= 1;
-            following.current = atBottom;
-            setAwayFromLatest(!atBottom);
-          }}
-          onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-            if (!layoutMeasurement.height) return;
-            const movingUp = contentOffset.y < metrics.current.offset - 0.5;
-            metrics.current.offset = contentOffset.y;
-            const distance = contentSize.height - contentOffset.y - layoutMeasurement.height;
-            // Web wheels do not emit begin/end drag. Detach on upward movement too.
-            const follow = !dragging.current && !movingUp && distance <= 1;
-            following.current = follow;
-            setAwayFromLatest(!follow);
-            if (contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
-          }}
           scrollEventThrottle={16}
-          onLayout={({ nativeEvent: { layout } }) => {
-            if (!layout.height) return;
-            metrics.current.viewportHeight = layout.height;
-            if (following.current) scrollToLatest(false);
-          }}
-          // Layout callbacks are not new messages and must never override a drag.
-          onContentSizeChange={(_, height) => {
-            if (!height) return;
-            const changed = height !== metrics.current.contentHeight;
-            metrics.current.contentHeight = height;
-            if (changed && following.current && !dragging.current) scrollToLatest(false);
-          }}
+          {...scroll.listProps}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
               {loadingOlder ? <ActivityIndicator accessibilityLabel="正在加载更早的消息" color={colors.blueDark} size="small" /> : (
@@ -155,7 +112,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           ) : null}
           ListFooterComponent={(
             <View>
-              {busy && !messages.some(message => message.id.startsWith("live-") && message.content.trim()) && (
+              {busy && !waitingId && !messages.some(message => message.id.startsWith("live-") && message.content.trim()) && (
                 <View accessibilityLabel="Piko 正在工作"
                   style={[styles.bubble, styles.assistantBubble, styles.typing, { marginTop: 13 }]}>
                   <TypingIndicator />
@@ -181,11 +138,11 @@ export function ChatTab({ headerHeight, footerHeight }: {
             </View>
           )}
         />
-        {awayFromLatest && (
+        {scroll.awayFromLatest && (
           <View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }]}>
             <IconButton
               label="最新消息"
-              onPress={() => scrollToLatest(true)}
+              onPress={() => scroll.scrollToLatest(true)}
               style={styles.latestButtonShadow}
             >
               <ArrowDown size={22} strokeWidth={1.8} color={colors.text} />
