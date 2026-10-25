@@ -17,7 +17,7 @@ import { createSubagentTools } from "./subagents/tools";
 import { DurableAssistantTasks } from "./tasks/service";
 import { createTaskTools } from "./tasks/tools";
 import { BackgroundReplies } from "./background-replies";
-import { createWorkspaceResources } from "./resources";
+import { createWorkspaceResources, loadWorkspaceSkill } from "./resources";
 import {
   loadWorkspaceModels,
   availableBackground,
@@ -204,6 +204,9 @@ class PikoRuntime {
       status: id => this.harness.commit(tx => delegationStatus(tx, ROOT_CONVERSATION_ID, id), ctx),
     };
   }
+  skill(name: string) {
+    return loadWorkspaceSkill(this.paths, name);
+  }
   close(): Promise<void> {
     if (this.closed) return this.closed;
     this.closing = true;
@@ -255,6 +258,7 @@ export function createPiRuntime(
   return {
     tasks: async () => (await get()).tasksService(),
     subagents: async () => (await get()).subagentsService(),
+    skill: async name => (await get()).skill(name),
     sideChats: {
       list: async () => (await get()).sideChats.list(),
       create: async (requestId, title) =>

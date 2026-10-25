@@ -35,9 +35,16 @@ export interface AssistantSubagentsRuntime {
   list(): Promise<SubagentListItem[]>;
   status(id: string): Promise<SubagentDetail | undefined>;
 }
+export type WorkspaceSkillDetail = {
+  name: string;
+  description: string;
+  body: string;
+  disableModelInvocation: boolean;
+};
 export interface ChatRuntime {
   tasks(): Promise<AssistantTasksRuntime>;
   subagents(): Promise<AssistantSubagentsRuntime>;
+  skill(name: string): Promise<WorkspaceSkillDetail | undefined>;
   isModelReady(): Promise<boolean>;
   sideChats: {
     list(): Promise<SideChat[]>;

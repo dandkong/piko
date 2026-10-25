@@ -4,6 +4,7 @@ import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../workspace";
 import { TaskFiles } from "../task-files";
 import { TaskContext } from "./tasks/context";
+import type { WorkspaceSkillDetail } from "./types";
 
 export type WorkspaceSkill = {
   name: string;
@@ -17,6 +18,10 @@ export type WorkspaceResources = {
   skills: WorkspaceSkill[];
   diagnostics: { path: string; message: string }[];
 };
+type LoadedWorkspaceResources = {
+  resources: WorkspaceResources;
+  skillDetail?: WorkspaceSkillDetail;
+};
 const escape = (text: string) =>
   text
     .replace(/&/g, "&amp;")
@@ -25,10 +30,12 @@ const escape = (text: string) =>
     .replace(/"/g, "&quot;");
 
 /** Explicit Piko roots, never ancestor instructions or personal Pi CLI resources. */
-export async function loadWorkspaceResources(
+async function loadWorkspaceResourcesInternal(
   paths: WorkspacePaths,
   signal?: AbortSignal,
-): Promise<WorkspaceResources> {
+  detailName?: string,
+  includeInstructions = true,
+): Promise<LoadedWorkspaceResources> {
   const result: WorkspaceResources = {
     instructions: [],
     skills: [],
@@ -36,19 +43,22 @@ export async function loadWorkspaceResources(
   };
   const warn = (path: string, message: string) =>
     result.diagnostics.push({ path, message });
-  for (const [root, name, role] of [
-    [join(paths.resources, "prompts"), "core.md", "core"],
-    [paths.workspace, "AGENTS.md", "work_guidance"],
-    [paths.workspace, "MEMORY.md", "memory"],
-  ] as [string, string, GuidanceRole][]) {
-    signal?.throwIfAborted();
-    result.instructions.push({
-      role,
-      path: join(root, name),
-      content: readGuidance(root, name),
-    });
+  if (includeInstructions) {
+    for (const [root, name, role] of [
+      [join(paths.resources, "prompts"), "core.md", "core"],
+      [paths.workspace, "AGENTS.md", "work_guidance"],
+      [paths.workspace, "MEMORY.md", "memory"],
+    ] as [string, string, GuidanceRole][]) {
+      signal?.throwIfAborted();
+      result.instructions.push({
+        role,
+        path: join(root, name),
+        content: readGuidance(root, name),
+      });
+    }
   }
   const byName = new Map<string, WorkspaceSkill>();
+  let skillDetail: WorkspaceSkillDetail | undefined;
   for (const root of [
     join(paths.resources, "skills"),
     join(paths.workspace, ".agents", "skills"),
@@ -110,12 +120,21 @@ export async function loadWorkspaceResources(
           warn(path, "Skill name differs from directory name");
         if (byName.has(value.name))
           warn(path, `Overrides skill at ${byName.get(value.name)!.path}`);
-        byName.set(value.name, {
+        const skill = {
           name: value.name,
           description: value.description,
           path,
           disableModelInvocation: value["disable-model-invocation"] === true,
-        });
+        };
+        byName.set(value.name, skill);
+        if (value.name === detailName) {
+          skillDetail = {
+            name: skill.name,
+            description: skill.description,
+            body: text.slice(match[0].length).replace(/^\r?\n/, ""),
+            disableModelInvocation: skill.disableModelInvocation,
+          };
+        }
       } catch (error) {
         signal?.throwIfAborted();
         if ((error as NodeJS.ErrnoException).code !== "ENOENT")
@@ -126,7 +145,21 @@ export async function loadWorkspaceResources(
   result.skills = [...byName.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
-  return result;
+  return { resources: result, ...(skillDetail && { skillDetail }) };
+}
+
+export async function loadWorkspaceResources(
+  paths: WorkspacePaths,
+  signal?: AbortSignal,
+): Promise<WorkspaceResources> {
+  return (await loadWorkspaceResourcesInternal(paths, signal)).resources;
+}
+
+export async function loadWorkspaceSkill(
+  paths: WorkspacePaths,
+  name: string,
+): Promise<WorkspaceSkillDetail | undefined> {
+  return (await loadWorkspaceResourcesInternal(paths, undefined, name, false)).skillDetail;
 }
 
 export function formatWorkspaceResources(

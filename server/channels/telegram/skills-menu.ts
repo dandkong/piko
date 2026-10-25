@@ -1,5 +1,5 @@
 import type { RuntimeDescription } from "../../../shared/runtime";
-import type { ChatRuntime } from "../../runtime/types";
+import type { ChatRuntime, WorkspaceSkillDetail } from "../../runtime/types";
 import { LONG_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, DETAIL_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 import type { TelegramCallback } from "./menus";
@@ -31,10 +31,10 @@ function skillKey(token: string, index: number, page: number): string {
   return `k:${token}:skill:${index}:${page.toString(36)}`;
 }
 
-function detailDescription(value: string): string {
+function detailBody(value: string): string {
   const text = value.trim();
-  const note = "\n\n[Description shortened for Telegram.]";
-  return truncateUtf16Text(text, LONG_TEXT_LIMIT, note) || "(no description)";
+  const note = "\n\n[Skill body shortened for Telegram.]";
+  return truncateUtf16Text(text, LONG_TEXT_LIMIT, note) || "(empty skill body)";
 }
 
 function listView(menu: Menu, skills: Skill[], requestedPage: number): View {
@@ -72,12 +72,12 @@ function listView(menu: Menu, skills: Skill[], requestedPage: number): View {
   return { text: lines.join("\n"), buttons };
 }
 
-function detailView(menu: Menu, skill: Skill, page: number): View {
+function detailView(menu: Menu, skill: WorkspaceSkillDetail, page: number): View {
   return {
     text: [
       `Skill · ${singleLine(skill.name, DETAIL_TEXT_LIMIT) ?? "Skill"}`,
       "",
-      detailDescription(skill.description),
+      detailBody(skill.body),
       ...(skill.disableModelInvocation ? ["", "Not included in the assistant skill index."] : []),
     ].join("\n"),
     buttons: [[{ text: "Back to skills", callbackData: pageKey(menu.token, page) }]],
@@ -88,7 +88,7 @@ function detailView(menu: Menu, skill: Skill, page: number): View {
 export class TelegramSkillMenus {
   private readonly menus = new Map<string, Menu>();
 
-  constructor(private readonly runtime: Pick<ChatRuntime, "describe">, private readonly api: TelegramTransport) {}
+  constructor(private readonly runtime: Pick<ChatRuntime, "describe" | "skill">, private readonly api: TelegramTransport) {}
 
   async open(address: { chatId: string }): Promise<void> {
     const skills = sortedSkills((await this.runtime.describe()).skills);
@@ -140,21 +140,21 @@ export class TelegramSkillMenus {
     try {
       const action = match![2]!.startsWith("list:") ? "list" : "skill";
       const page = Number.parseInt(action === "list" ? match![3]! : match![5]!, 36);
-      const skills = sortedSkills((await this.runtime.describe()).skills);
       if (action === "list") {
+        const skills = sortedSkills((await this.runtime.describe()).skills);
         await this.editList(menu, skills, page);
       } else {
         const index = Number.parseInt(match![4]!, 10);
         const previous = menu.skills[index];
-        const skill = previous && skills.find(item => item.name === previous.name);
+        const skill = previous && await this.runtime.skill(previous.name);
         if (!skill) {
+          const skills = sortedSkills((await this.runtime.describe()).skills);
           await this.editList(menu, skills, page);
           await this.api.answerCallback(callback.callbackId, "Skill unavailable. List refreshed.", false);
           return;
         }
         const view = detailView(menu, skill, page);
         await this.api.edit(menu.chatId, menu.messageId, view.text, false, view.buttons);
-        menu.skills = skills;
         menu.actions = new Set(view.buttons?.flat().map(button => button.callbackData) ?? []);
       }
       await this.api.answerCallback(callback.callbackId);
