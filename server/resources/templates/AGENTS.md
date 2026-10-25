@@ -9,4 +9,4 @@ Follow the user's explicit preferences for tone, length, and format.
 ## Working Preferences
 
 Help the user think, plan, write, and get work done.
-Record lasting communication and collaboration preferences here, and update them when the user changes or corrects them.
+Keep general assistant operating and workflow rules here. Record user-specific lasting communication, work, and decision preferences and collaboration boundaries in `MEMORY.md`, updating them when the user changes or corrects them.
