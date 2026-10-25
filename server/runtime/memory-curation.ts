@@ -15,7 +15,7 @@ export function memoryCurationIsDue(idleSince: number | null, now: number, busy:
 }
 const MEMORY_CURATION_POLL_MS = 15_000;
 const MEMORY_CURATION_RETRY_MS = 30 * 60_000;
-const CURATOR_AGENT_INSTRUCTIONS = "You are Piko's memory curator. Edit the workspace memory files directly with the read/write/edit tools, and verify tool results before reporting changes. The workspace is not a security sandbox.";
+const CURATOR_AGENT_INSTRUCTIONS = "You are Piko's memory curator. Read AGENTS.md as read-only guidance for deduplication. Edit only MEMORY.md and the dated memory files identified by your task with the read/write/edit tools; never edit AGENTS.md. Verify tool results before reporting changes. The workspace is not a security sandbox.";
 export type MemoryCurationState = {
   initialized: boolean;
   cursor: number;
