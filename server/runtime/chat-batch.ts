@@ -3,7 +3,7 @@ import { CHAT_BATCH_MAX_INPUT_CHARS, localDate, redactSecrets, type ChatBatchMes
 import { internalInput } from "./input-origin";
 import { messageText } from "./pi-history";
 
-export type CollectedBatch = { messages: ChatBatchMessage[]; throughEntryId: number };
+export type CollectedBatch = { messages: ChatBatchMessage[]; userMessageCount: number; throughEntryId: number };
 
 /** Newest entry ID of the root conversation; background work uses it as a high-water cursor. */
 export async function rootHighWater(tx: Tx): Promise<number> {
@@ -33,7 +33,7 @@ export async function collectMainChatBatch(tx: Tx, input: {
     if (submission?.type === "input" && submission.status === "done") internalAnswers.add(submission.answer);
   }
 
-  const messages: ChatBatchMessage[] = []; let chars = 0; let processed = from;
+  const messages: ChatBatchMessage[] = []; let userMessageCount = 0; let chars = 0; let processed = from;
   for (const entry of entries) {
     if ((entry.kind !== "pi.user" && entry.kind !== "pi.assistant") || internalUsers.has(entry.id) || internalAnswers.has(entry.id)) {
       processed = entry.id; continue;
@@ -46,6 +46,7 @@ export async function collectMainChatBatch(tx: Tx, input: {
     const role = entry.kind === "pi.user" ? "user" : "assistant";
     const cost = parts.reduce((sum, part) => sum + part.content.length, 0);
     if (messages.length && chars + cost > CHAT_BATCH_MAX_INPUT_CHARS) break;
+    if (role === "user") userMessageCount++;
     let remaining = CHAT_BATCH_MAX_INPUT_CHARS - chars;
     for (const part of parts) {
       if (remaining <= 0) break;
@@ -57,5 +58,5 @@ export async function collectMainChatBatch(tx: Tx, input: {
     processed = entry.id;
     if (chars >= CHAT_BATCH_MAX_INPUT_CHARS) break;
   }
-  return { messages, throughEntryId: Math.max(from, processed) };
+  return { messages, userMessageCount, throughEntryId: Math.max(from, processed) };
 }

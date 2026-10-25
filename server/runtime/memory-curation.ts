@@ -10,6 +10,7 @@ import { curatorTools, type CodingExtension } from "./coding-tools";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
+export const MEMORY_CURATION_MIN_USER_MESSAGES = 3;
 export function memoryCurationIsDue(idleSince: number | null, now: number, busy: boolean, retryAfter: number | null): boolean {
   return !busy && idleSince !== null && now - idleSince >= MEMORY_CURATION_IDLE_MS && (retryAfter === null || now >= retryAfter);
 }
@@ -189,9 +190,15 @@ export class MemoryCurationService {
         state.retryAfter = null;
         return { kind: "empty" as const };
       }
+      if (batch.userMessageCount < MEMORY_CURATION_MIN_USER_MESSAGES) {
+        // Keep the cursor so short exchanges accumulate; disarm the idle timer until another run ends.
+        state.idleSince = null;
+        state.retryAfter = null;
+        return { kind: "below-threshold" as const };
+      }
       return { kind: "batch" as const, fromEntryId: state.cursor, throughEntryId: batch.throughEntryId, highWater };
     }, context);
-    if (!snapshot || snapshot.kind === "active" || snapshot.kind === "empty") return "nothing-new";
+    if (!snapshot || snapshot.kind === "active" || snapshot.kind === "empty" || snapshot.kind === "below-threshold") return "nothing-new";
 
     let result: number | undefined;
     await this.harness.commit(async tx => {
