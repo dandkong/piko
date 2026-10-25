@@ -149,7 +149,7 @@ export function createTaskTools(service: () => DurableAssistantTasks) {
       maxLength: 120,
       pattern: "\\S",
       description:
-        "Display label, e.g. '手动执行' or '每天 9:00'; no time zone or cron syntax.",
+        "Display label, e.g. 'Manual run' or 'Daily at 9:00'; no time zone or cron syntax.",
     }),
   };
   // Extension identity is persisted; changing tool names does not require a new native identity.

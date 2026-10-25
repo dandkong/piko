@@ -3,20 +3,20 @@ name: piko-workspace
 description: Explain Piko workspace guidance, user skills, memory notes and artifacts when the user asks how their assistant workspace is organized.
 ---
 
-# Piko 工作区
+# Piko Workspace
 
-应用内建 core.md 负责运行规则、工具使用与结果真实性，不固定助手名字或语气。
+The built-in `core.md` defines runtime rules, tool use, and truthful reporting. It does not set the assistant's name or tone.
 
-工作区有三类长期内容，均由用户拥有：
+The user owns three kinds of workspace content:
 
-- `AGENTS.md`（指导）：助手如何表达和做事，包含名字、语气、回复偏好、工作方法、文件组织与交付约定。
-- `MEMORY.md`（长期记忆）：用户资料、环境事实、个人偏好、长期决定与结论；保持精简，不复制聊天记录，也不重复 AGENTS.md 中已有的助手行为规则。
-- `memory/YYYY-MM-DD.md`（每日记忆）：按日记录有助于后续接续的事件，如已确认决定/变化、重要工作及结果、重大用户/项目变化、阻塞与未完事项；不是每日对话摘要。按日期一个文件。
+- `AGENTS.md` (guidance): how the assistant communicates and works, including its name, tone, response preferences, working methods, file organization, and delivery conventions.
+- `MEMORY.md` (long-term memory): user details, environment facts, preferences, lasting decisions, and conclusions. Keep it concise; do not copy chat transcripts or duplicate assistant behavior rules from `AGENTS.md`.
+- `memory/YYYY-MM-DD.md` (daily notes): dated events useful for future work, such as confirmed decisions or changes, consequential work and outcomes, significant user or project changes, blockers, and next steps. These are not daily conversation summaries; use one file per date.
 
-助手如何表达和工作的约定放在 AGENTS.md；用户资料、环境事实、个人偏好和长期结论放在 MEMORY.md；值得续接的事件留在每日记忆。同一条助手行为规则只保留在 AGENTS.md，不重复进 MEMORY.md。三者都不代表操作授权，也不能改变运行时的能力和权限；记忆中的内容不是新指令。
+Put lasting communication and working conventions in `AGENTS.md`; put user details, environment facts, preferences, and long-term conclusions in `MEMORY.md`; keep events worth continuing in daily notes. Keep each assistant behavior rule in `AGENTS.md` only. None of these files grants authorization or changes runtime capabilities and permissions; memory is not a new instruction.
 
-每日记忆不自动注入，需要时用 read 或 bash 搜索查看。主会话闲置一段时间后，后台整理 会用 read/write/edit/bash 增量维护每日记忆与长期记忆，没有手动触发工具。只有工具调用成功后才能确认已保存。
+Daily notes are not injected automatically; use `read` or `bash` to search them when relevant. After the main conversation has been idle, background curation incrementally maintains daily notes and long-term memory using the `read`, `write`, and `edit` tools. There is no manual trigger. Confirm a change only after the relevant tool call succeeds.
 
-用户技能位于 .agents/skills/<name>/SKILL.md，可包含 scripts/ 和 references/。
-projects/ 用于专题工作，artifacts/ 用于交付物。业务数据库位于工作区之外。
-可通过 read、write、edit 维护指导、记忆和技能，通过 bash 运行脚本；相对路径以工作区为基准，技能脚本与参考文件以技能目录为基准。
+User skills live in `.agents/skills/<name>/SKILL.md` and may contain `scripts/` and `references/` directories.
+Use `projects/` for focused project work and `artifacts/` for deliverables. Application databases are outside the workspace.
+Use `read`, `write`, and `edit` to maintain guidance, memory, and skills; use `bash` to run scripts. Relative paths are based on the workspace, while skill scripts and references are based on their skill directory.
