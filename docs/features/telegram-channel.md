@@ -1,6 +1,6 @@
 # RN 与 Telegram 双通道
 
-状态：文本首期已实现，共用原生主会话、提交去重和执行状态；使用 Durable 原生 SQLite，不维护 Piko 自建消息或 Run 表。架构见 [ARCHITECTURE](../ARCHITECTURE.md)。
+状态：Telegram 私聊通道已实现，共用原生主会话、提交去重和执行状态；使用 Durable 原生 SQLite，不维护 Piko 自建消息或 Run 表。架构见[架构说明](../ARCHITECTURE.md)。
 
 ## 目标与当前范围
 
@@ -21,34 +21,20 @@ RN 提供完整产品体验，Telegram 接入适合私聊的功能，不要求�
 
 内建文案为简洁英文，用户内容、模型回复、模型和技能名称保留原文。帮助使用 Piko app 指代 RN 入口。未知命令与不支持媒体给出提示；图片消息（photo 或 image document）下载到共享附件存储，模型通过 `read` 查看；相册仍按每条消息分别处理。工具调用状态聚合在一条临时纯文本消息中，调用逐行追加，回复投递完成后删除；内置 read/write/edit/bash、web_search/web_extract、subagent_*/task_* 按类别显示图标、精简业务名称和参数摘要（如 Delegate work、Archive task），未知动作回退原工具名；状态只用于观察，不写入历史、不同步给 RN。编辑旧 TG 消息不修改历史、不触发模型，引用消息不额外注入上下文。群聊、语音和后台推送尚未接入。
 
-## 命令、菜单与提示（参考 pi-pilot）
+## 命令与菜单
 
 - `command-format.ts` 统一命令目录与展示格式。Telegram 菜单和 `/help` 顺序固定为 `/status`、`/compact`、`/models`、`/thinking`、`/subagent`、`/task`、`/stop`、`/recent`、`/skills`、`/help`、`/start`。`/subagent` 只读展示 root 主会话拥有的全部普通委派中 ID 最大的最近 4 个；不创建/控制子 Agent，也不展示保存任务执行。列表按钮直接显示真实 ID，点选后原消息编辑为工具同源的最新状态与最近五步，再可返回并刷新最近列表。`/task` 只列出进行中任务，不显示已归档任务，也不提供活跃/归档切换；列表按“截短 UUID · 标题 · 调度时间”显示，任务按钮只显示同一短 ID；短 ID 默认取去掉连字符后的 canonical UUID 前 6 个十六进制字符，冲突时加长，回调仍携带完整 UUID。点任务进入定义/调度/最近执行，详情列出每次执行的短 ID（默认末四位，冲突加长）、状态和时间，执行按钮只显示对应短 ID；点选查看结果，始终编辑同一条消息；只读、不运行/停止/归档任务。两种菜单均以稳定 ID 作为回调身份并在点击时重新读取 Durable 数据。不引入工作区切换、主会话新建/恢复/删除、重载或退出命令。
-- `/start` 只给欢迎和直接发送请求的说明，不再重复整份帮助；`/help` 说明 TG 与 App 共用主会话，模型选择不修改旁聊或后台模型预设。
+- `/start` 提供欢迎信息和直接发送请求的说明；`/help` 说明 TG 与 App 共用主会话，模型选择不修改旁聊或后台模型预设。
 - `/status` 依次显示模型名称与实际思考强度、上下文用量/上限/百分比、运行状态、技能数和必要的中断/失败提示。压缩状态来自该会话的原生任务，而非 TG 命令局部标记。**不显示工具数量**，不编造队列数或费用；没有用量时明确显示 unknown。
 - `/recent` 只取已保存消息，排除流式片段和未应用输入；用户/助手分别用角色图标，每条单行摘要，长文截断不切断 Unicode 字符。完整历史在 App 查看。
 - `/models` 先显示 `Current: provider/model-name • thinking`，再展示供应商（每行 2 个）→ 模型（每行 2 个）。导航和选择结果更新原消息；选择后保留 Back to providers，再单独提供新模型实际支持的思考菜单。
-- `/thinking` 先显示当前选择，再按每行 3 个列出实际支持的强度，当前项标 ✓；不可调整时只说明原因，不提供无效按钮。TG 仍要求空闲才能修改，不照搬 pi-pilot 的运行中热切换。
+- `/thinking` 先显示当前选择，再按每行 3 个列出实际支持的强度，当前项标 ✓；不可调整时只说明原因，不提供无效按钮。更改模型或思考强度要求会话空闲。
 - `/models` 与 `/thinking` 菜单保留来源/消息绑定、15 分钟有效期、菜单快照索引和当前能力复核。`/subagent` 与 `/task` 按钮携带动作和 Durable ID，点击时重新读取 root 事实，因此不依赖内存菜单快照并可跨后端重启继续使用；子工作、任务和执行查询均验证 root 归属。
 - 按钮错误使用普通 callback 提示，不弹模态提示框；文案尽量简短。忙碌时稍后重试，菜单过期时重开对应命令。遇到网络/存储不确定性不承诺“没有更改”；设置已确认应用、但菜单更新失败时提示 `/status` 核验，不误报回滚。
-- `/compact` 只接纳操作，不自行发送压缩开始/结果；通过运行时 compaction 生命周期统一呈现手动、阈值、溢出三种原因。提示沿用 pi-pilot 的图标：🔄 开始、✅ 完成、⚠️ 取消、❌ 失败。失败不原样转发供应商错误文本。
+- `/compact` 接纳压缩操作；开始、完成、取消和失败提示由运行时压缩生命周期统一呈现。失败不原样转发供应商错误文本。
 - 重复 `/compact` 根据实际压缩状态提示已在执行，不启动第二次；压缩期间 `/stop` 保持可用。前台手动压缩可停止，独立后台工作不受普通停止影响。
 - 通知以原生压缩任务结束为准，仅区分完成、取消、失败；不检查是否生成/新增摘要、不等待摘要 submission 应用，也不展示 no_summary/stale 等内部细节。摘要生成与应用由 Durable 管理，通知不阻塞 watchEvents。
 - 生命周期提示仅订阅主会话，不接旁聊或后台子会话；只有本次进程中经鉴权的真实 TG 私聊地址才可接收。建立该地址后，主会话由 TG/App 发起的手动及自动压缩均通知。串行发送保证短任务的开始/结束顺序；通知只活在当前进程，不回放历史、不承诺可靠补发。
-
-## 当前代码与 pi-pilot 对照
-
-| 关注点 | Piko 当前实现与取舍 |
-| --- | --- |
-| 输入 | channel.ts → ConversationStore.submit → 原生 submission |
-| 并发 | whenBusy=steer、steeringMode=all；输入与输出各自展示 |
-| 执行观察 | 共享会话流；watchEvents 留在 Pi 适配器 |
-| 会话 | 一个 PIKO_HOME 一个 Harness/root，不另存会话表 |
-| 命令 | 复用运行时描述、选择和压缩，保持空闲限制 |
-| 呈现 | 与 pi-pilot 的持久 Rich Message、remend 和节流编辑对齐 |
-| 投递 | 实际已验证私聊地址，不推断默认通知地址；无持久 outbox |
-
-参考 pi-pilot 的 adapters/telegram、runtime/chat-runtime、chat-commands 与 render/turn-stream、chunking。工具将来按独立普通消息展示，不混入助手 Rich Markdown，当前不消费工具呈现事件。
 
 ## 依赖方向与接入位置
 
@@ -81,13 +67,13 @@ TG 投递观察独立于输入提交，每条原生助手消息对应一个投�
 
 ## RN 如何发现另一通道的变化
 
-RN 前台始终观察 GET /api/chat/events，与 POST 输入分开；空闲时也接收 TG 变化，删除原先 3 秒轮询和按 Run 切换观察。snapshot 提供最近一页历史、向前游标和状态，message 更新当前气泡；每次连接（包括重连和后端重启后）都先接收最新 snapshot，再观察实时更新，不携带事件游标或补齐中间事件。
+RN 前台持续观察 GET /api/chat/events，输入 POST 与事件订阅分开；空闲时也会接收 Telegram 消息带来的变化。snapshot 提供最近一页历史、向前游标和状态，message 更新当前气泡；每次连接（包括重连和后端重启后）都先接收最新 snapshot，再观察实时更新，不携带事件游标或补齐中间事件。
 
-后台和卸载只退订，前台重新观察；不会重投任务。网络不确定的 POST 重试同一 requestId，明确拒绝释放乐观输入、恢复草稿。较新事件到达后丢弃过期 HTTP 刷新，不覆盖当前回复。键盘、滚动、布局保持原有交互。这仍是前台同步，系统通知和后台唤醒尚未实现。
+后台和卸载只退订，前台重新观察；不会重投任务。网络不确定的 POST 重试同一 requestId，明确拒绝释放乐观输入、恢复草稿。较新事件到达后丢弃过期 HTTP 刷新，不覆盖当前回复。键盘、滚动与布局使用统一的聊天交互规则。这仍是前台同步，系统通知和后台唤醒尚未实现。
 
 ## 配置与生命周期
 
-Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口；行为配置只从 JSON 读取，同名环境变量会被忽略，JSON 不接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效拒绝启动，不自动降级成关闭 TG；JSON 结构/放错位置错误同样拒绝启动。关闭 TG 时不校验凭据。见 [应用配置](application-config.md)。凭据不放入工作区、RN bundle、共享响应或日志。
+Telegram 由统一应用配置入口加载，严格分工：piko.json 的 channels.telegram 只管理 enabled 与 userId；Token 只从 PIKO_TELEGRAM_BOT_TOKEN（私有 config/.env 或进程环境）读取。没有 JSON/env 双入口；行为配置只从 JSON 读取，同名环境变量会被忽略，JSON 不接受 botToken。默认关闭，仅有 Token 不启用。已启用但缺 Token 或数字用户 ID 无效拒绝启动，不自动降级成关闭 TG；JSON 结构/放错位置错误同样拒绝启动。关闭 TG 时不校验凭据。见[应用配置](../operations/configuration.md)。凭据不放入工作区、RN bundle、共享响应或日志。
 
 piko.json：
 
@@ -102,25 +88,25 @@ $env:PIKO_TELEGRAM_BOT_TOKEN = "<BotFather 提供的 token>"
 bun run dev:api
 ```
 
-也可使用 `bun run dev` 同时运行 RN；模型配置和工作区路径规则与原有后端一致。TG 配置变更需要重启。当前固定使用 state/durable，不迁移旧聊天；模型配置见 [Durable 配置](durable-runtime.md)。
+也可使用 `bun run dev` 同时运行 RN；模型配置和工作区路径规则与后端一致。TG 配置变更需要重启。会话数据使用 `state/durable` 下的 SQLite；模型配置见[Agent 运行时说明](../operations/agent-runtime.md)。
 
 只接受该用户与 Bot 的普通私聊，不接受群聊、频道、私聊话题或业务代发。回复使用经过校验的实际 chatId，不根据 username 认证，不将任意多个允许用户接入同一个个人主会话。多用户隔离后续单独设计。
 
 采用 grammY 和 long polling，与 Bun 后端同进程运行；不需要为 TG 打开公网入站 HTTP 端口，但后端必须能够出站连接 Telegram。long polling 与 webhook 互斥；采用 grammY 默认行为，启动自动删除 webhook，不设置 drop_pending_updates=true，不主动清空待处理更新。[部署文档](https://grammy.dev/guide/deployment-types)、[Telegram getUpdates](https://core.telegram.org/bots/api#getupdates)
 
-bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮询恢复，不再维护自定义 getUpdates 循环。轮询 timeout 为 5 秒，小于客户端 10 秒请求超时。网络错误和服务端错误由 grammY 持续重试；429 按 retry_after 等待。bot.catch 仅记录脱敏的 update handler 错误，继续处理后续输入。管理操作与按钮处理作为受追踪后台任务执行，网络发送不占用 polling 接纳。
+bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮询恢复。轮询 timeout 为 5 秒，小于客户端 10 秒请求超时。网络错误和服务端错误由 grammY 持续重试；429 按 retry_after 等待。bot.catch 仅记录脱敏的 update handler 错误，继续处理后续输入。管理操作与按钮处理作为受追踪后台任务执行，网络发送不占用 polling 接纳。
 
 启动顺序：工作区/锁/原生历史校验 → 共用会话业务 → HTTP 与可选 TG。TG handler 只等待身份验证和持久化接纳，不等待整轮生成或长时间发送；其后独立观察和发送，否则顺序处理 update 会阻塞 `/stop`。必须显式追踪后台观察/发送 promise，并处理异常；不能只用不受管理的 fire-and-forget。[grammY long polling](https://grammy.dev/guide/deployment-types#how-to-use-long-polling)
 
-明确启用 TG 却缺 Token 或用户 ID 无效时，配置校验直接拒绝启动并只报告字段名。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，报告脱敏错误，按正常关闭顺序清理整个后端并以非零状态退出；部署需配置服务管理器自动重启（Linux 模板为 Restart=on-failure）。网络抖动不因尝试三次失败就永久停用 TG。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；首期没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
+明确启用 TG 却缺 Token 或用户 ID 无效时，配置校验直接拒绝启动并只报告字段名。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，报告脱敏错误，按正常关闭顺序清理整个后端并以非零状态退出；部署需配置服务管理器自动重启（Linux 模板为 Restart=on-failure）。网络抖动由 grammY 重试。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
 
 退出先拒绝新输入，停止 TG polling 与 HTTP 接纳，再按现有逻辑取消/等待原生任务，在有界时间内收尾投递，退订并关闭会话、runtime 和锁。TG 退出异常不能跳过共用资源清理。同一 Bot 只运行一个 poller；现有状态目录锁不能阻止其他机器/其他状态目录启动同一 Bot。
 
-## 验证与后续边界
+## 验证状态与限制
 
-压缩生命周期另已通过临时真实 Harness/Faux provider 验证：手动完成（含无摘要）/失败/停止只发一次有序通知、未验证地址不发送、实际原生阈值/溢出自动压缩、不检查或等待摘要应用、snapshot 重同步不重复、状态无工具数量且反映原生压缩、生命周期不混入聊天/SSE；没有调用真实供应商或 Bot。原生长对话和真实网络仍需使用验证。
+隔离环境已覆盖 Telegram 命令与菜单、模型/思考选择、压缩生命周期、来源校验、任务/后台工作浏览及回复编辑失败处理。验证未使用真实模型供应商或真实 Telegram Bot。
 
-命令和菜单调整已通过前后端类型检查与临时 Telegram transport/runtime 模拟：菜单/help 顺序、状态无工具数、最近消息摘要、模型/思考选择与实际强度、来源/过期/陈旧动作拒绝、菜单编辑失败后重试、设置已应用后的呈现失败、压缩忙碌/重复/取消和停止响应；本次新增的 `/subagent` 最近四项、真实 ID 详情、返回刷新和重启后无状态回调，以及 `/task` 仅活跃任务列表、UUID 短前缀与同短 ID 按钮、完整 UUID 回调、三层浏览/结果读取也经临时 transport/runtime 模拟。未调用真实 Bot 或真实模型。真实 Telegram 客户端、网络限流和 Android/iOS 前后台体验仍需要设备验证；不能以模拟测试代替。持久投递 outbox 和主动通知尚未实现。
+真实 Telegram 客户端、网络限流、真实模型长对话以及 Android/iOS 前后台体验尚未验证。当前没有可靠投递 outbox；网络失败或进程重启可能导致回复漏发或重复。
 
 ## 后台委派回复
 

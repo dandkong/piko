@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The JSONL/SQLite recovery contract requires one writer for a Piko state directory. */
+/** The SQLite recovery contract requires one writer for a Piko state directory. */
 export function acquireBackendLock(stateDir: string): () => void {
   const path = join(stateDir, "backend.lock");
   const token = crypto.randomUUID();

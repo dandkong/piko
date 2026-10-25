@@ -11,7 +11,7 @@ export async function openRuntimeStorage(directory: string) {
   if (existsSync(directory) && (!lstatSync(directory).isDirectory() || realpathSync(directory) !== directory))
     throw new Error("Durable storage must be a regular directory, not a symlink.");
   if (existsSync(directory) && readdirSync(directory).some(name => name.endsWith(".jsonl")))
-    throw new Error("Legacy JSONL storage found. Migrate it offline into a separate directory before starting Piko.");
+    throw new Error("Unsupported legacy storage found. Piko only supports Durable SQLite; use a new PIKO_HOME to start fresh.");
   const file = join(directory, STORAGE_FILE);
   if (existsSync(file) && (!lstatSync(file).isFile() || realpathSync(file) !== file))
     throw new Error("Durable SQLite storage must be a regular file, not a symlink.");

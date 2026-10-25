@@ -14,7 +14,7 @@ PIKO_HOME/config/
   .env            # 可选：部署参数、通道/工具凭据；权限 0600
 ```
 
-首次初始化只创建缺失 JSON 与工作区模板，不把生效的环境值写回 JSON，不创建 settings.json，不覆盖已有文件；auth.json 由使用方按 Pi 格式提供。模型配置详见 [Durable 配置](durable-runtime.md)。
+首次初始化只创建缺失 JSON 与工作区模板，不把生效的环境值写回 JSON，不创建 settings.json，不覆盖已有文件；auth.json 由使用方按 Pi 格式提供。模型配置详见[Agent 运行时](agent-runtime.md)。
 
 ## JSON：行为和非敏感设置
 
@@ -46,7 +46,7 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
 - 两个网络工具默认启用。关闭时从主/子 Agent 的实际工具表移除；即使有搜索 Key，也不会反向启用被关闭的工具。正常运行时工具清单不列出已禁用工具。
 - `tools.web_search.providers` 是非敏感的搜索后端优先级，默认 `brave → exa → tavily → deepseek`；只尝试列出的且有 Key 的后端。顺序非空、不得重复，未知名称拒绝启动。一次查询顺序调用：仅上游错误时回退；空结果是成功，不继续广播到其他后端。`web_extract` 保持单一工具，实际 provider 由 Agent 通过工具参数选择；可选项根据后端已配置凭据在启动时动态生成。
 - 模型预设固定为 agent.profiles.main（主会话初始选择）和 agent.profiles.background（后台工作、任务执行、记忆整理等后台子 Agent），不接受其他名字，两者模型与思考级别启动时校验；可选 agent.stream 保留模型连接参数，没有环境覆盖入口。主会话当前选择另保存在 Durable Agent 文档中，profiles.main 不覆盖已有选择；省略 background 时后台继承主会话，省略 main 时新会话选第一个可用模型。
-- 不再配置 retry/compaction，Piko 不覆盖 Durable 的默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
+- Piko 不配置 retry/compaction，使用 Durable 默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
 - models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值。供应商凭据写 `providers.<id>.apiKey`（内联，格式与 Pi 一致），或放在 auth.json；`keyless` 与 `apiKey` 互斥，两者都不配置时供应商视为未配置。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
 
 ## 环境：部署和凭据
@@ -95,8 +95,8 @@ JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误
 
 ## 修改、部署与安全
 
-配置在后端启动/创建 Harness 时读取，修改后重启；不会重读并替换进行中的模型请求。指导和技能的刷新规则不同，见 [生效时机](durable-runtime.md#更新的生效时机)。已有主会话的 cwd 不能随便换路径，恢复原路径或使用新 PIKO_HOME；state 固定在 home/state，必须在工作区之外。
+配置在后端启动/创建 Harness 时读取，修改后重启；不会重读并替换进行中的模型请求。指导和技能的刷新规则不同，见[运行时生效时机](agent-runtime.md#更新的生效时机)。已有主会话的 cwd 不能随便换路径，恢复原路径或使用新 PIKO_HOME；state 固定在 home/state，必须在工作区之外。
 
-部署时按当前文件格式配置 piko.json、models.json、auth.json 与私有 .env。旧 settings.json 不参与启动；需要旧配置内容时，手动将有效值写入当前格式。停止后备份整个私有目录，备份仍含敏感资料，不提交或公开。
+在 `PIKO_HOME/config/` 配置 piko.json、models.json、auth.json 与私有 .env。停止后备份整个私有目录；备份仍含敏感资料，不提交或公开。
 
-凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见 [Linux 部署](linux-deployment.md)。
+凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见[Linux 部署](deployment.md)。

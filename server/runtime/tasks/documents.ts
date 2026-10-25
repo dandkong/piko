@@ -5,7 +5,7 @@ import type { InputSource } from "../types";
 export type StoredTask = Omit<AssistantTask, "latest"> & {
   source: InputSource;
 };
-/** once.at is an ISO 8601 instant; the stored shape has no older variant to migrate. */
+/** once.at is an ISO 8601 instant. */
 export const TaskDefinitions = defineDoc<{ items: StoredTask[] }>({
   // Preserve this native kind and payload key; they are durable storage identities, not public names.
   kind: "piko.work-items",

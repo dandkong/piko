@@ -67,7 +67,7 @@ FIRECRAWL_API_KEY="..."
 - 模型供应商凭据按模型配置规则仍从 `auth.json` / `models.json` 读取。DeepSeek Search/Fetch Key 必须显式放在独立的 `DEEPSEEK_SEARCH_API_KEY`；网络工具不借用模型 Auth 对象，也不回退模型配置。
 - `.env` / 进程环境沿用既有合并规则：进程环境覆盖 `.env`，显式空值覆盖本地值；不修改全局 `process.env`，不注入 Expo 客户端。
 - 现有 `BRAVE_SEARCH_API_KEY` 名称保留。
-- 修改 Key 或 providers 后重启 Piko 生效。piko.json 默认补齐 `providers`，现有仅配置 enabled 的文件无需手工迁移。
+- 修改 Key 或 providers 后重启 Piko 生效。`piko.json` 默认包含 `providers` 优先级列表。
 
 ## 后端请求与结果映射
 
@@ -88,4 +88,4 @@ FIRECRAWL_API_KEY="..."
 
 `built-in` 不渲染 JavaScript、不复用浏览器登录态。JSDOM 不启用脚本或子资源加载；优先主正文，无法识别文章时退回清理后的页面文字，正文按 maxChars 截断。远端 provider 接收 URL 并自行抓取；每次请求只调用明确选择的一家，不自动降级。网页内容是来源材料，不是指令或授权。
 
-参考：[Durable 配置与运行时](durable-runtime.md)、[应用配置](application-config.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](linux-deployment.md)。
+参考：[Agent 运行时](../operations/agent-runtime.md)、[应用配置](../operations/configuration.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](../operations/deployment.md)。

@@ -1,4 +1,4 @@
-# Linux 正式入口
+# Linux 部署
 
 状态：已提供 Web 构建、单进程启动与 systemd 模板。Web、API/SSE 和可选 Telegram 共用一个 Bun 进程及主会话，不运行 Expo 开发服务，不在启动时重新构建网页。
 
@@ -42,7 +42,7 @@ DEEPSEEK_SEARCH_API_KEY="可选：DeepSeek Search Key"
 BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 ```
 
-.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见 [应用配置](application-config.md) 与 [Durable 配置](durable-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。明确启用 TG 后缺少凭据或用户 ID 无效会拒绝启动，主动关闭 TG 才跳过其校验；已启用通道的致命轮询/启动错误会清理并退出整个后端，由 Restart=on-failure 自动拉起，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见 [通道说明](telegram-channel.md)。
+.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见[应用配置](configuration.md)与[Agent 运行时](agent-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。明确启用 TG 后缺少凭据或用户 ID 无效会拒绝启动，主动关闭 TG 才跳过其校验；已启用通道的致命轮询/启动错误会清理并退出整个后端，由 Restart=on-failure 自动拉起，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见[通道说明](../features/telegram-channel.md)。
 
 ## Web 与 API 地址
 
@@ -85,7 +85,7 @@ bun run build:web
 sudo systemctl start piko
 ```
 
-源码由运行账号管理，更新不删除状态和工作区。备份停止服务后成套保存原生 SQLite 存储目录及工作区，不能遗漏 WAL；当前 JSONL 的停机迁移与回滚见 [SQLite 存储](sqlite-storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次 Linux 部署使用新的 PIKO_HOME，不迁移旧聊天。
+源码由运行账号管理，更新不删除状态和工作区。备份停止服务后成套保存原生 SQLite 存储目录及工作区，不能遗漏 WAL；备份与恢复见[SQLite 存储](storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次 Linux 部署使用新的 PIKO_HOME。
 
 ## 访问与反向代理
 
@@ -93,8 +93,8 @@ sudo systemctl start piko
 
 代理转发整个站点到 Bun 的同一端口，保留 Host，不缓存 API，关闭 SSE 缓冲，读取超时长于 15 秒心跳。Web 通过同源 `/api` 访问，不需要配置 CORS Origin。当前 Piko 不做 Origin 白名单或身份认证；反向代理应统一校验网页、API 和 SSE，并限制后端端口不要绕过代理直连。Web 无需设置 `EXPO_PUBLIC_PIKO_API_URL`。
 
-## 验证范围
+## 部署验证边界
 
-Windows 类型检查与生产 Web 导出已通过；Ubuntu 26.04 WSL + Bun 1.4.3 中完成 systemd 模板校验、正式进程启动、同源 API、SIGTERM 退出和锁释放验证。真实 TG 网络、设备浏览器、外部代理认证及 systemd 开机行为仍需部署环境验证。
+仓库提供 Web 构建、单进程启动和 systemd 模板。具体 Linux 发行版、代理认证、systemd 开机启动、真实 Telegram 网络与设备浏览器行为，需在目标部署环境验证。
 
 参考：[Expo Web 导出](https://docs.expo.dev/workflow/web/)、[Bun 文件响应](https://bun.sh/docs/guides/http/stream-file)、[systemd StateDirectory](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)。
