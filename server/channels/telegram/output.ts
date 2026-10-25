@@ -2,10 +2,10 @@ import type { ConversationStore } from "../../chat/conversations";
 import { isFormatError, type TelegramTransport } from "./api";
 import remend from "remend";
 import { applyMessageEvent, type MessageEvent } from "../../../shared/messages";
-import { CHAT_PAGE_SIZE } from "../../../shared/chat";
+import { CHAT_PAGE_SIZE, type Message } from "../../../shared/chat";
 
 export const TELEGRAM_RICH_LIMIT = 30_000;
-export const TELEGRAM_PLAIN_LIMIT = 4000;
+export const TELEGRAM_PLAIN_LIMIT = 4096;
 export const TELEGRAM_STREAM_INTERVAL_MS = 800;
 export type TelegramRenderMode = "markdown" | "plain";
 
@@ -17,7 +17,7 @@ export function splitReply(text: string, limit = TELEGRAM_PLAIN_LIMIT, preserveF
   let fence = "";
   while (remaining.length) {
     const prefix = fence ? `${fence}\n` : "";
-    const capacity = limit - prefix.length - 128;
+    const capacity = limit - prefix.length - (preserveFences ? 128 : 0);
     let end = Math.min(capacity, remaining.length);
     if (end < remaining.length) {
       const newline = remaining.lastIndexOf("\n", end - 1);
@@ -51,6 +51,13 @@ export class TelegramReply {
       this.richSupported = false;
       // Re-split the entire snapshot: a rich chunk can exceed the plain-text limit.
       await this.sync(text, final, false);
+    }
+  }
+
+  async deleteMessages(): Promise<void> {
+    for (const { id } of this.messages.splice(0).reverse()) {
+      try { await this.api.remove(this.chatId, id); }
+      catch { /* the message may already be gone or too old to delete */ }
     }
   }
 
@@ -107,25 +114,56 @@ export async function deliverConversation(store: ConversationStore, api: Telegra
   const output = new TelegramMessageOutput(api, chatId);
   let conversation = await store.snapshot({ limit: CHAT_PAGE_SIZE }); let dirty = true;
   let started = !awaitStart || conversation.busy || conversation.messages.some(message => message.role === "assistant" && !known.has(message.id));
+  let firstPartialAt: number | undefined;
+  let firstOutputSent = false;
+  let delayedFirstOutput = false;
+  let wakeCurrent: (() => void) | undefined;
+  const noteFirstPartial = (messages: readonly Message[]) => {
+    if (firstOutputSent || firstPartialAt !== undefined) return;
+    if (messages.some(message => message.role === "assistant" && message.id.startsWith("live-") && !known.has(message.id) && message.content.trim()))
+      firstPartialAt = Date.now();
+  };
+  noteFirstPartial(conversation.messages);
   const startDeadline = Date.now() + 30000;
   const unsubscribe = await store.observe(event => {
-    if (event.type === "snapshot") { conversation = event.conversation; dirty = true; if (conversation.busy) started = true; }
-    else if (event.type === "message") {
+    if (event.type === "snapshot") {
+      const hadPartial = firstPartialAt !== undefined;
+      conversation = event.conversation; noteFirstPartial(conversation.messages); dirty = true;
+      if (conversation.busy) started = true;
+      if (!conversation.busy || (!hadPartial && firstPartialAt !== undefined && !firstOutputSent)) wakeCurrent?.();
+    } else if (event.type === "message") {
+      const hadPartial = firstPartialAt !== undefined;
+      noteFirstPartial([event.message]);
       conversation = { ...conversation, messages: applyMessageEvent(conversation.messages, event),
         previousIds: event.previousId ? { ...conversation.previousIds, [event.message.id]: event.previousId } : conversation.previousIds };
       dirty = true; started = true;
+      if (event.final || (!hadPartial && firstPartialAt !== undefined && !firstOutputSent)) wakeCurrent?.();
     }
   });
   try {
     let typing = 0;
     while (!signal.aborted) {
+      if (delayedFirstOutput && firstPartialAt !== undefined && Date.now() - firstPartialAt >= intervalMs) {
+        delayedFirstOutput = false;
+        dirty = true;
+      }
       const snapshot = conversation;
       if (dirty) {
-        dirty = false;
-        for (const message of snapshot.messages) {
-          if (message.role !== "assistant" || known.has(message.id)) continue;
-          await output.update({ type: "message", message, final: !message.id.startsWith("live-"),
-            ...(snapshot.previousIds?.[message.id] && { previousId: snapshot.previousIds[message.id] }) });
+        const pendingMessages = snapshot.messages.filter(message => message.role === "assistant" && !known.has(message.id) && message.content.trim());
+        const hasLiveText = pendingMessages.some(message => message.id.startsWith("live-"));
+        const hasFinalText = pendingMessages.some(message => !message.id.startsWith("live-"));
+        if (!firstOutputSent && hasLiveText && !hasFinalText && firstPartialAt !== undefined && Date.now() - firstPartialAt < intervalMs) {
+          dirty = false;
+          delayedFirstOutput = true;
+        } else {
+          dirty = false;
+          for (const message of snapshot.messages) {
+            if (message.role !== "assistant" || known.has(message.id)) continue;
+            await output.update({ type: "message", message, final: !message.id.startsWith("live-"),
+              ...(snapshot.previousIds?.[message.id] && { previousId: snapshot.previousIds[message.id] }) });
+            if (message.content.trim()) firstOutputSent = true;
+          }
+          delayedFirstOutput = false;
         }
       }
       if ((!snapshot.busy && started || Date.now() > startDeadline && !started) && snapshot === conversation && !dirty) {
@@ -150,8 +188,20 @@ export async function deliverConversation(store: ConversationStore, api: Telegra
       if (Date.now() - typing >= 4000) { typing = Date.now(); await api.typing(chatId).catch(() => {}); }
       await new Promise<void>(resolve => {
         if (signal.aborted) { resolve(); return; }
-        const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
-        const timer = setTimeout(done, intervalMs); signal.addEventListener("abort", done, { once: true });
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer); signal.removeEventListener("abort", done);
+          if (wakeCurrent === done) wakeCurrent = undefined;
+          resolve();
+        };
+        const delay = delayedFirstOutput && firstPartialAt !== undefined
+          ? Math.max(0, Math.min(intervalMs, firstPartialAt + intervalMs - Date.now()))
+          : intervalMs;
+        const timer = setTimeout(done, delay);
+        wakeCurrent = done;
+        signal.addEventListener("abort", done, { once: true });
       });
     }
   } finally { unsubscribe(); }

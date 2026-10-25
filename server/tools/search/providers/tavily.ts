@@ -11,11 +11,10 @@ export function createTavilyProvider(options: ProviderOptions): SearchProvider {
         // Without this Tavily omits published_date, so callers cannot judge freshness.
         include_published_date: true,
       };
-      if (filters.freshness) body.time_range = filters.freshness;
-      if (filters.publishedAfter) body.start_date = filters.publishedAfter;
-      if (filters.publishedBefore) body.end_date = filters.publishedBefore;
-      // start_date/end_date/time_range alone only influence ranking; strict filtering removes out-of-window pages.
-      if (filters.freshness || filters.publishedAfter || filters.publishedBefore) body.filter_by_published_date = true;
+      if (filters.freshness) {
+        body.time_range = filters.freshness;
+        body.filter_by_published_date = true;
+      }
       if (filters.includeDomains?.length) body.include_domains = [...filters.includeDomains];
       if (filters.excludeDomains?.length) body.exclude_domains = [...filters.excludeDomains];
       const data = await requestJson("tavily", "https://api.tavily.com/search", {

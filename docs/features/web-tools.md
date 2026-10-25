@@ -6,12 +6,12 @@
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10；`freshness` 可选 `day`/`week`/`month`/`year`；`publishedAfter` / `publishedBefore` 可选 `YYYY-MM-DD`；`includeDomains` / `excludeDomains` 可选，最多 5 个 hostname | 统一的标题、URL、每条最多 1,200 字符的摘要和可选发布日期；无结果明确说明 |
+| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10；`freshness` 可选 `day`/`week`/`month`/`year`；`includeDomains` / `excludeDomains` 可选，最多 5 个 hostname | 统一的标题、URL、每条最多 1,200 字符的摘要和可选发布日期；无结果明确说明 |
 | `web_extract` | `url` 必填，仅 HTTP/HTTPS；`provider` 可选，默认 `built-in`；`maxChars` 可选，默认 10,000，范围 1,000–100,000 | 标题、最终 URL、实际 provider、站点/作者/摘要、返回正文字符数及正文 Markdown；截断有标记，details 保留网页元数据 |
 
 `web_search` 的参数不传供应商、不传 Key，也不接收原始供应商 JSON。`web_extract` 仍是单一工具，但 `provider` 选项只包含内置 extractor 和当前后端已配置凭据的远端 provider；每次调用只运行所选的一个，不自动串联或替 Agent 判断质量。工具结果会标明 provider 和提取结果，Agent 可据此决定是否另选一个 provider 再调用。远端 provider 会收到用户给出的 URL；返回结果中的链接会遮盖常见凭据型 query 参数，避免临时签名/令牌落入 Durable 会话记录。
 
-过滤规则：`freshness` 与 `publishedAfter`/`publishedBefore` 互斥；日期必须是有效 `YYYY-MM-DD`，且起始不晚于结束；域名只接受 hostname（如 `example.com`），不接受协议、路径或端口。底层无原生参数的后端直接跳过，不会静默放宽条件；全部后端都不支持时返回明确错误。
+时间筛选统一使用 `freshness`（最近一天/一周/一月/一年）；域名只接受 hostname（如 `example.com`），不接受协议、路径或端口。底层无原生参数的后端直接跳过，不会静默放宽条件；全部后端都不支持时返回明确错误。
 
 ## 搜索后端和优先级
 
@@ -71,10 +71,10 @@ FIRECRAWL_API_KEY="..."
 
 ## 后端请求与结果映射
 
-- Exa：`POST https://api.exa.ai/search`，使用 `x-api-key` header，请求 relevance-ranked results 和 highlights；`contents.highlights.maxCharacters` 与输出上限同为 1,200。该参数只是请求侧预算，Exa 仍可能返回更长片段，格式化时统一截断。`freshness` / 绝对日期映射为 `startPublishedDate` / `endPublishedDate`，域名映射为 `includeDomains` / `excludeDomains`。
-- Tavily：`POST https://api.tavily.com/search`，Bearer Key，使用 basic search，不请求生成答案或完整网页内容。始终设置 `include_published_date: true`，否则结果没有 `published_date`；`freshness` 映射为 `time_range`，绝对日期映射为 `start_date` / `end_date`，并同时设置 `filter_by_published_date: true`，避免只按排序召回过期页面。域名映射为 `include_domains` / `exclude_domains`。
-- DeepSeek：`POST https://api.deepseek.com/v1/tools/search`，Bearer Search Key，`need_content:false`；仅取结构化摘要/片段。没有日期或域名过滤参数；带过滤条件时跳过该后端。
-- Brave：保留原 `GET /res/v1/web/search` 和 `X-Subscription-Token`。`freshness` 映射为 `pd`/`pw`/`pm`/`py`；它按“发现时间”筛选，不等价于 Exa/Tavily 的发布时间。Brave 没有原生域名过滤，也不能保证 `publishedAfter`/`publishedBefore` 的发布时间语义；遇到域名或绝对日期过滤时跳过。
+- Exa：`POST https://api.exa.ai/search`，使用 `x-api-key` header，请求 relevance-ranked results 和 highlights；`contents.highlights.maxCharacters` 与输出上限同为 1,200。该参数只是请求侧预算，Exa 仍可能返回更长片段，格式化时统一截断。`freshness` 映射为 `startPublishedDate`，域名映射为 `includeDomains` / `excludeDomains`。
+- Tavily：`POST https://api.tavily.com/search`，Bearer Key，使用 basic search，不请求生成答案或完整网页内容。始终设置 `include_published_date: true`，否则结果没有 `published_date`；`freshness` 映射为 `time_range` 并设置 `filter_by_published_date: true`，避免只按排序召回过期页面。域名映射为 `include_domains` / `exclude_domains`。
+- DeepSeek：`POST https://api.deepseek.com/v1/tools/search`，Bearer Search Key，`need_content:false`；仅取结构化摘要/片段。没有时间或域名过滤参数；带相应过滤条件时跳过该后端。
+- Brave：保留原 `GET /res/v1/web/search` 和 `X-Subscription-Token`。`freshness` 映射为 `pd`/`pw`/`pm`/`py`；它按“发现时间”筛选，不等价于 Exa/Tavily 的发布时间。Brave 没有原生域名过滤；带域名筛选时跳过。
 
 每个搜索模块把 title/url/snippet/date 映射为共享 `SearchResult`，丢弃上游特有字段，限制结果数，要求 URL 为 HTTP/HTTPS。缺少可读摘要时仍保留标题和链接。摘要按 `SEARCH_SNIPPET_MAX`（1,200 字符）统一截断，避免供应商默认返回量直接进入上下文；完整网页正文继续由独立 `web_extract` 按需读取。
 

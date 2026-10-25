@@ -8,9 +8,7 @@ export function createExaProvider(options: ProviderOptions): SearchProvider {
     async search(query, count, filters, signal): Promise<SearchResult[]> {
       const body: Record<string, unknown> = { query, type: "auto", numResults: count,
         contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } };
-      if (filters.publishedAfter) body.startPublishedDate = `${filters.publishedAfter}T00:00:00.000Z`;
-      else if (filters.freshness) body.startPublishedDate = freshnessStartIso(filters.freshness);
-      if (filters.publishedBefore) body.endPublishedDate = `${filters.publishedBefore}T23:59:59.999Z`;
+      if (filters.freshness) body.startPublishedDate = freshnessStartIso(filters.freshness);
       if (filters.includeDomains?.length) body.includeDomains = [...filters.includeDomains];
       if (filters.excludeDomains?.length) body.excludeDomains = [...filters.excludeDomains];
       const data = await requestJson("exa", "https://api.exa.ai/search", {

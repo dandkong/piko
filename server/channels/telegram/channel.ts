@@ -36,7 +36,10 @@ export class TelegramChannel {
   private unsubscribeReplies?: () => void;
   private unsubscribeTools?: () => void;
   private toolQueue = Promise.resolve();
-  private readonly toolMessages = new Map<string, string>();
+  private readonly toolLines = new Map<string, string>();
+  private readonly pendingToolClears = new Set<string>();
+  private readonly deliveryExpectations = new Map<string, number>();
+  private toolReply?: TelegramReply;
   private readonly stopNoticeSuppressions = new Map<string, Set<string>>();
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
@@ -119,8 +122,11 @@ export class TelegramChannel {
       } catch { this.feedback(message, "Couldn't read that file. Send it again under 20 MB."); return; }
     }
     try { normalizeMessage(text, paths.length > 0); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
+    let expectedDelivery = false;
     try {
       const baseline = await this.conversations.snapshot();
+      this.expectDelivery(message.chatId);
+      expectedDelivery = true;
       const result = await this.conversations.submit(text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId }, paths);
       if (result.duplicate) return;
       const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
@@ -128,6 +134,8 @@ export class TelegramChannel {
     } catch (error) {
       if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy with maintenance. Wait for it to finish, then resend your message."); return; }
       throw error;
+    } finally {
+      if (expectedDelivery) await this.releaseDeliveryExpectation(message.chatId);
     }
   }
 
@@ -144,22 +152,41 @@ export class TelegramChannel {
       .catch(error => console.warn(`Telegram tool activity failed (${telegramErrorCode(error)}).`));
   }
 
-  /** Shows each call while the run is active; the whole round is removed when it settles. */
+  /** Aggregate a run's tool starts into one temporary status message. */
   private async handleToolActivity(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): Promise<void> {
-    if (event.type === "tool-clear") { await this.deleteToolMessages(); return; }
+    const chatId = this.identity.userId;
+    if (event.type === "tool-clear") {
+      if (this.deliveries.has(chatId) || (this.deliveryExpectations.get(chatId) ?? 0) > 0) {
+        this.pendingToolClears.add(chatId);
+        return;
+      }
+      await this.clearToolMessages();
+      return;
+    }
     if (!this.accepting || event.activity.status !== "running") return;
     const { name, summary } = event.activity;
-    const messageId = await this.api.send(this.identity.userId, `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`, false);
-    this.toolMessages.set(event.activity.callId, messageId);
+    this.toolLines.set(event.activity.callId, `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`);
+    this.toolReply ??= new TelegramReply(this.api, chatId, "plain");
+    await this.toolReply.update([...this.toolLines.values()].join("\n"), true);
   }
 
-  private async deleteToolMessages(): Promise<void> {
-    const ids = [...this.toolMessages.values()].reverse();
-    this.toolMessages.clear();
-    for (const messageId of ids) {
-      try { await this.api.remove(this.identity.userId, messageId); }
-      catch { /* the message may already be gone or too old to delete */ }
-    }
+  private async clearToolMessages(): Promise<void> {
+    this.toolLines.clear();
+    const reply = this.toolReply;
+    this.toolReply = undefined;
+    await reply?.deleteMessages();
+  }
+
+  private expectDelivery(chatId: string): void {
+    this.deliveryExpectations.set(chatId, (this.deliveryExpectations.get(chatId) ?? 0) + 1);
+  }
+
+  private async releaseDeliveryExpectation(chatId: string): Promise<void> {
+    const remaining = (this.deliveryExpectations.get(chatId) ?? 1) - 1;
+    if (remaining > 0) this.deliveryExpectations.set(chatId, remaining);
+    else this.deliveryExpectations.delete(chatId);
+    if (remaining <= 0 && !this.deliveries.has(chatId) && this.pendingToolClears.delete(chatId))
+      await this.clearToolMessages();
   }
 
   private startDelivery(chatId: string, known: Set<string>) {
@@ -174,10 +201,11 @@ export class TelegramChannel {
       }
       return pending.size === 0;
     }, submissionId => this.shouldNotifyStopped(chatId, submissionId))
-      .finally(() => {
+      .finally(async () => {
         if (this.deliveries.get(chatId) === task) this.deliveries.delete(chatId);
         this.pendingReports.delete(chatId);
         this.stopNoticeSuppressions.delete(chatId);
+        if (this.pendingToolClears.delete(chatId)) await this.clearToolMessages();
       });
     this.deliveries.set(chatId, task); this.track(task);
   }

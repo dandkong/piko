@@ -12,8 +12,6 @@ export type SearchArguments = {
   query: string;
   maxResults?: number;
   freshness?: SearchFreshness;
-  publishedAfter?: string;
-  publishedBefore?: string;
   includeDomains?: string[];
   excludeDomains?: string[];
 };
@@ -39,7 +37,7 @@ export async function searchWeb(
   // Skip backends that cannot honor the filters instead of silently returning content outside them.
   const capable = options.providers.filter(provider => provider.supports(query, filters));
   if (!capable.length) throw new WebRequestError(options.providers.some(provider => provider.supports(query, {}))
-    ? "Configured search backends do not support the requested date or domain filters."
+    ? "Configured search backends do not support the requested freshness or domain filters."
     : "The search query exceeds the limits of configured search backends.");
 
   for (const provider of capable) {
@@ -57,34 +55,19 @@ export async function searchWeb(
 }
 
 function normalizeFilters(args: SearchArguments): SearchFilters {
+  const rawArgs = args as SearchArguments & Record<string, unknown>;
+  if (Object.hasOwn(rawArgs, "publishedAfter") || Object.hasOwn(rawArgs, "publishedBefore"))
+    throw new WebRequestError("Date-range filters are not supported; use freshness: day, week, month, or year.");
   const freshness = args.freshness;
   if (freshness !== undefined && !(SEARCH_FRESHNESS as readonly string[]).includes(freshness))
     throw new WebRequestError("freshness must be day, week, month, or year.");
-  const after = dateArgument(args.publishedAfter, "publishedAfter");
-  const before = dateArgument(args.publishedBefore, "publishedBefore");
-  if (freshness && (after || before))
-    throw new WebRequestError("Use either freshness or publishedAfter/publishedBefore, not both.");
-  if (after && before && after > before)
-    throw new WebRequestError("publishedAfter must not be later than publishedBefore.");
   const includeDomains = domainArgument(args.includeDomains, "includeDomains");
   const excludeDomains = domainArgument(args.excludeDomains, "excludeDomains");
   return {
     ...(freshness && { freshness }),
-    ...(after && { publishedAfter: after }),
-    ...(before && { publishedBefore: before }),
     ...(includeDomains.length && { includeDomains }),
     ...(excludeDomains.length && { excludeDomains }),
   };
-}
-
-function dateArgument(value: unknown, name: string): string | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
-    throw new WebRequestError(`${name} must be a date in YYYY-MM-DD format.`);
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
-    throw new WebRequestError(`${name} must be a valid calendar date.`);
-  return value;
 }
 
 function domainArgument(value: unknown, name: string): string[] {

@@ -10,17 +10,15 @@ export const SEARCH_FRESHNESS = ["day", "week", "month", "year"] as const;
 export type SearchFreshness = (typeof SEARCH_FRESHNESS)[number];
 const FRESHNESS_DAYS: Record<SearchFreshness, number> = { day: 1, week: 7, month: 30, year: 365 };
 
-/** Recency or absolute date bounds; providers without native support are skipped by the tool. */
+/** Relative recency and domain filters; providers without native support are skipped by the tool. */
 export type SearchFilters = {
   freshness?: SearchFreshness;
-  publishedAfter?: string;
-  publishedBefore?: string;
   includeDomains?: readonly string[];
   excludeDomains?: readonly string[];
 };
 
-export function hasDateFilters(filters: SearchFilters): boolean {
-  return !!(filters.freshness || filters.publishedAfter || filters.publishedBefore);
+export function hasFreshnessFilter(filters: SearchFilters): boolean {
+  return !!filters.freshness;
 }
 
 export function hasDomainFilters(filters: SearchFilters): boolean {
