@@ -30,7 +30,7 @@ export async function openRuntimeStorage(directory: string) {
     await database.exec("PRAGMA synchronous = FULL");
     await database.exec("PRAGMA secure_delete = ON");
     const storage = await SqliteStorage.open(database);
-    return { storage, persisted, database, maintenance: new StorageMaintenance(database, storage) };
+    return { storage, persisted, maintenance: new StorageMaintenance(database, storage) };
   } catch (error) {
     await database.close();
     throw error;

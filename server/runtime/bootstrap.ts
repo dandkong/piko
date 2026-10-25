@@ -19,7 +19,6 @@ import { subagentIds } from "./subagents/queries";
 import { SubagentPromptScope } from "./subagents/documents";
 import { childScope, sideChatScope } from "./background";
 import { TaskContext } from "./tasks/context";
-import { migrateTaskNaming } from "./tasks/migrations";
 import {
   requireAvailableModel,
   configuredBackground,
@@ -34,7 +33,7 @@ export async function openRuntime(
   config: WorkspaceModelConfig,
   registry: Registry,
 ) {
-  const { storage, persisted, database, maintenance } = await openRuntimeStorage(runtimePaths(paths.home).sessions);
+  const { storage, persisted, maintenance } = await openRuntimeStorage(runtimePaths(paths.home).sessions);
   let harness: Harness;
   try {
     harness = await Harness.open(
@@ -62,7 +61,6 @@ export async function openRuntime(
     throw error;
   }
   try {
-    await migrateTaskNaming(database, storage, harness, paths.workspace);
     await maintenance.recover(harness);
     const existing = await harness.conversation(ROOT_CONVERSATION_ID, ctx);
     if (persisted && !existing)
