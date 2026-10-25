@@ -30,10 +30,9 @@ function TypingDot({ delay }: { delay: number }) {
     return () => cancelAnimation(progress);
   }, [delay, progress, reducedMotion]);
 
-  // Keep the pulse visual-only: transforms can change Web scroll overflow bounds
-  // while the typing indicator sits at the end of a chat list.
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: 0.4 + progress.value * 0.5,
+    transform: [{ translateY: -4 * progress.value }],
   }));
 
   return <Animated.View testID="typing-dot" style={[styles.dot, animatedStyle]} />;
