@@ -154,7 +154,7 @@ export function createTaskTools(service: () => DurableAssistantTasks) {
   };
   // Extension identity is persisted; changing tool names does not require a new native identity.
   return defineExtension({
-    name: "piko-work-items",
+    name: "piko-tasks",
     tools: [
       defineTool({
         name: "task_list",

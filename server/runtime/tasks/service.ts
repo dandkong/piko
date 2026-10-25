@@ -36,7 +36,7 @@ import { TaskDefinitions, Receipts, type StoredTask } from "./documents";
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const publicTask = ({ source: _source, ...task }: StoredTask) => plain(task);
 async function definitions(tx: Tx) {
-  return (await tx.doc(TaskDefinitions, ROOT_CONVERSATION_ID)).items;
+  return (await tx.doc(TaskDefinitions, ROOT_CONVERSATION_ID)).tasks;
 }
 function find(values: Awaited<ReturnType<typeof definitions>>, id: string) {
   const task = values.find((value) => value.id === taskId(id));
@@ -200,7 +200,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
             throw new AssistantTaskError("Invalid task status.");
           const active = (await activeTaskExecutions(tx)).some(
             (run) =>
-              run.binding.itemId === id && run.execution.status === "running",
+              run.binding.taskId === id && run.execution.status === "running",
           );
           if (command.status === "archived" && active)
             throw new AssistantTaskError(
@@ -223,7 +223,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
           if (
             runs.some(
               (run) =>
-                run.binding.itemId === id && run.execution.status === "running",
+                run.binding.taskId === id && run.execution.status === "running",
             )
           )
             throw new AssistantTaskError("This task is already running.", 409);
@@ -239,7 +239,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
           stopChildren = (await activeTaskExecutions(tx))
             .filter(
               (run) =>
-                run.binding.itemId === id && run.execution.status === "running",
+                run.binding.taskId === id && run.execution.status === "running",
             )
             .map((run) => Number(run.execution.id) as ConversationId);
           child = stopChildren[0];
@@ -278,7 +278,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     now: number,
   ) {
     return this.children.spawn(tx, agent, task.prompt, source, {
-      itemId: task.id,
+      taskId: task.id,
       title: task.title,
       startedAt: now,
       scheduledAt,
@@ -297,7 +297,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
   private async dispatch() {
     const due = (
       await this.harness.snapshot(TaskDefinitions, ROOT_CONVERSATION_ID, ctx)
-    )?.items.some(
+    )?.tasks.some(
       (task) =>
         task.status === "active" &&
         task.nextDueAt !== null &&
@@ -330,7 +330,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
         if (
           runs.some(
             (run) =>
-              run.binding.itemId === task.id &&
+              run.binding.taskId === task.id &&
               run.execution.status === "running",
           )
         ) {

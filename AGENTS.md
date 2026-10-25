@@ -25,7 +25,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 ## 名称约定
 
 - 面向用户称“任务”“后台工作”“执行记录/运行结果”；代码保留 `subagent` 技术名。任务类型为 `AssistantTask` / `AssistantTaskDraft`、`TaskSchedule` / `TaskExecution`，与 Durable 原生 `TaskId` / `TaskRecord` 区分；工具使用 `task_*` / `subagent_*`，任务 HTTP 使用 `/api/tasks`。
-- Durable 文档 kind、绑定字段和 `items/<id>` 是持久化身份；改动前确认对数据语义的影响，不为改名默认添加兼容层或状态副本。
+- Durable 文档 kind、`taskId` 绑定字段和 `tasks/<id>` 是持久化身份；改动前确认对数据语义的影响，统一命名时迁移现有数据，不添加兼容层或状态副本。
 
 ## 代码边界
 

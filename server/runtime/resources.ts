@@ -207,7 +207,7 @@ Time zone: ${timeZone}`;
           await input.read.snapshot(TaskContext, input.conversationId, context)
         )?.binding;
         if (!binding) return undefined;
-        return `<instructions_file role="memory" path="${escape(new TaskFiles(paths.workspace).directory(binding.itemId))}/MEMORY.md">\n${await new TaskFiles(paths.workspace).memory(binding.itemId)}\n</instructions_file>`;
+        return `<instructions_file role="memory" path="${escape(new TaskFiles(paths.workspace).directory(binding.taskId))}/MEMORY.md">\n${await new TaskFiles(paths.workspace).memory(binding.taskId)}\n</instructions_file>`;
       }),
       section("workspace_resources", async (input, context) => {
         const isSubagent = (

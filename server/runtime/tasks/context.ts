@@ -2,15 +2,14 @@ import { defineDoc } from "@earendil-works/pi-durable";
 
 /** Association and cancellation provenance only; execution state remains native. */
 export type TaskBinding = {
-  /** Fixed persisted field, matching the task's items/<id> directory; not a second identity. */
-  itemId: string;
+  taskId: string;
   title: string;
   startedAt: number;
   scheduledAt: number | null;
   interrupted: boolean;
 };
 export const TaskContext = defineDoc<{ binding: TaskBinding | null }>({
-  kind: "piko.item-context",
+  kind: "piko.task-context",
   version: 1,
   scope: "conversation",
   history: "latest",

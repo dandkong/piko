@@ -89,9 +89,9 @@ export async function latestTaskExecutions(tx: Tx) {
   const latest = new Map<string, TaskExecution>();
   for (const child of [...jobs.children].reverse()) {
     const binding = (await tx.doc(TaskContext, child)).binding;
-    if (!binding || latest.has(binding.itemId) || !jobs.reporters.has(child))
+    if (!binding || latest.has(binding.taskId) || !jobs.reporters.has(child))
       continue;
-    latest.set(binding.itemId, (await summary(tx, jobs, child)).execution);
+    latest.set(binding.taskId, (await summary(tx, jobs, child)).execution);
   }
   return latest;
 }
@@ -108,7 +108,7 @@ export async function taskExecutionPage(
   let found = before === undefined;
   for (const child of [...jobs.children].reverse()) {
     const binding = (await tx.doc(TaskContext, child)).binding;
-    if (binding?.itemId !== taskId || !jobs.reporters.has(child)) continue;
+    if (binding?.taskId !== taskId || !jobs.reporters.has(child)) continue;
     const value = !latest
       ? (await summary(tx, jobs, child)).execution
       : undefined;
@@ -135,7 +135,7 @@ export async function taskExecutionResult(
   const child = jobs.children.find((id) => String(id) === runId);
   if (
     child === undefined ||
-    (await tx.doc(TaskContext, child)).binding?.itemId !== taskId ||
+    (await tx.doc(TaskContext, child)).binding?.taskId !== taskId ||
     !jobs.reporters.has(child)
   )
     throw new AssistantTaskError("Execution not found.", 404);

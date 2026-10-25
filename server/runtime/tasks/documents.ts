@@ -6,20 +6,19 @@ export type StoredTask = Omit<AssistantTask, "latest"> & {
   source: InputSource;
 };
 /** once.at is an ISO 8601 instant. */
-export const TaskDefinitions = defineDoc<{ items: StoredTask[] }>({
-  // Preserve this native kind and payload key; they are durable storage identities, not public names.
-  kind: "piko.work-items",
+export const TaskDefinitions = defineDoc<{ tasks: StoredTask[] }>({
+  kind: "piko.tasks",
   version: 1,
   scope: "conversation",
   history: "latest",
   fork: "initial",
-  initial: () => ({ items: [] }),
+  initial: () => ({ tasks: [] }),
 });
 export const Receipts = defineDocFamily<
   { hash: string; id: string; executionId: string | null },
   null
 >({
-  kind: "piko.item-command",
+  kind: "piko.task-command",
   version: 1,
   scope: "conversation",
   history: "latest",

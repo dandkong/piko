@@ -160,7 +160,7 @@ export function createSubagentRuntime(options: {
         if (binding) {
           const root = await runtime.agent(ctx);
           try {
-            await new TaskFiles(root.cwd!).prepare(binding.itemId);
+            await new TaskFiles(root.cwd!).prepare(binding.taskId);
           } catch (error) {
             await runtime.commit(
               () => ({
@@ -287,7 +287,7 @@ export function createSubagentRuntime(options: {
           const binding = (await tx.doc(TaskContext, task.input.child)).binding;
           // Provenance: saved-task execution carries its task; ordinary delegation carries its job id.
           const heading = binding
-            ? `Scheduled task ${JSON.stringify(binding.title)} (${binding.itemId}), execution ${task.input.child}. This is the task's persistent directory under items/${binding.itemId}/ in the main workspace.\n\n`
+            ? `Saved task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${task.input.child}. This is the task's persistent directory under tasks/${binding.taskId}/ in the main workspace.\n\n`
             : `Background subagent ${task.input.child}.\n\n`;
           // Scheduled work is broadcast to every channel; ordinary delegation only answers where it started.
           prepared.payload = {
@@ -376,7 +376,7 @@ export function createSubagentRuntime(options: {
         model: current.model ?? agent.model,
         thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
       }),
-      cwd: task ? new TaskFiles(agent.cwd!).directory(task.itemId) : agent.cwd,
+      cwd: task ? new TaskFiles(agent.cwd!).directory(task.taskId) : agent.cwd,
       ...childScope(agent),
       instructions:
         "You are a background workspace assistant delegated from a conversation. Complete the assigned work using the provided task context and available tools, then return your findings to that conversation only. You do not receive the parent conversation or its global memory. Your answer is internal; the delegating assistant decides what to tell the user.",
@@ -384,7 +384,7 @@ export function createSubagentRuntime(options: {
     (await tx.doc(SubagentPromptScope, child)).isSubagent = true;
     if (task) (await tx.doc(TaskContext, child)).binding = task;
     const instruction = task
-      ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.itemId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.`
+      ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.taskId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.`
       : message;
     await tx.createTask(
       Reporter,

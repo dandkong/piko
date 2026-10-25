@@ -54,10 +54,10 @@ type AssistantTaskDraft = {
 
 任务 ID 是 UUID，执行 ID 使用原生子 conversation ID，跨端视为不透明字符串。定义/调度游标和请求回执保存在原生 doc，状态从原生 Reporter、submission、LiveDoc 投影；不建立 Run 表、状态副本或第二套消息正文。
 
-任务定义、命令回执和上下文游标使用固定原生文档 `piko.work-items`、`piko.item-command`、`piko.item-context`，任务绑定字段为 `itemId`，任务目录为 `items/<id>/`。这些是当前持久化身份，不提供旧 HTTP 或工具别名，也不维护第二份执行状态。
+任务定义、命令回执和上下文游标使用固定原生文档 `piko.tasks`、`piko.task-command`、`piko.task-context`，任务绑定字段为 `taskId`，任务目录为 `tasks/<id>/`。这些是当前持久化身份，不提供旧 HTTP 或工具别名，也不维护第二份执行状态。
 
 ```text
-workspace/items/<任务ID>/
+workspace/tasks/<任务ID>/
 ├── MEMORY.md
 └── 各次执行的产物
 ```

@@ -38,7 +38,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 工作区与状态
 
-一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 保存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，不能嵌套委派或管理任务；任务执行在 `items/<id>` 下使用独立 cwd 和本任务记忆，见[任务说明](features/tasks.md)。每日/长期记忆整理由内部 Durable task 处理，不展示为 Tasks 任务。旁聊使用独立 ownerless conversation，共享记忆、技能和通用工具，但不继承主聊天上下文、不自动回传、不提取旁聊记忆，也不开放任务管理；旁聊委派仅作用于发起它的 conversation。见[旁聊](features/side-chats.md)、[后台工作](features/background-subagents.md)和[记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
+一个 PIKO_HOME 对应一个 Harness 和固定 root conversation。工作区由应用配置指定；主会话的 cwd 保存在原生 Agent 文档中。已有会话与配置工作区路径不一致时拒绝启动，避免上下文和工具目录错配；恢复原路径或使用新的 PIKO_HOME。后台委派在同一 Harness 内创建 owned 子 conversation，共用配置与全局资源，不能嵌套委派或管理任务；任务执行在 `tasks/<id>` 下使用独立 cwd 和本任务记忆，见[任务说明](features/tasks.md)。每日/长期记忆整理由内部 Durable task 处理，不展示为 Tasks 任务。旁聊使用独立 ownerless conversation，共享记忆、技能和通用工具，但不继承主聊天上下文、不自动回传、不提取旁聊记忆，也不开放任务管理；旁聊委派仅作用于发起它的 conversation。见[旁聊](features/side-chats.md)、[后台工作](features/background-subagents.md)和[记忆整理](features/workspace-and-main-chat.md#每日与长期记忆整理)。
 
 默认目录在后端机器 `~/.piko`，独立于源码。`server/config.ts` 严格按字段分工：piko.json 管应用/Agent/工具行为，models.json/auth.json 管模型目录和模型凭据；环境管理部署参数、通道和工具凭据，同一字段没有双入口。仅环境体系内部遵循 `config/.env < 进程环境`；PIKO_HOME 由进程环境定位，配置放错位置会报错。模型配置不继承个人 Pi CLI，见[应用配置](operations/configuration.md)。
 
@@ -61,7 +61,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
     ├── memory/
     ├── projects/
     ├── artifacts/
-    └── items/<id>/
+    └── tasks/<id>/
         └── MEMORY.md              # 任务总览；执行产物直接写在同一目录
 ```
 
@@ -95,7 +95,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
-| piko.work-items / piko.item-command / piko.item-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
+| piko.tasks / piko.task-command / piko.task-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |

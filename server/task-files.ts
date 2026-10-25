@@ -8,7 +8,7 @@ import { AssistantTaskError, taskId } from "./domain/tasks";
 export class TaskFiles {
   constructor(private readonly workspace: string) {}
   directory(id: string) {
-    return join(this.workspace, "items", taskId(id));
+    return join(this.workspace, "tasks", taskId(id));
   }
   private async checked(path: string, directory: boolean) {
     const base = await realpath(this.workspace);
@@ -39,7 +39,7 @@ export class TaskFiles {
   }
   async prepare(id: string) {
     // Check each existing parent before mkdir; never follow a pre-existing directory link.
-    const paths = [join(this.workspace, "items"), this.directory(id)];
+    const paths = [join(this.workspace, "tasks"), this.directory(id)];
     for (const path of paths) {
       try {
         await mkdir(path);
