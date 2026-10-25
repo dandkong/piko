@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { randomUUID } from "expo-crypto";
+import { createUuidV4 } from "../../utils/uuid";
 import type {
   TaskExecution,
   AssistantTask,
@@ -115,7 +115,7 @@ export function useTasks() {
     if (pending.current?.signature !== signature)
       pending.current = {
         signature,
-        command: { ...body, requestId: randomUUID() } as AssistantTaskCommand,
+        command: { ...body, requestId: createUuidV4() } as AssistantTaskCommand,
       };
     try {
       await sendCommand(pending.current.command);

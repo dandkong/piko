@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { randomUUID } from "expo-crypto";
+import { createUuidV4 } from "../../utils/uuid";
 import type {
   ConversationResponse,
   HistoryPage,
@@ -183,7 +183,7 @@ export function useChat(conversationId?: string, observing = true) {
         retry && pending.current
           ? pending.current
           : {
-              id: randomUUID(),
+              id: createUuidV4(),
               message: content,
               createdAt: Date.now(),
               attachments,
@@ -255,7 +255,7 @@ export function useChat(conversationId?: string, observing = true) {
   const stop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
-    stopId.current ??= randomUUID();
+    stopId.current ??= createUuidV4();
     try {
       await stopConversation(stopId.current, conversationId);
       stopId.current = undefined;

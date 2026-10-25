@@ -5,7 +5,7 @@ import type {
   UpdateSideChat,
 } from "../../../../../shared/side-chats";
 import { apiFetch, readJson } from "../../api/client";
-import { randomUUID } from "expo-crypto";
+import { createUuidV4 } from "../../utils/uuid";
 
 async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST"): Promise<T> {
   const controller = new AbortController();
@@ -105,7 +105,7 @@ export function useSideChats(open: boolean) {
         const command =
           creation.current?.title === title
             ? creation.current
-            : { title, requestId: randomUUID() };
+            : { title, requestId: createUuidV4() };
         creation.current = command;
         const result = await request<SideChat>("/api/side-chats", command);
         creation.current = undefined;
