@@ -30,6 +30,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
   const { messages, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const listRef = useRef<FlatList<Message>>(null);
   const following = useRef(true);
+  const followAfterSend = useRef(false);
   const dragging = useRef(false);
   const metrics = useRef({ contentHeight: 0, viewportHeight: 0, offset: 0 });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
@@ -44,15 +45,12 @@ export function ChatTab({ headerHeight, footerHeight }: {
     // Web scroll event look like the user moved upward and disables follow mode.
     listRef.current?.scrollToOffset({ offset, animated });
   }, []);
-  // Only a local send reveals the new exchange; resuming a busy snapshot does not.
+  // A local send starts following through later layout changes, including the typing
+  // indicator and streamed reply; explicit upward movement cancels this intent.
   useEffect(() => {
     if (!submitting) return;
+    followAfterSend.current = true;
     scrollToLatest(false);
-    // The optimistic row may still be laying out when the submit state renders.
-    // Re-measure after two frames so Web scrolls to the final content height.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => scrollToLatest(false)),
-    );
   }, [submitting, scrollToLatest]);
 
   const fetchOlder = () => void loadOlder();
@@ -113,10 +111,12 @@ export function ChatTab({ headerHeight, footerHeight }: {
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={() => {
             dragging.current = true;
+            followAfterSend.current = false;
             following.current = false;
           }}
           onScrollEndDrag={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
             dragging.current = false;
+            followAfterSend.current = false;
             if (!layoutMeasurement.height) return;
             // A short upward drag is still reading intent, even inside the follow threshold.
             const atBottom = contentSize.height - contentOffset.y - layoutMeasurement.height <= 1;
@@ -129,8 +129,9 @@ export function ChatTab({ headerHeight, footerHeight }: {
             metrics.current.offset = contentOffset.y;
             const distance = contentSize.height - contentOffset.y - layoutMeasurement.height;
             // Web wheels do not emit begin/end drag. Detach on upward movement too.
+            if (movingUp) followAfterSend.current = false;
             const follow = !dragging.current && !movingUp && distance <= 1;
-            following.current = follow;
+            following.current = follow || followAfterSend.current;
             setAwayFromLatest(!follow);
             if (contentOffset.y <= 120 && hasOlder && !loadingOlder && !olderError) fetchOlder();
           }}
@@ -145,7 +146,8 @@ export function ChatTab({ headerHeight, footerHeight }: {
             if (!height) return;
             const changed = height !== metrics.current.contentHeight;
             metrics.current.contentHeight = height;
-            if (changed && following.current && !dragging.current) scrollToLatest(false);
+            if (changed && (following.current || followAfterSend.current) && !dragging.current)
+              scrollToLatest(false);
           }}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
