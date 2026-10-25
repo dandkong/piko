@@ -41,7 +41,7 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
     name: "sessions_search",
     replay: "unsafe",
     description:
-      "Search visible user and assistant text in the current conversation's stored history. Use this when the user refers to an earlier part of this conversation. Search terms are literal; all whitespace-separated terms must occur in a message. Results are relevance-ranked, with newer messages breaking ties. Use sessions_history with a result's sessionId and messageId to read bounded surrounding context. Tool output, reasoning, hidden internal inputs, and attachment contents are not searched.",
+      "Search visible user and assistant text in the current conversation's stored history. Use this when the user refers to an earlier part of this conversation. Search terms are literal; all whitespace-separated terms must occur in a message. Results are ordered newest first. Use sessions_history with a result's sessionId and messageId to read bounded surrounding context. Tool output, reasoning, hidden internal inputs, and attachment contents are not searched.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 4096, description: "Keywords or a phrase to find in past user and assistant messages." }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: SEARCH_MAX_LIMIT,

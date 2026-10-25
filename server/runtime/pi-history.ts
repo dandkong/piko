@@ -110,7 +110,6 @@ export type SessionSearchHit = {
   role: Message["role"];
   timestamp: number;
   snippet: string;
-  score: number;
 };
 
 export type SessionHistoryWindow = {
@@ -135,23 +134,6 @@ function searchSnippet(content: string, terms: readonly string[], limit = 300): 
   const start = Math.max(0, codePointAt - Math.floor(limit / 3));
   const end = Math.min(points.length, start + limit);
   return `${start ? "…" : ""}${points.slice(start, end).join("")}${end < points.length ? "…" : ""}`;
-}
-
-function searchScore(text: string, query: string, terms: readonly string[]): number | undefined {
-  if (!terms.every(term => text.includes(term))) return undefined;
-  let score = text.includes(query) ? 100 : 0;
-  for (const term of terms) {
-    let from = 0;
-    let count = 0;
-    while (count < 10) {
-      const index = text.indexOf(term, from);
-      if (index < 0) break;
-      count++;
-      from = index + Math.max(1, term.length);
-    }
-    score += count;
-  }
-  return score;
 }
 
 async function internalEntries(
@@ -195,13 +177,11 @@ export async function searchPiHistory(
       for (const message of messages) {
         const text = normalizeSearchText(message.content);
         if (!text) continue;
-        const score = searchScore(text, query, terms);
-        if (score === undefined) continue;
+        if (!terms.every(term => text.includes(term))) continue;
         matches++;
         candidates.push({ messageId: message.id, role: message.role, timestamp: message.createdAt,
-          snippet: searchSnippet(message.content, terms), score });
-        candidates.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp ||
-          Number(b.messageId) - Number(a.messageId));
+          snippet: searchSnippet(message.content, terms) });
+        candidates.sort((a, b) => b.timestamp - a.timestamp || Number(b.messageId) - Number(a.messageId));
         if (candidates.length > limit) candidates.pop();
       }
     }
