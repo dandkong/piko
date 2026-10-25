@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -34,17 +34,26 @@ export function ChatTab({ headerHeight, footerHeight }: {
   const metrics = useRef({ contentHeight: 0, viewportHeight: 0, offset: 0 });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
 
-  const scrollToLatest = (animated: boolean) => {
+  const scrollToLatest = useCallback((animated: boolean) => {
     if (dragging.current || !metrics.current.viewportHeight || !metrics.current.contentHeight) return;
     following.current = true;
     // Let onScroll hide the button on arrival, not before the scroll animation.
     // scrollToEnd approximates unmeasured rows; the measured content box is exact.
     const offset = Math.max(0, metrics.current.contentHeight - metrics.current.viewportHeight);
-    if (!animated) metrics.current.offset = offset;
+    // Keep offset measured by onScroll; eagerly writing the target makes a delayed
+    // Web scroll event look like the user moved upward and disables follow mode.
     listRef.current?.scrollToOffset({ offset, animated });
-  };
+  }, []);
   // Only a local send reveals the new exchange; resuming a busy snapshot does not.
-  useEffect(() => { if (submitting) scrollToLatest(false); }, [submitting]);
+  useEffect(() => {
+    if (!submitting) return;
+    scrollToLatest(false);
+    // The optimistic row may still be laying out when the submit state renders.
+    // Re-measure after two frames so Web scrolls to the final content height.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => scrollToLatest(false)),
+    );
+  }, [submitting, scrollToLatest]);
 
   const fetchOlder = () => void loadOlder();
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
