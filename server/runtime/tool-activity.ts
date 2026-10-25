@@ -20,18 +20,6 @@ export function toolIcon(name: string): string {
   }
 }
 
-/** Business-friendly labels are presentation only; unknown tools keep their native name. */
-export function toolDisplayName(name: string): string {
-  const separator = name.indexOf("_");
-  const family = name.slice(0, separator);
-  const action = name.slice(separator + 1);
-  const labels: Record<string, Record<string, string>> = {
-    subagent: { list: "List background work", spawn: "Delegate work", send: "Send instructions", status: "Check background work", stop: "Stop background work" },
-    task: { list: "List tasks", get: "Read task", create: "Create task", update: "Update task", run: "Run task", stop: "Stop task execution", archive: "Archive task", restore: "Restore task" },
-  };
-  return labels[family]?.[action] ?? name;
-}
-
 /** What the call is about, derived from arguments; never includes file contents. */
 export function summarizeToolArgs(toolName: string, args: unknown): string {
   if (!args || typeof args !== "object" || Array.isArray(args)) return "";

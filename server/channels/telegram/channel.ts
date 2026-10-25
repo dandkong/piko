@@ -3,7 +3,7 @@ import type { CompactionEvent } from "../../../shared/runtime";
 import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
-import { toolDisplayName, toolIcon } from "../../runtime/tool-activity";
+import { toolIcon } from "../../runtime/tool-activity";
 import { SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
@@ -172,7 +172,7 @@ export class TelegramChannel {
     if (!this.accepting || event.activity.status !== "running") return;
     const { name, summary } = event.activity;
     this.toolLines.set(event.activity.callId, singleLine(
-      `${toolIcon(name)} ${toolDisplayName(name)}${summary ? `: ${summary}` : ""}`,
+      `${toolIcon(name)} ${name}${summary ? `: ${summary}` : ""}`,
       SUMMARY_TEXT_LIMIT,
     )!);
     this.toolReply ??= new TelegramReply(this.api, chatId, "plain");
