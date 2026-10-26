@@ -88,7 +88,7 @@ export function createSubagentTools(children: SubagentRuntime) {
       name: "subagent_list",
       replay: "unsafe",
       description:
-        "List ordinary subagents with ids, brief tasks and current states. Excludes saved-task executions; no history or steps. Do not poll.",
+        "List ordinary subagents with ids, brief tasks and current states. Excludes saved-task executions; no history or steps.",
       parameters: Type.Object({}),
       execute: (_args, api, ctx) => execute({ action: "list" }, api, ctx),
     }),
@@ -96,7 +96,7 @@ export function createSubagentTools(children: SubagentRuntime) {
       name: "subagent_spawn",
       replay: "unsafe",
       description:
-        "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately. Continue working; do not poll.",
+        "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately.",
       parameters: Type.Object({ task }),
       execute: (args, api, ctx) =>
         execute({ action: "spawn", task: args.task }, api, ctx),
@@ -105,7 +105,7 @@ export function createSubagentTools(children: SubagentRuntime) {
       name: "subagent_send",
       replay: "unsafe",
       description:
-        "Send instructions to an existing subagent: steer when busy, continue when idle. Returns immediately. Not available for saved-task executions.",
+        "Send instructions to an existing subagent: steer when busy, continue when idle. Returns immediately.",
       parameters: Type.Object({
         id,
         message: Type.String({
@@ -121,7 +121,7 @@ export function createSubagentTools(children: SubagentRuntime) {
       name: "subagent_status",
       replay: "unsafe",
       description:
-        "Inspect a subagent's state and latest five steps on demand. Do not poll; results arrive automatically.",
+        "Inspect a subagent's state and latest five steps on demand.",
       parameters: Type.Object({ id }),
       execute: (args, api, ctx) =>
         execute({ action: "status", id: args.id }, api, ctx),
@@ -130,7 +130,7 @@ export function createSubagentTools(children: SubagentRuntime) {
       name: "subagent_stop",
       replay: "unsafe",
       description:
-        "Cancel a subagent's current work and pending private reports. Keeps its conversation; other jobs continue.",
+        "Cancel a subagent's current work and pending private reports. Keeps its conversation.",
       parameters: Type.Object({ id }),
       execute: (args, api, ctx) =>
         execute({ action: "stop", id: args.id }, api, ctx),
