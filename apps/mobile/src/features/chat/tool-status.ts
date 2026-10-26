@@ -3,7 +3,7 @@ import type { ConversationActivity } from "../../../../../shared/chat";
 /** Presentation only: every platform receives the same runtime-derived activity. */
 export function assistantLiveStatus(activity: ConversationActivity): string {
   switch (activity.kind) {
-    case "tool": return toolActivityLabel(activity.name) ?? "思考中…";
+    case "tool": return toolActivityLabel(activity.name);
     case "replying": return "正在回复";
     case "thinking": return "思考中…";
     case "idle": return "";
@@ -11,7 +11,7 @@ export function assistantLiveStatus(activity: ConversationActivity): string {
   }
 }
 
-export function toolActivityLabel(name: string): string | undefined {
+export function toolActivityLabel(name: string): string {
   switch (name) {
     case "read": return "读取文件";
     case "write": return "写入文件";
@@ -34,6 +34,6 @@ export function toolActivityLabel(name: string): string | undefined {
     case "task_stop": return "停止任务";
     case "task_archive": return "归档任务";
     case "task_restore": return "恢复任务";
-    default: return undefined;
+    default: return "调用工具";
   }
 }

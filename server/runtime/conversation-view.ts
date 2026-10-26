@@ -16,7 +16,7 @@ import type { ChatUsage } from "../../shared/chat";
 import type { SessionEvent } from "./types";
 import { summarizeToolArgs } from "./tool-activity";
 import { CompactionObserver } from "./compactions";
-import { activityFromLive, ConversationActivityProjection } from "./conversation-activity";
+import { ConversationActivityProjection } from "./conversation-activity";
 import {
   entriesFromTransaction,
   historyPageFromTransaction,
@@ -398,7 +398,7 @@ export class ConversationView {
         page,
         running:
           !!live.run || inbox.items.some((item) => item.mode !== "write"),
-        activity: activityFromLive(live, !!live.run || inbox.items.some(item => item.mode !== "write")),
+        activity: this.liveActivity.snapshot(live, !!live.run || inbox.items.some(item => item.mode !== "write")),
         queued,
         latest,
         interruption: recovery.interruption,

@@ -308,7 +308,7 @@ export function useChat(conversationId?: string, observing = true) {
         : reconnecting
           ? "正在重连…"
           : busy
-            ? busyStatus || "思考中…"
+            ? busyStatus
             : connected
               ? ""
               : "等待连接";
