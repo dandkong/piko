@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type {
   ConversationResponse,
+  ConversationActivity,
   StreamEvent,
 } from "../../../../../shared/chat";
 import { checkHealth, observe } from "./api";
@@ -14,6 +15,7 @@ export function useConversationObservation(
   enabled: boolean,
   onSnapshot: (snapshot: ConversationResponse) => void,
   onMessage: (event: MessageEvent) => void,
+  onActivity: (activity: ConversationActivity) => void,
   onError: (error: string) => void,
   onDeleted: () => void,
 ) {
@@ -63,6 +65,7 @@ export function useConversationObservation(
             if (value) {
               checkedHealth = false;
               setConnected(false);
+              onActivity({ kind: "idle" });
             } else if (!checkedHealth) {
               checkedHealth = true;
               void health();
@@ -71,15 +74,20 @@ export function useConversationObservation(
           onEvent: (event) => {
             if (!active) return;
             version.current++;
-            if (event.type === "deleted") {
-              active = false;
-              setConnected(false);
-              setReconnecting(false);
-              onDeleted();
-              controller.abort();
-            } else if (event.type === "snapshot") onSnapshot(event.conversation);
-            else if (event.type === "message") onMessage(event);
-            else if (event.type === "error") onError(event.message);
+            switch (event.type) {
+              case "deleted":
+                active = false;
+                setConnected(false);
+                setReconnecting(false);
+                onDeleted();
+                controller.abort();
+                break;
+              case "snapshot": onSnapshot(event.conversation); break;
+              case "message": onMessage(event); break;
+              case "activity": onActivity(event.activity); break;
+              case "error": onError(event.message); break;
+              default: { const exhaustive: never = event; return exhaustive; }
+            }
           },
         },
         conversationId,
@@ -88,7 +96,8 @@ export function useConversationObservation(
     return () => {
       active = false;
       controller.abort();
+      onActivity({ kind: "idle" });
     };
-  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onError, onDeleted]);
+  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onActivity, onError, onDeleted]);
   return { connected, reconnecting, modelReady, version };
 }

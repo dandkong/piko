@@ -15,6 +15,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [工作区与主会话](features/workspace-and-main-chat.md) | 持久历史、资源加载、记忆整理和恢复 |
+| [会话事件与实时活动](features/conversation-events.md) | 运行时事实、SSE 契约、头像状态和 Telegram 有序呈现 |
 | [旁聊](features/side-chats.md) | 独立聊天、管理与删除边界 |
 | [后台工作](features/background-subagents.md) | 委派、结果回传和恢复 |
 | [任务与执行记录](features/tasks.md) | 手动/定时任务、执行记录、归档与恢复 |

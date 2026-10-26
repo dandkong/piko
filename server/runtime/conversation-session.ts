@@ -59,7 +59,7 @@ export class DurableChatSession implements ChatSession {
     this.control = new ConversationControl(
       harness,
       conversation,
-      () => this.emit({ type: "refresh" }),
+      () => this.emit({ type: "invalidated" }),
       assertWritable,
       () => this.view.observationError,
     );
@@ -232,7 +232,7 @@ export class DurableChatSession implements ChatSession {
             });
             await cleanup;
           }
-          this.emit({ type: "refresh" });
+          this.emit({ type: "invalidated" });
         })
         .catch((error) => {
           if (!this.control.closed)

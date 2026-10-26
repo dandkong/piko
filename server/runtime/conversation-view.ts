@@ -16,6 +16,7 @@ import type { ChatUsage } from "../../shared/chat";
 import type { SessionEvent } from "./types";
 import { summarizeToolArgs } from "./tool-activity";
 import { CompactionObserver } from "./compactions";
+import { activityFromLive, ConversationActivityProjection } from "./conversation-activity";
 import {
   entriesFromTransaction,
   historyPageFromTransaction,
@@ -62,7 +63,7 @@ export class ConversationView {
     string,
     { name: string; summary: string }
   >();
-  private toolSegmentOpen = false;
+  private readonly liveActivity = new ConversationActivityProjection(activity => this.emit({ type: "activity", activity }));
   observationError?: Error;
 
   constructor(
@@ -89,7 +90,7 @@ export class ConversationView {
     this.compactions = new CompactionObserver(
       harness,
       (event) => this.emit(event),
-      () => this.emit({ type: "refresh" }),
+      () => this.emit({ type: "invalidated" }),
     );
     const agent = await conversation.agent(ctx);
     this.selected = agent.model && {
@@ -137,6 +138,7 @@ export class ConversationView {
       stream.snapshot,
       true,
     );
+    this.liveActivity.restore(stream.snapshot);
     this.activity(!!stream.snapshot.run, false);
     this.compactions.sync(stream.snapshot.compactions, true);
     stream.start((events) => (this.delivery = this.observe(events)));
@@ -162,6 +164,7 @@ export class ConversationView {
   private async observe(events: readonly AgentEvent[]) {
     for (const event of events) {
       if (event.type === "snapshot") {
+        this.toolCalls.clear();
         this.entries = await readPiEntries(this.harness, this.conversation.id);
         const through = event.entries.reduce(
           (latest, entry) => Math.max(latest, entry.id),
@@ -171,20 +174,15 @@ export class ConversationView {
           this.entries.filter((entry) => entry.id <= through),
           event,
         );
+        this.liveActivity.restore(event);
         this.activity(!!event.run, false);
         this.compactions.sync(event.compactions);
-        this.emit({ type: "refresh" });
+        this.emit({ type: "invalidated" });
       } else {
-        if (event.type === "compaction_start") {
-          if (this.toolSegmentOpen) {
-            this.toolSegmentOpen = false;
-            this.emit({ type: "tool-break" });
-          }
-          this.compactions.start(event);
-        } else if (event.type === "compaction_end")
+        if (event.type === "compaction_start") this.compactions.start(event);
+        else if (event.type === "compaction_end")
           this.compactions.end(event.taskId);
         if (event.type === "tool_execution_start") {
-          this.toolSegmentOpen = true;
           const summary = summarizeToolArgs(event.toolName, event.args);
           this.toolCalls.set(event.toolCallId, {
             name: event.toolName,
@@ -226,29 +224,28 @@ export class ConversationView {
           });
         } else if (event.type === "run_end") {
           this.toolCalls.clear();
-          this.toolSegmentOpen = false;
-          this.emit({ type: "tool-clear" });
         }
-        if (event.type === "entry_appended" && event.entry.kind === "pi.user" && this.toolSegmentOpen) {
-          this.toolSegmentOpen = false;
-          this.emit({ type: "tool-break" });
-        }
+        if (event.type === "entry_appended" && event.entry.kind === "pi.user")
+          this.emit({ type: "input-applied" });
         if (
           (event.type === "entry_appended" || event.type === "message_end") &&
           event.entry.id > (this.entries.at(-1)?.id ?? 0)
         )
           this.entries.push(event.entry);
         this.output.apply(event);
+        this.liveActivity.apply(event);
         if (event.type === "run_start") {
-          if (this.toolSegmentOpen) {
-            this.toolSegmentOpen = false;
-            this.emit({ type: "tool-break" });
-          }
           this.toolCalls.clear();
           this.activity(true, true);
+          this.emit({ type: "run-start" });
         }
         if (event.type === "run_end") {
           this.activity(false, true);
+          const submissions = await this.harness.commit(async () => {
+            const records = await Promise.all(event.inputs.map(id => this.storage.submission(id, ctx)));
+            return records.filter((record): record is SubmissionRecord => !!record).map(submissionReceipt);
+          }, ctx);
+          this.emit({ type: "run-end", submissions });
         }
         if (
           event.type === "message_end" ||
@@ -256,7 +253,7 @@ export class ConversationView {
           event.type === "run_end" ||
           event.type === "submission"
         )
-          this.emit({ type: "refresh" });
+          this.emit({ type: "invalidated" });
       }
     }
   }
@@ -267,10 +264,6 @@ export class ConversationView {
       !this.output.partial(this.entries)
     )
       return;
-    if (event.type === "message" && event.message.role === "assistant" && event.message.content.length > 0 && this.toolSegmentOpen) {
-      this.toolSegmentOpen = false;
-      this.publish({ type: "tool-break" });
-    }
     if (event.type === "message" && event.previousId) {
       this.previousIds.set(event.message.id, event.previousId);
       if (this.previousIds.size > 128)
@@ -405,6 +398,7 @@ export class ConversationView {
         page,
         running:
           !!live.run || inbox.items.some((item) => item.mode !== "write"),
+        activity: activityFromLive(live, !!live.run || inbox.items.some(item => item.mode !== "write")),
         queued,
         latest,
         interruption: recovery.interruption,
@@ -432,6 +426,7 @@ export class ConversationView {
       messages: [...messages, ...state.queued],
       ...(state.page && { history: { nextBefore: state.page.nextBefore } }),
       busy: this.isBusy(),
+      activity: this.isBusy() && state.activity.kind === "idle" ? { kind: "thinking" as const } : state.activity,
       compactions: this.compactions.snapshot(state.nativeCompactions),
       previousIds: Object.fromEntries(this.previousIds),
       ...(state.latest && { latest: submissionReceipt(state.latest) }),

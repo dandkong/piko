@@ -1,6 +1,5 @@
-import type { Message, StreamEvent } from "./chat";
-
-export type MessageEvent = Extract<StreamEvent, { type: "message" }>;
+import type { Message, MessageEvent } from "./chat";
+export type { MessageEvent } from "./chat";
 
 /** A committed entry replaces its live identity in place, preserving conversation order. */
 export function applyMessageEvent(messages: readonly Message[], event: MessageEvent): Message[] {

@@ -81,7 +81,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 - Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和内部 记忆整理 task。记忆整理 task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。`read` 对 PNG/JPEG/GIF/WebP/BMP 返回图片块，Photon 处理器在 worker 中做方向校正、转码和缩放；非视觉模型由上游给占位诊断。收发的附件（任意文件）落在 `PIKO_HOME/state/attachments`，Piko 只负责接收和给出路径，类型判断交给模型；见 [附件与图片读取](features/attachments.md)。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
 - web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults/freshness/includeDomains/excludeDomains 不暴露供应商；启用开关与 providers 优先级只在 piko.json，搜索凭据 EXA_API_KEY/TAVILY_API_KEY/DEEPSEEK_SEARCH_API_KEY/BRAVE_SEARCH_API_KEY 在创建 Harness 时从后端环境读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据报告内建工具与配置状态；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
-- 自动压缩、有限重试和手动压缩使用 durable 原生能力。图片读取已接入；工具进度、思考和产物专用 UI 尚未实现。
+- 自动压缩、有限重试和手动压缩使用 durable 原生能力。图片读取已接入；头像状态栏显示实时活动，TG 临时显示工具摘要；工具详细进度、思考和产物专用 UI 尚未实现。
 
 ## 原生状态与历史投影
 
@@ -123,7 +123,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
-原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，Piko 不复制 SQL 状态或另发执行终态。watchEvents 将消息、条目和执行变化转换为普通跨端事件；SDK 事件不直接进入 UI。消息更新最多 50ms 合并，状态变化发送最近一页 snapshot；积压时从原始 entries 校正。Web 不展示工具或思考；Telegram 临时展示每个执行中的工具，并独立订阅手动/阈值/溢出压缩的开始与终态，不把通知写入聊天历史。
+原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，Piko 不复制 SQL 状态或另发执行终态。watchEvents 在 ConversationView 转为运行时事实，客户端只接收 snapshot/message/activity/error/deleted 五类公开事件；SDK 类型与通道呈现指令不进入协议。消息更新最多 50ms 合并，状态失效时发送最近一页 snapshot；实时活动从原生 LiveDoc 恢复，不依赖旧工具事件重放。Telegram 用单个有序呈现队列处理正文、工具、执行边界与手动压缩通知，自动压缩静默，不把临时通知写入历史。具体契约、时序和验证边界见[会话事件与实时活动](features/conversation-events.md)。
 
 SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再接收实时更新；不维护 epoch/sequence、游标或事件重放缓存，不补齐断线期间的中间流式事件。快照与实时订阅仍在同一发布线上衔接，避免漏掉连接期间的变化。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察最近窗口，不重发输入；客户端保留已经加载的连续历史，无交集时回到最新页避免掩盖缺口。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
 

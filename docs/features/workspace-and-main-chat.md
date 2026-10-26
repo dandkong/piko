@@ -22,7 +22,7 @@
 
 ## 展示与上下文
 
-展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 直接使用 Durable 原生 entry ID，时间来自原生消息。工具、思考、隐藏 entry 和压缩摘要不显示；不预留尚无写入端的被动结果展示分支。
+展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 直接使用 Durable 原生 entry ID，时间来自原生消息。工具调用、思考、隐藏 entry 和压缩摘要不作为聊天消息显示；头像状态栏可短暂显示已知工具活动或回复状态，这些实时状态不进入历史。
 
 Web/RN 的首次快照与后续 SSE 快照只传最近 50 条可见已保存消息，另附当前流式消息与未应用输入。`GET /api/chat/history?before=<entry ID>` 向前读取至多 50 条，`nextBefore` 表示还可向前翻页；游标基于不可变 entry ID，新增消息不会移动旧页边界。每页与状态在原生 commit 线上读取；提交绑定从原生 submission 初始化并随 commit 更新，不新建正文或永久索引。
 
@@ -36,7 +36,7 @@ POST /api/chat 接收 {requestId,message}，返回原生提交回执。RN 新请
 
 输入、停止与维护预留由 DurableChatSession 的单一接纳线协调；ConversationStore 只负责文本校验、输出合并与观察，不重复维护锁或后台回传缓存。普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
 
-GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。每次连接先发送最近一页的 authoritative snapshot，再继续实时更新；不使用事件游标和重放缓存，不补齐断线期间的中间流式事件。首次快照与实时订阅仍衔接在同一发布线上，防止漏掉期间的变化。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
+GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。公开事件仅有 snapshot/message/activity/error/deleted，内部状态失效、工具开始/结束和压缩生命周期不直接透传；完整契约见[会话事件与实时活动](conversation-events.md)。每次连接先发送最近一页的 authoritative snapshot（含从原生 LiveDoc 恢复的当前活动），再继续实时更新；不使用事件游标和重放缓存，不补齐断线期间的中间流式事件。首次快照与实时订阅仍衔接在同一发布线上，防止漏掉期间的变化。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
 
 POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createUuidV4 } from "../../utils/uuid";
 import type {
   ConversationResponse,
+  ConversationActivity,
   HistoryPage,
   Message,
   StreamEvent,
@@ -20,6 +21,7 @@ import {
 import { applyMessageEvent } from "../../../../../shared/messages";
 import { HttpStreamError } from "./transport";
 import { useConversationObservation } from "./useConversationObservation";
+import { assistantLiveStatus } from "./tool-status";
 import {
   useChatAttachments,
   type PendingAttachment,
@@ -44,6 +46,7 @@ export function useChat(conversationId?: string, observing = true) {
   const olderController = useRef<AbortController | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<ConversationActivity>({ kind: "idle" });
   const [stopping, setStopping] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -90,6 +93,7 @@ export function useChat(conversationId?: string, observing = true) {
         : next;
     });
     setBusy(snapshot.busy);
+    setActivity(snapshot.activity);
     setLoading(false);
     setError(
       snapshot.latest?.status === "unanswered" &&
@@ -118,6 +122,7 @@ export function useChat(conversationId?: string, observing = true) {
     submitController.current?.abort();
     olderController.current?.abort();
     setHistory({ messages: [] });
+    setActivity({ kind: "idle" });
     setDraft("");
     setAttachments([]);
     setBusy(false);
@@ -134,6 +139,7 @@ export function useChat(conversationId?: string, observing = true) {
     observing && !deleted,
     apply,
     onMessage,
+    setActivity,
     setError,
     onDeleted,
   );
@@ -292,6 +298,7 @@ export function useChat(conversationId?: string, observing = true) {
       }
     }
   }, [send, refresh, submitting, stopping, busy, error]);
+  const busyStatus = assistantLiveStatus(activity);
   const status = loading
     ? "连接中…"
     : attaching
@@ -301,7 +308,7 @@ export function useChat(conversationId?: string, observing = true) {
         : reconnecting
           ? "正在重连…"
           : busy
-            ? "思考中…"
+            ? busyStatus || "思考中…"
             : connected
               ? ""
               : "等待连接";

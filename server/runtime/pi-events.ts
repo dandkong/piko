@@ -1,6 +1,5 @@
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable";
-import type { Message } from "../../shared/chat";
-import type { SessionEvent } from "./types";
+import type { Message, MessageEvent } from "../../shared/chat";
 import { messageText } from "./pi-history";
 
 /** Projects each native assistant message independently; never binds output to an input. */
@@ -8,7 +7,7 @@ export class PiMessageEvents {
   private current?: Message;
   private blocks = new Map<number, string>();
   private seen = new Set<number>();
-  constructor(private readonly emit: (event: SessionEvent) => void) {}
+  constructor(private readonly emit: (event: MessageEvent) => void) {}
 
   partial(entries: readonly EntryRecord[]): Message | undefined {
     // A history read may run ahead of event delivery and already contain this generation's final entry.

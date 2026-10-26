@@ -3,13 +3,12 @@ import {
   type ConversationResponse,
   type StreamEvent,
 } from "../../shared/chat";
-import type { CompactionEvent } from "../../shared/runtime";
 import type {
   BackgroundReply,
   InputSource,
   ChatRuntime,
   ChatSession,
-  ToolActivityEvent,
+  SessionEvent,
 } from "../runtime/types";
 import { normalizeMessage } from "./input";
 /** Conversation-wide observation. The runtime owns input ordering and maintenance. */
@@ -43,37 +42,36 @@ export class ConversationStore {
       .then((session) => {
         if (this.closing) throw new Error("Conversation is closed.");
         this.session = session;
-        this.unsubscribe = session.subscribe((event) => {
-          // Tool activity is live-only and channel-specific; it never changes history.
-          if (
-            event.type === "tool" ||
-            event.type === "tool-clear" ||
-            event.type === "tool-break" ||
-            event.type === "compaction"
-          )
-            return;
-          if (event.type === "deleted") {
-            this.publish(event);
-            void this.close();
-            return;
-          }
-          if (event.type === "error") this.publish(event);
-          else if (event.type === "message") {
-            if (event.previousId) this.messages.delete(event.previousId);
-            this.messages.set(event.message.id, event);
-          } else this.dirty = true;
-          if (!this.timer)
-            this.timer = setTimeout(() => {
-              this.timer = undefined;
-              void this.flush();
-            }, 50);
-        });
+        this.unsubscribe = session.subscribe(event => this.receive(event));
         return session;
       })
       .catch((error) => {
         this.opening = undefined;
         throw error;
       }));
+  }
+  /** Exhaustive projection: runtime facts never accidentally become wire events. */
+  private receive(event: SessionEvent) {
+    switch (event.type) {
+      case "tool":
+      case "input-applied":
+      case "compaction": return;
+      case "activity":
+      case "error": this.publish(event); return;
+      case "deleted": this.publish(event); void this.close(); return;
+      case "message":
+        if (event.previousId) this.messages.delete(event.previousId);
+        this.messages.set(event.message.id, event);
+        break;
+      case "run-start":
+      case "run-end":
+      case "invalidated": this.dirty = true; break;
+      default: { const exhaustive: never = event; return exhaustive; }
+    }
+    if (!this.timer) this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.flush();
+    }, 50);
   }
   private publish(event: StreamEvent) {
     if (this.closing) return;
@@ -135,17 +133,24 @@ export class ConversationStore {
   ) {
     return (await this.get()).subscribeBackgroundReplies(listener);
   }
-  /** Live tool-display events and segment boundaries; never part of saved history. */
-  async subscribeToolActivity(listener: (event: ToolActivityEvent) => void) {
-    return (await this.get()).subscribe((event) => {
-      if (event.type === "tool" || event.type === "tool-clear" || event.type === "tool-break") listener(event);
+  /** Telegram gets one ordered runtime feed, seeded without replaying historical output. */
+  async observeRuntime(listener: (event: SessionEvent | { type: "snapshot"; conversation: ConversationResponse }) => void): Promise<() => void> {
+    const session = await this.get();
+    let buffering = true;
+    const pending: SessionEvent[] = [];
+    const unsubscribe = session.subscribe(event => {
+      if (buffering) pending.push(event);
+      else listener(event);
     });
-  }
-  /** Main-session lifecycle notifications are separate from the SSE/chat transcript. */
-  async subscribeCompactions(listener: (event: CompactionEvent) => void) {
-    return (await this.get()).subscribe((event) => {
-      if (event.type === "compaction") listener(event);
-    });
+    try {
+      listener({ type: "snapshot", conversation: await session.snapshot({ limit: CHAT_PAGE_SIZE }) });
+      for (const event of pending) listener(event);
+      buffering = false;
+      return unsubscribe;
+    } catch (error) {
+      unsubscribe();
+      throw error;
+    }
   }
   async stop(commandId?: string) {
     const result = await (await this.get()).abort(commandId);
