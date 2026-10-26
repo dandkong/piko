@@ -8,6 +8,7 @@ import { TelegramBot } from "./channels/telegram/bot";
 import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
 import { AttachmentStore } from "./attachments";
+import { ArtifactStore } from "./artifacts";
 
 // A production entry serves the prebuilt website; API development remains independent of Expo exports.
 const web = process.argv.includes("--web")
@@ -21,6 +22,7 @@ process.on("exit", releaseLock);
 const runtime = createPiRuntime(paths);
 // Telegram and app uploads share one store, outside the workspace; history references these paths.
 const attachments = new AttachmentStore(join(paths.state, "attachments"));
+const artifacts = new ArtifactStore(paths.workspace);
 void attachments
   .sweep(30 * 24 * 60 * 60 * 1000)
   .then((removed) => {
@@ -37,7 +39,7 @@ const server = Bun.serve({
   port: config.port,
   // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
   idleTimeout: 60,
-  fetch: createApp({ config, runtime, conversations, chats, attachments, web }),
+  fetch: createApp({ config, runtime, conversations, chats, attachments, artifacts, web }),
 });
 
 let telegram: TelegramBot | undefined;

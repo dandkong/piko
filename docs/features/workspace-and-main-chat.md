@@ -4,7 +4,7 @@
 
 ## 范围与初始化
 
-一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[任务与执行记录](tasks.md) 已在同一 Harness 接入，Tasks 按进行中/已归档展示任务与执行记录，并支持归档/恢复；归档不等于单次执行完成。每日/长期记忆整理已接入；[旁聊](side-chats.md) 已复用同一 Harness 接入独立用户聊天，不参与主会话的记忆提取。全局产物管理尚未实现。
+一个 PIKO_HOME、一个长期工作区、一个 Harness/root 主会话；后台委派使用同一 Harness 的持久化子会话，不增加展示，见 [后台子 Agent](background-subagents.md)。[任务与执行记录](tasks.md) 已在同一 Harness 接入，Tasks 按进行中/已归档展示任务与执行记录，并支持归档/恢复；归档不等于单次执行完成。每日/长期记忆整理已接入；[旁聊](side-chats.md) 已复用同一 Harness 接入独立用户聊天，不参与主会话的记忆提取。Artifacts 浏览、下载和确认删除工作区 `artifacts/` 中的文件；任务目录中的执行产物暂不聚合，见[产物浏览](artifacts.md)。
 
 默认 PIKO_HOME 为 ~/.piko，仅部署环境 PIKO_WORKSPACE 可指定绝对工作区；配置见[应用配置](../operations/configuration.md)。初始化只补缺失配置和模板，保留用户内容。state 在工作区外，通过后端锁限制单写进程。已有主会话 cwd 与配置不同则拒绝启动，恢复原路径或使用新 PIKO_HOME。
 

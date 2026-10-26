@@ -20,7 +20,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/web.ts | 正式 Web 导出文件托管、路径边界、缓存与 SPA fallback |
 | server/chat/ | 文本校验、会话观察与输出合并；不重复管理运行时互斥或后台结果缓存 |
 | server/channels/telegram/ | 私聊身份、命令、轮询确认与回复呈现 |
-| server/workspace.ts、task-files.ts、domain/lock.ts | 工作区初始化、任务文件目录边界与后端锁；文件 I/O 不混入任务定义校验 |
+| server/workspace.ts、task-files.ts、artifacts.ts、domain/lock.ts | 工作区初始化、任务/产物文件目录边界与后端锁；文件 I/O 不混入任务定义校验 |
 | server/runtime/pi.ts、bootstrap.ts | 唯一 Harness/服务所有者；启动恢复和策略重配先完成，再 resume |
 | server/runtime/conversation-*.ts | session facade、control 接纳线、view 历史/事件投影、固定原生文档，分别负责独立职责 |
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
@@ -81,7 +81,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 - Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和内部 记忆整理 task。记忆整理 task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，临时输出在 state/tmp。`read` 对 PNG/JPEG/GIF/WebP/BMP 返回图片块，Photon 处理器在 worker 中做方向校正、转码和缩放；非视觉模型由上游给占位诊断。收发的附件（任意文件）落在 `PIKO_HOME/state/attachments`，Piko 只负责接收和给出路径，类型判断交给模型；见 [附件与图片读取](features/attachments.md)。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
 - web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults/freshness/includeDomains/excludeDomains 不暴露供应商；启用开关与 providers 优先级只在 piko.json，搜索凭据 EXA_API_KEY/TAVILY_API_KEY/DEEPSEEK_SEARCH_API_KEY/BRAVE_SEARCH_API_KEY 在创建 Harness 时从后端环境读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据报告内建工具与配置状态；技能/脚本不自动成为内置能力。见 [网络工具](features/web-tools.md)。
-- 自动压缩、有限重试和手动压缩使用 durable 原生能力。图片读取已接入；头像状态栏显示实时活动，TG 临时显示工具摘要；工具详细进度、思考和产物专用 UI 尚未实现。
+- 自动压缩、有限重试和手动压缩使用 durable 原生能力。图片读取已接入；头像状态栏显示实时活动，TG 临时显示工具摘要；工具详细进度和思考 UI 尚未实现。产物 UI 与文件边界见[产物浏览](features/artifacts.md)。
 
 ## 原生状态与历史投影
 
@@ -116,6 +116,10 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/health | 后端和模型可用状态 |
+| GET /api/artifacts?path=… | 列出 `workspace/artifacts/` 的子目录与文件 |
+| GET /api/artifacts/content?path=… | 读取 allowlist 中且不超过 1 MiB 的 UTF-8 文本 |
+| GET /api/artifacts/download?path=… | 下载工作区产物文件，不执行或转换内容 |
+| DELETE /api/artifacts?path=… | 经客户端确认后删除工作区中的指定文件或目录，不允许删除 Artifacts 根目录 |
 
 原生会话 ID 由 Durable 分配，不由客户端提供。HTTP 不开放主会话删除、按执行记录观察、runtime 管理或独立 submission 查询；模型选择和压缩供 Telegram 内部调用，客户端从 POST 回执与快照确认接纳状态。旁聊元数据使用 `/api/side-chats`，聊天链路使用 `/api/side-chats/:id/chat`，复用主会话的快照、分页、SSE、提交回执和停止语义；详见[旁聊 API](features/side-chats.md#http)。
 
@@ -143,4 +147,4 @@ RN 持续观察会话；Telegram 持续观察主会话助手输出，无论该�
 
 ## 未实现能力与后续方向
 
-Tasks、后台工作和旁聊已接入，详情见[任务说明](features/tasks.md)、[后台工作说明](features/background-subagents.md)和[旁聊说明](features/side-chats.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、Posts 发布能力和全局 Artifacts 浏览尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。
+Tasks、后台工作、旁聊和 Artifacts 浏览/下载/确认删除已接入，详情见[任务说明](features/tasks.md)、[后台工作说明](features/background-subagents.md)、[旁聊说明](features/side-chats.md)和[产物浏览](features/artifacts.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、Posts 发布能力、任务产物聚合及创建/重命名/移动尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。

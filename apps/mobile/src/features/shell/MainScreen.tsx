@@ -6,6 +6,8 @@ import { ChatProvider, type ChatStore } from "../chat/ChatProvider";
 import { ChatTab, MESSAGE_GAP } from "../chat/ChatTab";
 import { useSideChats } from "../chat/side-chats";
 import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
+import { ArtifactPreviewPanel } from "../artifacts/ArtifactPreviewPanel";
+import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -22,6 +24,7 @@ export function MainScreen() {
   const [visited, setVisited] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
   const [headerHeight, setHeaderHeight] = useState(0);
   // The footer is shared by all conversations; an unchanged layout need not emit onLayout on a switch.
   const [footerHeight, setFooterHeight] = useState(0);
@@ -41,12 +44,14 @@ export function MainScreen() {
   );
   const selectTab = (value: AppTab) => {
     Keyboard.dismiss();
+    setArtifactPreview(undefined);
     setTab(value);
     setMenuOpen(false);
     if (value === "Chat") setSelectedId(undefined);
   };
   const selectChat = (id: string) => {
     Keyboard.dismiss();
+    setArtifactPreview(undefined);
     setVisited((current) =>
       current.includes(id) ? current : [...current, id],
     );
@@ -105,10 +110,16 @@ export function MainScreen() {
         />
       }
       sheet={
-        <SettingsSheet
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-        />
+        <>
+          <SettingsSheet
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+          />
+          <ArtifactPreviewPanel
+            file={artifactPreview}
+            onClose={() => setArtifactPreview(undefined)}
+          />
+        </>
       }
       status={chat?.status ?? ""}
       headerHeight={headerHeight}
@@ -143,6 +154,7 @@ export function MainScreen() {
         tab={tab}
         topInset={headerHeight + MESSAGE_GAP}
         bottomInset={footerHeight + MESSAGE_GAP}
+        onArtifactPreview={setArtifactPreview}
       />
       {[undefined, ...visited].map((id) => (
         <ChatConversation
@@ -188,10 +200,12 @@ function TabPanel({
   tab,
   topInset,
   bottomInset,
+  onArtifactPreview,
 }: {
   tab: AppTab;
   topInset: number;
   bottomInset: number;
+  onArtifactPreview: (file: ArtifactEntry) => void;
 }) {
   switch (tab) {
     case "Chat":
@@ -199,7 +213,7 @@ function TabPanel({
     case "Posts":
       return <PostsScreen topInset={topInset} bottomInset={bottomInset} />;
     case "Artifacts":
-      return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} />;
+      return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
     case "Tasks":
       return <TasksScreen topInset={topInset} bottomInset={bottomInset} />;
   }

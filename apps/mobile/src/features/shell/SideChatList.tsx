@@ -1,10 +1,12 @@
 import { Trash2, MoreHorizontal, Pencil } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../../../../shared/side-chats";
 import { IconButton } from "../../components/IconButton";
 import { TextButton } from "../../components/TextButton";
 import { TextInputDialogContent } from "../../components/TextInputDialog";
+import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
+import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors, radii } from "../../theme";
@@ -23,19 +25,16 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
   const [deleting, setDeleting] = useState<SideChat>();
   const [renamed, setRenamed] = useState("");
   const [renameError, setRenameError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const anchors = useRef(new Map<string, View>());
   const { width, height } = useWindowDimensions();
   const visible = sideChats;
   useDismissOnBack(
-    !!menu || !!deleting,
+    !!menu,
     () => {
-      if (!savingRef.current) {
-        setMenu(undefined);
-        setEditing(undefined);
-        setDeleting(undefined);
-      }
+      if (!savingRef.current) setMenu(undefined);
     },
     { capture: true },
   );
@@ -52,15 +51,15 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
   const dismiss = () => { if (!savingRef.current) { setMenu(undefined); setEditing(undefined); setDeleting(undefined); } };
   const remove = async () => {
     if (!deleting || savingRef.current || sideChatBusy) return;
-    savingRef.current = true; setSaving(true); setRenameError("");
+    savingRef.current = true; setSaving(true); setDeleteError("");
     try {
       if (await onDeleteSideChat?.(deleting.id)) setDeleting(undefined);
-      else setRenameError("删除失败，请重试。");
-    } catch { setRenameError("删除失败，请重试。"); }
+      else setDeleteError("删除失败，请重试。");
+    } catch { setDeleteError("删除失败，请重试。"); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const openMenu = (chat: SideChat) => anchors.current.get(chat.id)?.measureInWindow((x, y, w, h) => {
-    setMenu({ chat, left: Math.max(10, Math.min(width - 174, x + w - 164)), top: Math.max(10, Math.min(height - 126, y + h + 4)) });
+    setMenu({ chat, left: Math.max(10, Math.min(width - 186, x + w - 176)), top: Math.max(10, Math.min(height - 126, y + h + 4)) });
   });
   return <View style={styles.list}>
     {sideChatError ? <View>
@@ -83,43 +82,50 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         </View>
       </View>
     </View>)}
-    <Modal transparent visible={!!menu || !!editing || !!deleting} animationType="fade" onRequestClose={dismiss}>
+    <Modal transparent visible={!!menu || !!editing || !!deleting} animationType="fade" onRequestClose={() => { if (!deleting) dismiss(); }}>
       {editing ? <TextInputDialogContent title="重命名旁聊" inputLabel="新的旁聊名称" value={renamed} onChangeText={setRenamed}
         maxLength={SIDE_CHAT_TITLE_LIMIT} busy={saving} disabled={sideChatBusy} error={renameError}
-        onCancel={dismiss} onConfirm={() => void save(editing)} testID="side-chat-rename-dialog" /> : deleting ? <View style={styles.confirmBackdrop}>
-        <Pressable accessibilityRole="button" accessibilityLabel="取消删除旁聊" style={StyleSheet.absoluteFill} onPress={dismiss} />
-        <View role="dialog" accessibilityLabel="删除旁聊确认" accessibilityViewIsModal style={styles.confirmDialog} testID="side-chat-delete-dialog">
-          <Text style={[styles.text, { fontWeight: "600", fontSize: 18 }]}>删除「{deleting.title}」？</Text>
-          <Text style={styles.text}>将永久删除聊天内容和所属后台执行，无法恢复。附件、工作区文件和历史备份不会删除。</Text>
-          {!!renameError && <Text style={styles.error}>{renameError}</Text>}
-          <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10 }}>
-            <TextButton label="取消删除旁聊" disabled={saving} onPress={dismiss}><Text style={styles.text}>取消</Text></TextButton>
-            <TextButton label="确认删除旁聊" disabled={saving || sideChatBusy} onPress={() => void remove()}><Text style={styles.text}>{saving ? "删除中…" : "删除"}</Text></TextButton>
-          </View>
-        </View>
-      </View> : <View style={StyleSheet.absoluteFill}>
-        <Pressable accessibilityRole="button" accessibilityLabel="关闭旁聊菜单" style={StyleSheet.absoluteFill} onPress={dismiss} />
-        {menu && <View accessibilityRole="menu" testID="side-chat-menu" style={[styles.menu, { left: menu.left, top: menu.top }]}>
-          <TactilePressable accessibilityRole="menuitem" accessibilityLabel="重命名旁聊" variant="plain" scaleTo={1} faceStyle={styles.menuItem}
-            onPress={() => { setEditing(menu.chat.id); setRenamed(menu.chat.title); setRenameError(""); setMenu(undefined); }}>
-            <Pencil size={18} strokeWidth={1.8} color={colors.text} /><Text style={styles.text}>重命名</Text>
-          </TactilePressable>
-          <TactilePressable accessibilityRole="menuitem" accessibilityLabel="删除旁聊" variant="plain" scaleTo={1} faceStyle={styles.menuItem}
-            onPress={() => { setDeleting(menu.chat); setRenameError(""); setMenu(undefined); }}>
-            <Trash2 size={18} strokeWidth={1.8} color={colors.text} /><Text style={styles.text}>删除</Text>
-          </TactilePressable>
-        </View>}
-      </View>}
+        onCancel={dismiss} onConfirm={() => void save(editing)} testID="side-chat-rename-dialog" /> : deleting ? <ConfirmationDialogContent
+        title={`删除「${deleting.title}」？`}
+        message="将永久删除聊天内容和所属后台执行，无法恢复。附件、工作区文件和历史备份不会删除。"
+        onCancel={dismiss}
+        onConfirm={() => void remove()}
+        confirmLabel="确认删除旁聊"
+        cancelLabel="取消删除旁聊"
+        busyLabel="删除中…"
+        busy={saving || !!sideChatBusy}
+        error={deleteError}
+        testID="side-chat-delete-dialog"
+      /> : menu ? <AnchoredMenuContent
+        left={menu.left}
+        top={menu.top}
+        width={176}
+        closeLabel="关闭旁聊菜单"
+        onClose={dismiss}
+        testID="side-chat-menu"
+        actions={[
+          {
+            id: "rename",
+            label: "重命名",
+            accessibilityLabel: "重命名旁聊",
+            icon: <Pencil size={18} strokeWidth={1.8} color={colors.text} />,
+            onPress: () => { setEditing(menu.chat.id); setRenamed(menu.chat.title); setRenameError(""); setMenu(undefined); },
+          },
+          {
+            id: "delete",
+            label: "删除",
+            accessibilityLabel: "删除旁聊",
+            icon: <Trash2 size={18} strokeWidth={1.8} color={colors.danger} />,
+            destructive: true,
+            onPress: () => { setDeleting(menu.chat); setDeleteError(""); setMenu(undefined); },
+          },
+        ]}
+      /> : null}
     </Modal>
   </View>;
 }
 const styles = StyleSheet.create({
-  confirmBackdrop: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", padding: 20, backgroundColor: "rgba(17,25,28,0.18)" },
-  confirmDialog: { width: "100%", maxWidth: 380, padding: 22, gap: 18, backgroundColor: colors.card, borderRadius: radii.panel },
   list: { gap: 6 }, row: { flexDirection: "row", alignItems: "center", gap: 4 },
   titleRow: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, alignItems: "flex-start", justifyContent: "center", borderRadius: radii.control },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
-  menu: { position: "absolute", width: 164, padding: 6, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card,
-    backgroundColor: colors.card, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 8 },
-  menuItem: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", paddingHorizontal: 12, gap: 10, borderRadius: radii.control },
 });

@@ -11,6 +11,8 @@ import { chatRequest } from "./chat/http";
 import { sideChatRequest } from "./side-chats/http";
 import { attachmentRequest } from "./attachments/http";
 import type { AttachmentStore } from "./attachments";
+import { artifactRequest } from "./artifacts/http";
+import type { ArtifactStore } from "./artifacts";
 import type { WebHandler } from "./web";
 
 export function createApp({
@@ -19,6 +21,7 @@ export function createApp({
   conversations,
   chats,
   attachments,
+  artifacts,
   web,
 }: {
   config: ServerConfig;
@@ -26,6 +29,7 @@ export function createApp({
   conversations: ConversationStore;
   chats: ConversationStores;
   attachments: AttachmentStore;
+  artifacts: ArtifactStore;
   web?: WebHandler;
 }) {
   return async (request: Request): Promise<Response> => {
@@ -45,6 +49,7 @@ export function createApp({
       const response =
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
+        (await artifactRequest(request, artifacts)) ??
         (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")
           ? await taskRequest(request, runtime, config.maxRequestBytes)
           : undefined) ??
