@@ -8,7 +8,6 @@ import {
 } from "react-native";
 import { ArrowDown, RotateCcw } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
-import { TypingIndicator } from "../../components/TypingIndicator";
 import { colors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TextButton } from "../../components/TextButton";
@@ -36,12 +35,9 @@ export function ChatTab({ headerHeight, footerHeight }: {
     },
   });
   const fetchOlder = () => void loadOlder(scroll.beforePrepend);
-  const last = messages.at(-1);
-  const waitingId = busy && last?.role === "assistant" && !last.content.trim() ? last.id : undefined;
   const renderMessage = ({ item, index }: ListRenderItemInfo<Message>) => {
-    const waitingForText = item.id === waitingId;
     const hasContent = !!item.content.trim();
-    if (!hasContent && !item.attachments?.length && !waitingForText) return null;
+    if (!hasContent && !item.attachments?.length) return null;
     const previous = messages[index - 1];
     const divider = shouldShowTimestamp(previous?.createdAt, item.createdAt)
       ? <Text accessibilityLabel="消息时间" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
@@ -50,21 +46,16 @@ export function ChatTab({ headerHeight, footerHeight }: {
         {divider}
         <View
           testID={`chat-message-${item.id}`}
-          accessibilityLabel={waitingForText ? "Piko 正在工作" : undefined}
-          style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble, waitingForText && styles.typing]}
+          style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}
         >
-          {waitingForText ? (
-            <TypingIndicator />
-          ) : (
-            <View style={{ gap: 7 }}>
-              <AttachmentList attachments={item.attachments} />
-              {hasContent ? (item.role === "assistant" ? (
-                <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
-              ) : (
-                <Text selectable style={styles.messageText}>{item.content}</Text>
-              )) : null}
-            </View>
-          )}
+          <View style={{ gap: 7 }}>
+            <AttachmentList attachments={item.attachments} />
+            {hasContent ? (item.role === "assistant" ? (
+              <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
+            ) : (
+              <Text selectable style={styles.messageText}>{item.content}</Text>
+            )) : null}
+          </View>
         </View>
       </>
     );
@@ -112,12 +103,6 @@ export function ChatTab({ headerHeight, footerHeight }: {
           ) : null}
           ListFooterComponent={(
             <View>
-              {busy && !waitingId && !messages.some(message => message.id.startsWith("live-") && message.content.trim()) && (
-                <View accessibilityLabel="Piko 正在工作"
-                  style={[styles.bubble, styles.assistantBubble, styles.typing, { marginTop: 13 }]}>
-                  <TypingIndicator />
-                </View>
-              )}
               {!!error && (
                 <View style={styles.errorNotice}>
                   <Text style={styles.errorText}>{error}</Text>

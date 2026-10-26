@@ -64,10 +64,6 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
-  typing: {
-    paddingHorizontal: 19,
-    paddingVertical: 18,
-  },
   errorNotice: {
     padding: 16,
     borderRadius: 14,
