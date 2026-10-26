@@ -2,7 +2,6 @@ import { Trash2, MoreVertical, Pencil } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../../../../shared/side-chats";
-import { IconButton } from "../../components/IconButton";
 import { TextButton } from "../../components/TextButton";
 import { TextInputDialogContent } from "../../components/TextInputDialog";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
@@ -71,14 +70,15 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
       <View style={styles.row}>
         <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: activeSideChatId === chat.id }}
           onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={activeSideChatId === chat.id} scaleTo={1}
-          style={{ flex: 1, minWidth: 0 }} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
+          style={styles.titleHit} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
           <Text numberOfLines={1} style={styles.text}>{chat.title}</Text>
         </TactilePressable>
-        <View collapsable={false} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
-          <IconButton label={`旁聊菜单：${chat.title}`} hint="重命名或删除" size="sm" variant="plain"
-            accessibilityState={{ expanded: menu?.chat.id === chat.id }} onPress={sideChatBusy ? undefined : () => openMenu(chat)}>
+        <View collapsable={false} style={styles.menuSlot} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
+          <TactilePressable accessibilityRole="button" accessibilityLabel={`旁聊菜单：${chat.title}`} accessibilityHint="重命名或删除"
+            accessibilityState={{ expanded: menu?.chat.id === chat.id }} disabled={!!sideChatBusy}
+            onPress={() => openMenu(chat)} scaleTo={0.94} style={styles.menuHit} faceStyle={styles.menuFace} variant="plain">
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
-          </IconButton>
+          </TactilePressable>
         </View>
       </View>
     </View>)}
@@ -125,7 +125,11 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
   </View>;
 }
 const styles = StyleSheet.create({
-  list: { gap: 6 }, row: { flexDirection: "row", alignItems: "center", gap: 4 },
-  titleRow: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, alignItems: "flex-start", justifyContent: "center", borderRadius: radii.control },
+  list: { gap: 6 }, row: { minHeight: 52, flexDirection: "row", alignItems: "stretch", gap: 0 },
+  titleHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
+  titleRow: { flex: 1, alignSelf: "stretch", minHeight: 52, paddingHorizontal: 12, paddingVertical: 10, alignItems: "flex-start", justifyContent: "center", borderRadius: radii.control },
+  menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
+  menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
+  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
 });

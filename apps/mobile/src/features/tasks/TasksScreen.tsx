@@ -12,7 +12,6 @@ import { ActivityIndicator, Modal, StyleSheet, Text, View, useWindowDimensions }
 import type { TaskExecution, AssistantTask } from "../../../../../shared/tasks";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
-import { IconButton } from "../../components/IconButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
@@ -120,23 +119,27 @@ export function TasksScreen({
         </TactilePressable>
         <View
           collapsable={false}
+          style={styles.menuSlot}
           ref={(node) => {
             if (node) anchors.current.set(value.id, node);
             else anchors.current.delete(value.id);
           }}
         >
-          <IconButton
-            label={`更多任务操作：${value.title}`}
-            hint="执行、归档或删除任务"
-            size="sm"
-            variant="plain"
+          <TactilePressable
+            accessibilityRole="button"
+            accessibilityLabel={`更多任务操作：${value.title}`}
+            accessibilityHint="执行、归档或删除任务"
             accessibilityState={{ expanded: menu?.task.id === value.id }}
             disabled={busy}
             onPress={() => openMenu(value)}
+            scaleTo={0.94}
+            style={styles.menuHit}
+            faceStyle={styles.menuFace}
+            variant="plain"
             testID="task-item-menu-button"
           >
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
-          </IconButton>
+          </TactilePressable>
         </View>
       </ScreenCard>
     );
@@ -213,7 +216,7 @@ export function TasksScreen({
       {currentTask && (
         <>
           <ScreenCard>
-            <Text style={styles.body}>{currentTask.prompt}</Text>
+            <AssistantMessage content={currentTask.prompt} />
             <Text style={styles.meta}>{scheduleLabel(currentTask)}</Text>
           </ScreenCard>
 
@@ -237,13 +240,6 @@ export function TasksScreen({
                           >
                             {statusNames[run.status]}
                           </Text>
-                        )}
-                        {expandable && (
-                          <ChevronDown
-                            size={15}
-                            color={colors.muted}
-                            style={expanded ? styles.chevronOpen : undefined}
-                          />
                         )}
                       </View>
                     </View>
@@ -317,7 +313,7 @@ export function TasksScreen({
         {pendingDelete ? (
           <ConfirmationDialogContent
             title={`删除「${pendingDelete.title}」？`}
-            message="将永久删除任务定义、全部执行记录和专属工作区，无法恢复。已进入主聊天的内容、附件和历史备份不会删除，外部副作用也不会撤销。"
+            message="将永久删除任务定义、全部执行记录和专属工作区，无法恢复。"
             onCancel={() => setPendingDelete(undefined)}
             onConfirm={() => void remove()}
             confirmLabel="删除"
@@ -376,7 +372,7 @@ export function TasksScreen({
 
 const styles = StyleSheet.create({
   backText: { fontSize: 14, color: colors.text },
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  row: { flexDirection: "row", alignItems: "stretch", gap: 0, padding: 0 },
   entryHit: { width: "100%" },
   entry: {
     alignItems: "stretch",
@@ -399,16 +395,22 @@ const styles = StyleSheet.create({
   timelineBody: { flex: 1, paddingBottom: 18 },
   timelineBodyLast: { paddingBottom: 0 },
   entryMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
-  chevronOpen: { transform: [{ rotate: "180deg" }] },
-  cardBodyHit: { flex: 1 },
+  cardBodyHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
   cardBody: {
+    flex: 1,
+    alignSelf: "stretch",
+    minHeight: 72,
     alignItems: "stretch",
-    justifyContent: "flex-start",
+    justifyContent: "center",
     gap: 8,
-    padding: 4,
-    margin: -4,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopLeftRadius: 17,
+    borderBottomLeftRadius: 17,
   },
+  menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
+  menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
+  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
   sectionGroup: { gap: 12 },
   sectionTasks: { gap: 12 },
   sectionHit: { width: "100%" },
@@ -422,7 +424,6 @@ const styles = StyleSheet.create({
   },
   section: { fontSize: 13, fontWeight: "500", color: colors.muted },
   name: { fontSize: 16, fontWeight: "600", color: colors.text },
-  body: { fontSize: 15, lineHeight: 23, color: colors.text },
   meta: { fontSize: 13, color: colors.muted, lineHeight: 20 },
   preview: { fontSize: 14, color: colors.text, lineHeight: 21 },
   entryHeader: {

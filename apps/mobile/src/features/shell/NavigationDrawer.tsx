@@ -124,7 +124,6 @@ export function NavigationDrawer({
                 ? () => void sideChatActions.onCreateSideChat?.()
                 : undefined
             }
-            variant="primary"
           >
             <SquarePen size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>

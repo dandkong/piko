@@ -5,7 +5,7 @@ import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { IconButton } from "../../components/IconButton";
-import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
+import { Screen, ScreenCard } from "../../components/Screen";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
@@ -118,41 +118,54 @@ export function ArtifactsScreen({
 
   return (
     <Screen testID="artifacts-screen" topInset={topInset} bottomInset={bottomInset}>
-      <ScreenHeader
-        title="产物"
-        action={
-          <IconButton label="刷新产物列表" hint="重新读取当前文件夹" onPress={refresh}>
-            <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
-          </IconButton>
-        }
-      />
-
-      <ScrollView
-        horizontal
-        contentContainerStyle={styles.breadcrumb}
-        showsHorizontalScrollIndicator={false}
-        testID="artifact-breadcrumb"
-      >
-        <TextButton label="产物根目录" onPress={() => navigateTo("")} variant="plain">
-          <Text style={[styles.crumbText, !segments.length && styles.crumbCurrent]}>产物</Text>
-        </TextButton>
-        {segments.map((segment, index) => {
-          const value = segments.slice(0, index + 1).join("/");
-          const current = index === segments.length - 1;
-          return (
-            <View key={value} style={styles.crumbSegment}>
-              <ChevronRight size={15} color={colors.muted} />
-              <TextButton
-                label={`打开文件夹 ${segment}`}
-                onPress={() => navigateTo(value)}
-                variant="plain"
-              >
-                <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
-              </TextButton>
-            </View>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.header}>
+        {segments.length ? (
+          <TextButton
+            label="返回产物根目录"
+            hint="返回产物根目录"
+            onPress={() => navigateTo("")}
+            variant="plain"
+            style={styles.headerTitleHit}
+            faceStyle={styles.headerTitleFace}
+          >
+            <Text style={styles.headerTitle}>产物</Text>
+          </TextButton>
+        ) : (
+          <Text style={styles.headerTitle}>产物</Text>
+        )}
+        {!!segments.length && (
+          <ScrollView
+            horizontal
+            style={styles.headerCrumbs}
+            contentContainerStyle={styles.breadcrumb}
+            showsHorizontalScrollIndicator={false}
+            testID="artifact-breadcrumb"
+          >
+            {segments.map((segment, index) => {
+              const value = segments.slice(0, index + 1).join("/");
+              const current = index === segments.length - 1;
+              return (
+                <View key={value} style={styles.crumbSegment}>
+                  <ChevronRight size={13} color={colors.muted} />
+                  <TextButton
+                    label={`打开文件夹 ${segment}`}
+                    onPress={() => navigateTo(value)}
+                    variant="plain"
+                    style={styles.crumbHit}
+                    faceStyle={styles.crumbFace}
+                  >
+                    <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
+                  </TextButton>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+        <View style={styles.headerSpacer} />
+        <IconButton label="刷新产物列表" hint="重新读取当前文件夹" onPress={refresh}>
+          <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
+        </IconButton>
+      </View>
 
       {!!downloadError && <Text accessibilityRole="alert" style={styles.error}>{downloadError}</Text>}
       {!!error && (
@@ -191,23 +204,26 @@ export function ArtifactsScreen({
                 {entry.kind === "directory" ? "文件夹" : fileSize(entry.size ?? 0)} · {modifiedAt(entry.modifiedAt)}
               </Text>
             </View>
-            <ChevronRight size={18} strokeWidth={1.8} color={colors.muted} />
           </TactilePressable>
           <View
             collapsable={false}
+            style={styles.menuSlot}
             ref={node => { if (node) anchors.current.set(entry.path, node); else anchors.current.delete(entry.path); }}
           >
-            <IconButton
-              label={`更多操作：${entry.kind === "directory" ? "文件夹" : "文件"} ${entry.name}`}
-              hint={entry.kind === "file" ? "下载或删除" : "删除文件夹"}
-              size="sm"
-              variant="plain"
+            <TactilePressable
+              accessibilityRole="button"
+              accessibilityLabel={`更多操作：${entry.kind === "directory" ? "文件夹" : "文件"} ${entry.name}`}
+              accessibilityHint={entry.kind === "file" ? "下载或删除" : "删除文件夹"}
               accessibilityState={{ expanded: menu?.entry.path === entry.path }}
               onPress={() => openMenu(entry)}
+              scaleTo={0.94}
+              style={styles.menuHit}
+              faceStyle={styles.menuFace}
+              variant="plain"
               testID="artifact-item-menu-button"
             >
               <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
-            </IconButton>
+            </TactilePressable>
           </View>
         </ScreenCard>
       ))}
@@ -266,22 +282,35 @@ export function ArtifactsScreen({
 }
 
 const styles = StyleSheet.create({
-  breadcrumb: { alignItems: "center", minHeight: 42, paddingRight: 4 },
-  crumbSegment: { flexDirection: "row", alignItems: "center", gap: 2 },
-  crumbText: { maxWidth: 180, color: colors.muted, fontSize: 14 },
-  crumbCurrent: { color: colors.text, fontWeight: "600" },
-  rowCard: { padding: 4, flexDirection: "row", alignItems: "center", gap: 4 },
-  rowHit: { flex: 1, minWidth: 0 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, marginBottom: 4 },
+  headerTitle: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
+  headerTitleHit: { flexShrink: 0 },
+  headerTitleFace: { minHeight: 44, paddingHorizontal: 0, paddingVertical: 0, justifyContent: "flex-start" },
+  headerCrumbs: { minWidth: 0, flexShrink: 1 },
+  headerSpacer: { flex: 1, minWidth: 0 },
+  breadcrumb: { alignItems: "center", minHeight: 36, paddingRight: 4 },
+  crumbSegment: { flexDirection: "row", alignItems: "center", gap: 1 },
+  crumbHit: { flexShrink: 0 },
+  crumbFace: { minHeight: 32, paddingHorizontal: 4, paddingVertical: 4, gap: 4 },
+  crumbText: { maxWidth: 140, color: colors.muted, fontSize: 12 },
+  crumbCurrent: { color: colors.muted, fontWeight: "500" },
+  rowCard: { padding: 0, flexDirection: "row", alignItems: "stretch", gap: 0 },
+  rowHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
   row: {
-    width: "100%",
-    minHeight: 58,
+    flex: 1,
+    alignSelf: "stretch",
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-start",
     gap: 12,
-    paddingHorizontal: 10,
-    borderRadius: radii.control,
+    paddingHorizontal: 16,
+    borderTopLeftRadius: radii.card,
+    borderBottomLeftRadius: radii.card,
   },
+  menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
+  menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
+  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
   rowInfo: { flex: 1, minWidth: 0, gap: 4 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   meta: { color: colors.muted, fontSize: 12 },
