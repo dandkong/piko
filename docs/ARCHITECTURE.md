@@ -137,9 +137,9 @@ SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再�
 
 ## Telegram 通道
 
-TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话，只显示主 Agent 实际回复。普通子 Agent 只回复来源通道（RN 来源不推 TG）；保存任务的执行结果推送到所有通道。App 是聚合视图，始终能看到全部记录。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
+TG 与 RN 共用 ConversationStore 和 root。后台结果以可信内部 follow-up 唤起主 Agent；UI 不显示报告或子会话原文，只显示主 Agent 实际生成的回复。所有 root 主会话助手输出投递到所有已配置渠道，不按触发输入的来源区分；App 用户输入不回显到 TG。App 是聚合视图，始终能看到全部记录。鉴权通过后，以 Bot/chat/message 稳定身份提交原生输入；polling update 的确认由 grammY 默认轮询管理，不与持久化接纳严格绑定；重复已接纳输入不再执行或重发回复。模型/思考按钮与压缩复用空闲预留和运行时接口，命令反馈不进入模型历史。
 
-RN 持续观察会话；TG 投递只在经过验证的输入私聊启用。每条助手消息有独立 Rich Markdown 消息，条内流式编辑；补充输入不重发旧回复。TG 加入 RN 正在执行的工作只观察未完成及后续消息，纯 RN 工作默认不推送 TG。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
+RN 持续观察会话；Telegram 持续观察主会话助手输出，无论该轮由 App 还是 TG 输入触发都投递，不回显 App 用户输入；旁聊/子会话原文不直接投递。每条助手消息有独立 Rich Markdown 消息，条内流式编辑。各渠道呈现不同，投递不按输入来源区分。平台发送状态在内存，不承诺重启补发；失败不改变原生执行状态。详细命令、配置与限制见 [双通道说明](features/telegram-channel.md)。
 
 ## 未实现能力与后续方向
 

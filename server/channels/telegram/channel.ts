@@ -27,6 +27,7 @@ export class TelegramChannel {
   private notificationChatId?: string;
   private readonly compactionReady: Promise<void>;
   private unsubscribeCompactions?: () => void;
+  private unsubscribeOutput?: () => void;
   private compactionQueue: Promise<void> = Promise.resolve();
   private readonly controller = new AbortController();
   private readonly tasks = new Set<Promise<void>>();
@@ -44,6 +45,8 @@ export class TelegramChannel {
   private readonly deliveryExpectations = new Map<string, number>();
   private toolReply?: TelegramReply;
   private readonly stopNoticeSuppressions = new Map<string, Set<string>>();
+  private outputSeeded = false;
+  private readonly outputMessages = new Map<string, string>();
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
@@ -55,13 +58,12 @@ export class TelegramChannel {
     this.compactionReady = conversations.subscribeCompactions(event => this.queueCompaction(event))
       .then(unsubscribe => { if (this.accepting) this.unsubscribeCompactions = unsubscribe; else unsubscribe(); });
     this.track(this.compactionReady);
+    this.track(conversations.observe(event => this.observeConversationOutput(event))
+      .then(unsubscribe => { if (this.accepting) this.unsubscribeOutput = unsubscribe; else unsubscribe(); }));
     this.track(conversations.subscribeBackgroundReplies(async reply => {
       if (!this.accepting) return;
-      // Scheduled work broadcasts to every channel; ordinary background work answers where it started.
-      const chatId = reply.deliver === "all" ? this.identity.userId
-        : reply.source.channel === "telegram" && reply.source.botId === this.identity.botId && reply.source.chatId === this.identity.userId
-          ? reply.source.chatId : undefined;
-      if (!chatId) return;
+      // Main-conversation output is broadcast regardless of the input channel.
+      const chatId = this.identity.userId;
       const pending = this.pendingReports.get(chatId) ?? new Set<string>(); pending.add(reply.requestId); this.pendingReports.set(chatId, pending);
       this.startDelivery(chatId, new Set(reply.knownMessageIds));
     }).then(unsubscribe => { if (this.accepting) this.unsubscribeReplies = unsubscribe; else unsubscribe(); }));
@@ -143,6 +145,38 @@ export class TelegramChannel {
     } finally {
       if (expectedDelivery) await this.releaseDeliveryExpectation(message.chatId);
     }
+  }
+
+  /** Main-conversation assistant messages are delivered to Telegram regardless of input source. */
+  private observeConversationOutput(event: StreamEvent): void {
+    if (!this.accepting) return;
+    if (event.type === "snapshot") {
+      const messages = event.conversation.messages.filter(message => message.role === "assistant");
+      if (!this.outputSeeded) {
+        this.outputSeeded = true;
+        const known = new Set(messages
+          .filter(message => !event.conversation.busy || !message.id.startsWith("live-"))
+          .map(message => message.id));
+        if (event.conversation.busy && messages.some(message => message.id.startsWith("live-") && message.content.trim()))
+          this.startDelivery(this.identity.userId, known);
+      } else {
+        const known = new Set(this.outputMessages.keys());
+        const changed = messages.filter(message => this.outputMessages.get(message.id) !== message.content);
+        if (changed.length) {
+          for (const message of changed) known.delete(message.id);
+          this.startDelivery(this.identity.userId, known);
+        }
+      }
+      this.outputMessages.clear();
+      for (const message of messages) this.outputMessages.set(message.id, message.content);
+      return;
+    }
+    if (event.type !== "message" || event.message.role !== "assistant" || !this.outputSeeded) return;
+    if (this.outputMessages.get(event.message.id) === event.message.content) return;
+    const known = new Set(this.outputMessages.keys());
+    known.delete(event.message.id);
+    this.startDelivery(this.identity.userId, known);
+    this.outputMessages.set(event.message.id, event.message.content);
   }
 
   private queueCompaction(event: CompactionEvent) {
@@ -293,7 +327,7 @@ export class TelegramChannel {
     void task.then(() => this.tasks.delete(task));
   }
 
-  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); this.unsubscribeTools?.(); this.unsubscribeCompactions?.(); }
+  stopAccepting(): void { this.accepting = false; this.unsubscribeReplies?.(); this.unsubscribeTools?.(); this.unsubscribeCompactions?.(); this.unsubscribeOutput?.(); }
 
   async drain(timeoutMs = 3000): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
