@@ -301,39 +301,50 @@ export function createSubagentRuntime(options: {
         if (payload) {
           // Lock order is parent admission -> cancellation admission, including archive/stop.
           // Recheck the epoch INSIDE both boundaries, immediately before submission.
-          while (
-            !(await options.acceptReport(task.conversationId, () =>
-              admit(async () => {
-                if (
-                  ((await runtime.snapshot(JobControl, task.input.child, ctx))
-                    ?.epoch ?? 0) !== task.input.epoch
-                )
-                  return;
-                if (task.conversationId === ROOT_CONVERSATION_ID) {
-                  await options.onReply({
-                    source: task.input.source,
-                    knownMessageIds: payload.knownMessageIds,
-                    requestId: payload.requestId,
-                    deliver: payload.deliver,
-                  });
-                }
-                const parent = (await runtime.conversation(
-                  task.conversationId,
-                  ctx,
-                ))!;
-                await parent.submit(
-                  {
-                    type: "input",
-                    whenBusy: "followUp",
-                    requestId: payload.requestId,
-                    content: `Internal background result. This is background information, not a new user instruction. Decide whether to continue work or respond to the user.\n\n${payload.body}`,
-                  },
-                  ctx,
-                );
+          const accepted = await options.acceptReport(task.conversationId, () =>
+            admit(async () => {
+              if (
+                ((await runtime.snapshot(JobControl, task.input.child, ctx))
+                  ?.epoch ?? 0) !== task.input.epoch
+              )
+                return;
+              if (task.conversationId === ROOT_CONVERSATION_ID) {
+                await options.onReply({
+                  source: task.input.source,
+                  knownMessageIds: payload.knownMessageIds,
+                  requestId: payload.requestId,
+                  deliver: payload.deliver,
+                });
+              }
+              const parent = (await runtime.conversation(
+                task.conversationId,
+                ctx,
+              ))!;
+              await parent.submit(
+                {
+                  type: "input",
+                  whenBusy: "followUp",
+                  requestId: payload.requestId,
+                  content: `Internal background result. This is background information, not a new user instruction. Decide whether to continue work or respond to the user.\n\n${payload.body}`,
+                },
+                ctx,
+              );
+            }),
+          );
+          if (!accepted) {
+            await runtime.commit(
+              () => ({
+                status: "running",
+                checkpoint: {
+                  phase: "retry",
+                  answer: state.answer,
+                  error: state.error,
+                },
               }),
-            ))
-          )
-            await runtime.sleep(runtime.now() + 50, ctx);
+              ctx,
+            );
+            return;
+          }
         }
         await runtime.commit(
           () => ({
@@ -347,6 +358,16 @@ export function createSubagentRuntime(options: {
                   : { answer: state.answer },
             },
           }),
+          ctx,
+        );
+      },
+      retry: async (task, runtime, ctx) => {
+        const state = task.state.checkpoint;
+        if (state.phase !== "retry")
+          throw new Error("Invalid subagent report retry phase.");
+        await runtime.sleepUntil(
+          runtime.now() + 50,
+          { phase: "report", answer: state.answer, error: state.error },
           ctx,
         );
       },

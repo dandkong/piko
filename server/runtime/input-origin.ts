@@ -4,6 +4,7 @@ import type { InputSource } from "./types";
 // Provenance and control metadata only; native submissions/tasks remain the execution authority.
 export const InputOrigin = defineDocFamily<{ registered: boolean; internal: boolean; source: InputSource; child?: ConversationId }, null>({
   kind: "piko.input-origin", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true,
+  checkpointWhen: () => false,
   initial: () => ({ registered: false, internal: false, source: { channel: "app" } }),
 });
 export async function registerInput(tx: Tx, requestId: string, source: InputSource, internal = false, child?: ConversationId, conversationId = ROOT_CONVERSATION_ID) {

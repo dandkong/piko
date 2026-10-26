@@ -65,7 +65,7 @@ export class TelegramConversationOutput {
       case "message":
         if (event.message.role !== "assistant" || this.known.has(event.message.id)) return;
         if (!event.message.content.trim() && !event.previousId) return;
-        this.breakTools();
+        if (event.message.content.trim()) this.breakTools();
         if (this.text && this.text.message.id !== event.message.id && this.text.message.id !== event.previousId)
           await this.flushText();
         this.text = event;

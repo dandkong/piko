@@ -11,6 +11,7 @@ export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ epoch: 0, reported: [] }),
 });
 export const SubagentPromptScope = defineDoc<{ isSubagent: boolean }>({
@@ -19,6 +20,7 @@ export const SubagentPromptScope = defineDoc<{ isSubagent: boolean }>({
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ isSubagent: false }),
 });
 export const ANCHOR_KIND = "piko.subagent-anchor";
@@ -32,5 +34,6 @@ export type ReporterInput = {
 };
 export type ReporterState =
   | { phase: "deliver" }
-  | { phase: "report"; answer?: EntryId; error?: string };
+  | { phase: "report"; answer?: EntryId; error?: string }
+  | { phase: "retry"; answer?: EntryId; error?: string };
 export type ReporterResult = { answer?: EntryId; error?: string } | null;

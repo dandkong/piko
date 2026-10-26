@@ -26,6 +26,7 @@ export type MemoryCurationState = {
 };
 export const MemoryCurationDoc = defineDoc<MemoryCurationState>({
   kind: MEMORY_CURATION_KIND, version: 1, scope: "conversation", history: "latest", fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ initialized: false, cursor: 0, idleSince: null, activeTaskId: null, retryAfter: null }),
 });
 

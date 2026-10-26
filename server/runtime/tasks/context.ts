@@ -14,5 +14,6 @@ export const TaskContext = defineDoc<{ binding: TaskBinding | null }>({
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ binding: null }),
 });

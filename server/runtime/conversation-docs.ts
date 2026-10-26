@@ -6,6 +6,7 @@ export const Recovery = defineDoc<{ interruption: string }>({
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ interruption: "" }),
 });
 export const StopReceipts = defineDocFamily<
@@ -18,5 +19,6 @@ export const StopReceipts = defineDocFamily<
   history: "latest",
   fork: "initial",
   family: true,
+  checkpointWhen: () => false,
   initial: () => ({ processed: false, stopped: false, tasks: [] }),
 });

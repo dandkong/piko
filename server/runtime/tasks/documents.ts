@@ -12,6 +12,7 @@ export const TaskDefinitions = defineDoc<{ tasks: StoredTask[] }>({
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ tasks: [] }),
 });
 export const Receipts = defineDocFamily<
@@ -24,5 +25,6 @@ export const Receipts = defineDocFamily<
   history: "latest",
   fork: "initial",
   family: true,
+  checkpointWhen: () => false,
   initial: () => ({ hash: "", id: "", executionId: null }),
 });

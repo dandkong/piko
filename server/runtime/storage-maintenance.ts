@@ -5,6 +5,7 @@ import { SideChatError } from "./side-chats";
 
 const StorageCleanup = defineDoc<{ required: boolean }>({
   kind: "piko.storage-cleanup", version: 1, scope: "session", initial: () => ({ required: false }),
+  checkpointWhen: () => false,
 });
 
 export type SideChatDeletion = {
@@ -27,7 +28,7 @@ export class StorageMaintenance {
       throw new SideChatError("Side chat not found.");
     const id = Number(value);
     const schema = await this.database.get<{version: number}>("SELECT version FROM durable_schema WHERE singleton=1");
-    if (schema?.version !== 1) throw new Error("Unsupported Durable schema for permanent deletion.");
+    if (schema?.version !== 2) throw new Error("Unsupported Durable schema for permanent deletion.");
     const conversations = await this.database.all<{id: number; owner_conversation_id: number | null; owner_task_id: number | null; parent: number | null}>(
       "SELECT id,owner_conversation_id,owner_task_id,json_extract(record,'$.parent.conversationId') AS parent FROM conversations");
     const owner = conversations.find(row => row.id === id);
@@ -137,7 +138,7 @@ export class StorageMaintenance {
  * definition's initial value/version are never acquired during retireDoc. */
 export async function retireDocument(tx: Tx, record: DocumentRecord) {
   if (record.retiredAt !== undefined) return;
-  const definition = { kind: record.kind, version: 1 };
+  const definition = { kind: record.kind, version: 1, checkpointWhen: () => false };
   const key = record.key;
   if (record.scope.kind === "session") {
     if (key === undefined) await tx.retireDoc(defineDoc({ ...definition, scope: "session", initial: () => ({}) }));

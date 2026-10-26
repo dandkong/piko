@@ -1,6 +1,6 @@
 # Piko 架构约定
 
-当前 Agent 运行时为 pi-durable 1.3.0，模型适配为 pi-ai 1.3.0。产品范围见[产品说明](PRODUCT.md)，进度见[路线图](../ROADMAP.md)，配置与运行见[Agent 运行时说明](operations/agent-runtime.md)。
+当前 Agent 运行时为 pi-durable 1.4.0，模型适配为 pi-ai 1.4.0。产品范围见[产品说明](PRODUCT.md)，进度见[路线图](../ROADMAP.md)，配置与运行见[Agent 运行时说明](operations/agent-runtime.md)。
 
 ## 当前结构
 

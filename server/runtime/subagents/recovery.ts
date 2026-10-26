@@ -13,7 +13,7 @@ import {
 import { subagentIds } from "./queries";
 import { TaskContext } from "../tasks/context";
 
-/** Mark inherited uncertain work before enabling the scheduler; completed report phases may resume. */
+/** Mark inherited uncertain work before enabling the scheduler; report and retry phases may resume. */
 export async function prepareRestart(
   harness: Harness,
   userConversations: ConversationId[] = [ROOT_CONVERSATION_ID],
@@ -25,8 +25,10 @@ export async function prepareRestart(
         item.record.kind === REPORTER_KIND &&
         !item.record.abortRequested &&
         (item.record.state.status === "pending" ||
-          item.record.state.status === "running") &&
-        (item.record.state.checkpoint as ReporterState).phase === "report",
+          item.record.state.status === "running" ||
+          item.record.state.status === "sleeping") &&
+        ((item.record.state.checkpoint as ReporterState).phase === "report" ||
+          (item.record.state.checkpoint as ReporterState).phase === "retry"),
     )
     .map((item) => item.record.id);
   const conversations = await harness.commit(async (tx) => {

@@ -178,8 +178,12 @@ export async function jobFacts(
     outcome?.status === "completed"
       ? (outcome.result as ReporterResult)
       : undefined;
+  const reportCheckpoint =
+    checkpoint?.phase === "report" || checkpoint?.phase === "retry"
+      ? checkpoint
+      : undefined;
   const error =
-    (checkpoint?.phase === "report" ? checkpoint.error : undefined) ??
+    reportCheckpoint?.error ??
     result?.error ??
     (submission?.status === "unanswered" && submission.reason !== "aborted"
       ? typeof submission.detail === "string"
@@ -206,8 +210,8 @@ export async function jobFacts(
   const answerId =
     submission?.type === "input" && submission.status === "done"
       ? submission.answer
-      : checkpoint?.phase === "report"
-        ? checkpoint.answer
+      : reportCheckpoint
+        ? reportCheckpoint.answer
         : result?.answer;
   return {
     binding: binding && { ...binding },

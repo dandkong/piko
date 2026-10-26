@@ -22,6 +22,7 @@ export const SideChatDoc = defineDoc<{
   scope: "conversation",
   history: "latest",
   fork: "initial",
+  checkpointWhen: () => false,
   initial: () => ({ title: "", createdAt: 0, archivedAt: null }),
 });
 export const SideChatCreates = defineDocFamily<
@@ -32,6 +33,7 @@ export const SideChatCreates = defineDocFamily<
   version: 1,
   scope: "session",
   family: true,
+  checkpointWhen: () => false,
   initial: () => ({ conversationId: null }),
 });
 export class SideChatError extends Error {
