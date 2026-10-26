@@ -1,23 +1,11 @@
 import { SUMMARY_TEXT_LIMIT, singleLine } from "./text";
+import { toolIcon } from "../../shared/tool-icons";
+
+export { toolIcon };
 
 function pick(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
   return typeof value === "string" ? value : undefined;
-}
-
-/** Emoji per built-in tool; unknown tools get a generic wrench. */
-export function toolIcon(name: string): string {
-  if (name.startsWith("subagent_")) return "🤖";
-  if (name.startsWith("task_")) return "🗓️";
-  switch (name) {
-    case "read": return "📖";
-    case "write": return "📄";
-    case "edit": return "📝";
-    case "bash": return "💻";
-    case "web_search": return "🔍";
-    case "web_extract": return "🌐";
-    default: return "🛠️";
-  }
 }
 
 /** What the call is about, derived from arguments; never includes file contents. */

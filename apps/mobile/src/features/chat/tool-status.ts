@@ -1,11 +1,12 @@
 import type { ConversationActivity } from "../../../../../shared/chat";
+import { toolIcon } from "../../../../../shared/tool-icons";
 
 /** Presentation only: every platform receives the same runtime-derived activity. */
 export function assistantLiveStatus(activity: ConversationActivity): string {
   switch (activity.kind) {
-    case "tool": return toolActivityLabel(activity.name);
+    case "tool": return `${toolIcon(activity.name)} ${toolActivityLabel(activity.name)}`;
     case "replying": return "正在回复";
-    case "thinking": return "思考中…";
+    case "thinking": return "工作中";
     case "idle": return "";
     default: { const exhaustive: never = activity; return exhaustive; }
   }
