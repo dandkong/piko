@@ -62,6 +62,7 @@ export class ConversationView {
     string,
     { name: string; summary: string }
   >();
+  private toolSegmentOpen = false;
   observationError?: Error;
 
   constructor(
@@ -174,10 +175,16 @@ export class ConversationView {
         this.compactions.sync(event.compactions);
         this.emit({ type: "refresh" });
       } else {
-        if (event.type === "compaction_start") this.compactions.start(event);
-        else if (event.type === "compaction_end")
+        if (event.type === "compaction_start") {
+          if (this.toolSegmentOpen) {
+            this.toolSegmentOpen = false;
+            this.emit({ type: "tool-break" });
+          }
+          this.compactions.start(event);
+        } else if (event.type === "compaction_end")
           this.compactions.end(event.taskId);
         if (event.type === "tool_execution_start") {
+          this.toolSegmentOpen = true;
           const summary = summarizeToolArgs(event.toolName, event.args);
           this.toolCalls.set(event.toolCallId, {
             name: event.toolName,
@@ -219,7 +226,12 @@ export class ConversationView {
           });
         } else if (event.type === "run_end") {
           this.toolCalls.clear();
+          this.toolSegmentOpen = false;
           this.emit({ type: "tool-clear" });
+        }
+        if (event.type === "entry_appended" && event.entry.kind === "pi.user" && this.toolSegmentOpen) {
+          this.toolSegmentOpen = false;
+          this.emit({ type: "tool-break" });
         }
         if (
           (event.type === "entry_appended" || event.type === "message_end") &&
@@ -228,6 +240,11 @@ export class ConversationView {
           this.entries.push(event.entry);
         this.output.apply(event);
         if (event.type === "run_start") {
+          if (this.toolSegmentOpen) {
+            this.toolSegmentOpen = false;
+            this.emit({ type: "tool-break" });
+          }
+          this.toolCalls.clear();
           this.activity(true, true);
         }
         if (event.type === "run_end") {
@@ -250,6 +267,10 @@ export class ConversationView {
       !this.output.partial(this.entries)
     )
       return;
+    if (event.type === "message" && event.message.role === "assistant" && event.message.content.length > 0 && this.toolSegmentOpen) {
+      this.toolSegmentOpen = false;
+      this.publish({ type: "tool-break" });
+    }
     if (event.type === "message" && event.previousId) {
       this.previousIds.set(event.message.id, event.previousId);
       if (this.previousIds.size > 128)

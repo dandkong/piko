@@ -1,6 +1,6 @@
 import type { ConversationStore } from "../../chat/conversations";
 import type { CompactionEvent } from "../../../shared/runtime";
-import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
+import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime, type ToolActivityEvent } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS, type StreamEvent } from "../../../shared/chat";
 import { toolIcon } from "../../runtime/tool-activity";
@@ -42,6 +42,7 @@ export class TelegramChannel {
   private unsubscribeTools?: () => void;
   private toolQueue = Promise.resolve();
   private readonly toolLines = new Map<string, string>();
+  private readonly toolReplies: TelegramReply[] = [];
   private readonly pendingToolClears = new Set<string>();
   private readonly deliveryExpectations = new Map<string, number>();
   private toolReply?: TelegramReply;
@@ -196,15 +197,22 @@ export class TelegramChannel {
       .catch(error => console.warn(`Telegram compaction notification failed (${telegramErrorCode(error)}).`));
   }
 
-  private queueTool(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): void {
+  private queueTool(event: ToolActivityEvent): void {
     this.toolQueue = this.toolQueue.then(() => this.handleToolActivity(event))
       .catch(error => console.warn(`Telegram tool activity failed (${telegramErrorCode(error)}).`));
   }
 
-  /** Aggregate a run's tool starts into one temporary status message. */
-  private async handleToolActivity(event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>): Promise<void> {
+  /** Aggregate contiguous tool starts into one temporary message per output segment. */
+  private async handleToolActivity(event: ToolActivityEvent): Promise<void> {
     const chatId = this.identity.userId;
+    if (event.type === "tool-break") {
+      this.toolLines.clear();
+      this.toolReply = undefined;
+      return;
+    }
     if (event.type === "tool-clear") {
+      this.toolLines.clear();
+      this.toolReply = undefined;
       if (this.deliveries.has(chatId) || (this.deliveryExpectations.get(chatId) ?? 0) > 0) {
         this.pendingToolClears.add(chatId);
         return;
@@ -218,15 +226,17 @@ export class TelegramChannel {
       `${toolIcon(name)} ${name}${summary ? `: ${summary}` : ""}`,
       SUMMARY_TEXT_LIMIT,
     )!);
-    this.toolReply ??= new TelegramReply(this.api, chatId, "plain");
+    if (!this.toolReply) {
+      this.toolReply = new TelegramReply(this.api, chatId, "plain");
+      this.toolReplies.push(this.toolReply);
+    }
     await this.toolReply.update([...this.toolLines.values()].join("\n"), true);
   }
 
   private async clearToolMessages(): Promise<void> {
     this.toolLines.clear();
-    const reply = this.toolReply;
     this.toolReply = undefined;
-    await reply?.deleteMessages();
+    for (const reply of this.toolReplies.splice(0)) await reply.deleteMessages();
   }
 
   private expectDelivery(chatId: string): void {

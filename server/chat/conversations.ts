@@ -9,6 +9,7 @@ import type {
   InputSource,
   ChatRuntime,
   ChatSession,
+  ToolActivityEvent,
 } from "../runtime/types";
 import { normalizeMessage } from "./input";
 /** Conversation-wide observation. The runtime owns input ordering and maintenance. */
@@ -47,6 +48,7 @@ export class ConversationStore {
           if (
             event.type === "tool" ||
             event.type === "tool-clear" ||
+            event.type === "tool-break" ||
             event.type === "compaction"
           )
             return;
@@ -133,14 +135,10 @@ export class ConversationStore {
   ) {
     return (await this.get()).subscribeBackgroundReplies(listener);
   }
-  /** Live tool calls only; they are never part of saved history. */
-  async subscribeToolActivity(
-    listener: (
-      event: Extract<StreamEvent, { type: "tool" } | { type: "tool-clear" }>,
-    ) => void,
-  ) {
+  /** Live tool-display events and segment boundaries; never part of saved history. */
+  async subscribeToolActivity(listener: (event: ToolActivityEvent) => void) {
     return (await this.get()).subscribe((event) => {
-      if (event.type === "tool" || event.type === "tool-clear") listener(event);
+      if (event.type === "tool" || event.type === "tool-clear" || event.type === "tool-break") listener(event);
     });
   }
   /** Main-session lifecycle notifications are separate from the SSE/chat transcript. */

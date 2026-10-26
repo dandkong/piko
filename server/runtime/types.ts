@@ -2,7 +2,8 @@ import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
 import type { ConversationResponse, HistoryPage, SubmissionReceipt, StreamEvent } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
-export type SessionEvent = StreamEvent | CompactionEvent;
+export type ToolActivityEvent = Extract<StreamEvent, { type: "tool" | "tool-clear" }> | { type: "tool-break" };
+export type SessionEvent = StreamEvent | CompactionEvent | { type: "tool-break" };
 /** A native compaction task was admitted; its lifecycle observer owns the terminal notification. */
 export class CompactionExecutionError extends Error {}
 export type InputSource = { channel: "app" } | { channel: "telegram"; botId: string; chatId: string };
