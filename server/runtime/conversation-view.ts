@@ -225,7 +225,7 @@ export class ConversationView {
         } else if (event.type === "run_end") {
           this.toolCalls.clear();
         }
-        if (event.type === "entry_appended" && event.entry.kind === "pi.user")
+        if (event.type === "message_end" && event.entry.kind === "pi.user")
           this.emit({ type: "input-applied" });
         if (
           (event.type === "entry_appended" || event.type === "message_end") &&
