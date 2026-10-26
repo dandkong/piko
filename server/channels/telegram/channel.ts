@@ -147,7 +147,8 @@ export class TelegramChannel {
 
   private queueCompaction(event: CompactionEvent) {
     const chatId = this.notificationChatId;
-    if (!this.accepting || !chatId) return;
+    // Automatic threshold/overflow compactions are invisible maintenance, not a new chat message.
+    if (!this.accepting || !chatId || event.reason !== "manual") return;
     // Serial sends preserve start/end order even when a compaction finishes before Telegram accepts the first notice.
     this.compactionQueue = this.compactionQueue.then(async () => { await this.api.send(chatId, formatCompaction(event), false); })
       .catch(error => console.warn(`Telegram compaction notification failed (${telegramErrorCode(error)}).`));
