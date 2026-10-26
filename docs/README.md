@@ -28,7 +28,7 @@
 | --- | --- |
 | [应用配置](operations/configuration.md) | 配置文件职责、环境变量和凭据边界 |
 | [Agent 运行时](operations/agent-runtime.md) | 模型、技能、思考强度和 Durable 行为 |
-| [Linux 部署](operations/deployment.md) | Web/API 启动、systemd 和访问保护 |
+| [Linux Web/API 运行](operations/deployment.md) | Web 构建、单进程启动与访问安全边界（不含部署模板） |
 | [SQLite 存储](operations/storage.md) | 原生存储、备份与恢复 |
 
 ## 仓库约定

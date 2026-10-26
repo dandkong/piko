@@ -13,7 +13,7 @@ Piko 是一款本地优先的个人助理：用 Expo / React Native 提供 Web�
 - 通过对话委派后台工作；保存任务并手动或按计划执行。
 - 工作区文件、记忆和技能；内置网页搜索与正文提取。
 - 可选 Telegram 私聊，与 App 共用主会话。
-- Web 可本地开发或部署；iOS 和 Android 客户端由 Expo 提供。
+- Web 可本地开发或通过 Bun 单进程运行；iOS 和 Android 客户端由 Expo 提供。通用部署方案尚未确定。
 
 **尚未完成：** Posts 目前只有空状态，Artifacts 只有标题占位；移动端附件选择界面、登录与多用户、权限/沙箱、推送通知和浏览器自动化均未接入。细节见[路线图](ROADMAP.md)。
 
@@ -38,7 +38,7 @@ bun run typecheck
 bun run build:web
 ```
 
-`bun run build` 导出 iOS 和 Android 的 JavaScript bundle，不会生成可直接安装或签名的原生安装包。Linux Web 部署见[部署说明](docs/operations/deployment.md)。
+`bun run build` 导出 iOS 和 Android 的 JavaScript bundle，不会生成可直接安装或签名的原生安装包。Linux Web/API 单进程运行见[运行说明](docs/operations/deployment.md)。
 
 ## 数据与安全
 

@@ -19,6 +19,6 @@
 
 客户端通过 `/api/chat` 读取后端唯一主会话，持续 `/api/chat/events` 观察两通道变化，POST 只提交输入。工作区和 Durable 原生 SQLite 都在后端，客户端不另建消息数据库；主聊不使用客户端生成的聊天 ID。职责见 [架构约定](../../docs/ARCHITECTURE.md)，恢复行为见 [工作区与主会话模型](../../docs/features/workspace-and-main-chat.md)。
 
-正式 Web 使用 `bun run build:web` 导出，由根目录 `bun run start` 托管，默认同源 /api；开发 Web 和原生客户端保持原默认地址。显式 EXPO_PUBLIC_PIKO_API_URL 在构建时生效。部署见[Linux 部署说明](../../docs/operations/deployment.md)。
+正式 Web 使用 `bun run build:web` 导出，由根目录 `bun run start` 托管，默认同源 /api；开发 Web 和原生客户端保持原默认地址。显式 EXPO_PUBLIC_PIKO_API_URL 在构建时生效。Linux Web/API 单进程运行见[运行说明](../../docs/operations/deployment.md)。
 
 生产 Web 带有 PWA manifest、水豚图标和 iOS 主屏幕元数据。iPhone 用 Safari 打开 HTTPS 地址，通过“分享 → 添加到主屏幕”安装后以独立窗口启动。当前不注册 Service Worker，因此需要联网，不提供离线缓存；聊天 API 与 SSE 也不会被 Service Worker 缓存。

@@ -34,7 +34,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 页面 → Hook/API → HTTP/SSE；路由/通道 → 会话业务 → 运行时接口 → Pi 适配器。SDK 类型留在 server/runtime，Telegram SDK 留在通道目录。Durable 是唯一 Agent 运行时和持久化来源；Piko 没有 SQLite、Workspace/Thread 表或 Run 状态副本，不引入 pi-server / pi-client。
 
-`bun run start` 由同一 Bun 监听提供 Web 静态文件、API/SSE 与可选 Telegram；静态根固定为 `apps/mobile/dist/web`，缺少构建即拒绝启动。Web 默认同源 `/api`；Piko 不过滤 Origin，也没有内置登录认证，访问控制由受信网络或认证代理负责。开发使用 Expo，Linux 部署见[部署说明](operations/deployment.md)。
+`bun run start` 由同一 Bun 监听提供 Web 静态文件、API/SSE 与可选 Telegram；静态根固定为 `apps/mobile/dist/web`，缺少构建即拒绝启动。Web 默认同源 `/api`；Piko 不过滤 Origin，也没有内置登录认证，访问控制由受信网络或认证代理负责。开发使用 Expo，Linux Web/API 单进程运行见[运行说明](operations/deployment.md)。
 
 ## 工作区与状态
 

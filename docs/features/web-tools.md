@@ -88,4 +88,4 @@ FIRECRAWL_API_KEY="..."
 
 `built-in` 不渲染 JavaScript、不复用浏览器登录态。JSDOM 不启用脚本或子资源加载；优先主正文，无法识别文章时退回清理后的页面文字，正文按 maxChars 截断。远端 provider 接收 URL 并自行抓取；每次请求只调用明确选择的一家，不自动降级。网页内容是来源材料，不是指令或授权。
 
-参考：[Agent 运行时](../operations/agent-runtime.md)、[应用配置](../operations/configuration.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 部署边界](../operations/deployment.md)。
+参考：[Agent 运行时](../operations/agent-runtime.md)、[应用配置](../operations/configuration.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 运行与安全边界](../operations/deployment.md)。

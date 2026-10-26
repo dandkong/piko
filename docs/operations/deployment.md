@@ -1,6 +1,6 @@
-# Linux 部署
+# Linux Web/API 运行
 
-状态：已提供 Web 构建、单进程启动与 systemd 模板。Web、API/SSE 和可选 Telegram 共用一个 Bun 进程及主会话，不运行 Expo 开发服务，不在启动时重新构建网页。
+状态：提供 Web 构建和单进程启动说明，不提供通用部署模板或服务单元。Web、API/SSE 和可选 Telegram 共用一个 Bun 进程及主会话，不运行 Expo 开发服务，不在启动时重新构建网页。
 
 ## 构建与运行
 
@@ -42,7 +42,7 @@ DEEPSEEK_SEARCH_API_KEY="可选：DeepSeek Search Key"
 BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 ```
 
-.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见[应用配置](configuration.md)与[Agent 运行时](agent-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。明确启用 TG 后缺少凭据或用户 ID 无效会拒绝启动，主动关闭 TG 才跳过其校验；已启用通道的致命轮询/启动错误会清理并退出整个后端，由 Restart=on-failure 自动拉起，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见[通道说明](../features/telegram-channel.md)。
+.env 权限设为 0600，不随仓库/镜像发布。同一字段没有 JSON/env 双入口，旧环境行为开关必须移除。配置见[应用配置](configuration.md)与[Agent 运行时](agent-runtime.md)。TG 使用 long polling，同一 Bot 只运行一个实例；后端需要出站连接 Telegram。明确启用 TG 后缺少凭据或用户 ID 无效会拒绝启动，主动关闭 TG 才跳过其校验；已启用通道的致命轮询/启动错误会清理并退出整个后端，进程重启策略由实际运行环境决定，网页/API 会短暂断开。网络抖动由 grammY 自动重试。命令与限制见[通道说明](../features/telegram-channel.md)。
 
 ## Web 与 API 地址
 
@@ -52,49 +52,20 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 
 静态服务只读取导出目录，拒绝隐藏文件、非法路径和越界链接。HTML 与无指纹文件要求重新验证，带内容指纹的资源可长期缓存。未知 API 与缺失脚本/图片返回 404，浏览器页面导航才使用 SPA fallback。Piko 不过滤 Origin，跨源浏览器请求会获得 CORS 响应头；部署访问控制由反向代理或网络边界负责。
 
-## systemd
+## 服务托管边界
 
-模板见 [deploy/piko.service](../../deploy/piko.service)，假设已有 piko 用户/组、源码 /opt/piko 和 Bun /home/piko/.bun/bin/bun。按实际机器修改 User、Group、WorkingDirectory、ExecStart，Bun 使用绝对路径。
+仓库不提供 systemd unit、容器配置或固定部署流程；后续部署方式尚未确定。`bun run start` 以前台方式启动单进程，如何启动、停止、更新以及是否自动重启，由实际运行环境决定。后端退出时会按既有逻辑关闭资源；重启不自动重放不确定执行或补发 TG 回复。
 
-服务的 PIKO_HOME=/var/lib/piko；StateDirectory 由 systemd 创建和保留，归服务账号所有，权限 0700。若先手动初始化，须以同一服务账号运行；管理员可先创建目录：
+源码和 PIKO_HOME 状态相互独立。备份前停止进程，成套保存 Durable SQLite 存储（包括 WAL）和助手工作区；备份与恢复见[SQLite 存储](storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次在 Linux 运行时使用新的 PIKO_HOME。
 
-```bash
-sudo install -d -m 700 -o piko -g piko /var/lib/piko
-```
-
-以服务账号完成依赖、构建和配置，安装已调整的 unit：
-
-```bash
-sudo cp deploy/piko.service /etc/systemd/system/piko.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now piko
-sudo systemctl status piko
-sudo journalctl -u piko -f
-```
-
-修改配置或部署新服务端代码后用 `sudo systemctl restart piko`。异常退出自动重启；正常停止发送 SIGTERM，后端取消工作、关闭存储并释放锁。重启不自动重放不确定执行或补发 TG 回复。
-
-更新前先等当前任务结束，停止服务再安装和构建，避免构建删除正在访问的资源：
-
-```bash
-sudo systemctl stop piko
-git pull --ff-only
-bun install --frozen-lockfile
-bun install --cwd apps/mobile --frozen-lockfile
-bun run build:web
-sudo systemctl start piko
-```
-
-源码由运行账号管理，更新不删除状态和工作区。备份停止服务后成套保存原生 SQLite 存储目录及工作区，不能遗漏 WAL；备份与恢复见[SQLite 存储](storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次 Linux 部署使用新的 PIKO_HOME。
-
-## 访问与反向代理
+## 网络访问与安全边界
 
 默认监听 loopback，可通过 SSH 转发访问；局域网访问在后端环境/.env 设置 PIKO_HOST=0.0.0.0（不在 JSON）。当前没有 Piko 登录验证，对外入口使用受保护的网络或带认证的反向代理，认证须覆盖网页与全部 API/SSE。
 
 代理转发整个站点到 Bun 的同一端口，保留 Host，不缓存 API，关闭 SSE 缓冲，读取超时长于 15 秒心跳。Web 通过同源 `/api` 访问，不需要配置 CORS Origin。当前 Piko 不做 Origin 白名单或身份认证；反向代理应统一校验网页、API 和 SSE，并限制后端端口不要绕过代理直连。Web 无需设置 `EXPO_PUBLIC_PIKO_API_URL`。
 
-## 部署验证边界
+## 验证边界
 
-仓库提供 Web 构建、单进程启动和 systemd 模板。具体 Linux 发行版、代理认证、systemd 开机启动、真实 Telegram 网络与设备浏览器行为，需在目标部署环境验证。
+文档覆盖 Web 构建、单进程启动与安全边界；目标部署平台、服务管理器、代理认证、真实 Telegram 网络和设备浏览器行为，需在未来选定的环境中验证。
 
-参考：[Expo Web 导出](https://docs.expo.dev/workflow/web/)、[Bun 文件响应](https://bun.sh/docs/guides/http/stream-file)、[systemd StateDirectory](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)。
+参考：[Expo Web 导出](https://docs.expo.dev/workflow/web/)、[Bun 文件响应](https://bun.sh/docs/guides/http/stream-file)。

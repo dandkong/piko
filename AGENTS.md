@@ -11,7 +11,7 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 所有可交互控件的状态、尺寸、颜色、动效与组件用法见 [交互与视觉规范](docs/INTERACTION.md)，新增和修改 UI 必须遵循。
 - 依赖方向、工作区与领域模型见 [架构约定](docs/ARCHITECTURE.md)。
 - 当前状态与未来方向见 [路线图](ROADMAP.md)。
-- 产品功能说明放在 `docs/features/`；配置、部署和存储说明放在 `docs/operations/`。文档索引见 [docs/README.md](docs/README.md)，已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
+- 产品功能说明放在 `docs/features/`；配置、运行环境和存储说明放在 `docs/operations/`。文档索引见 [docs/README.md](docs/README.md)，已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
 
 文档只描述当前能力、已确定方向和明确限制，不记录实现过程；修改行为时同步对应文档，不要将方案写成现有能力。本文件指导仓库开发，不是运行中 Piko 助手的工作区 `AGENTS.md`。
 

@@ -99,4 +99,4 @@ JSON 语法/结构、放错位置、HTTP 或路径错误会拒绝启动；错误
 
 在 `PIKO_HOME/config/` 配置 piko.json、models.json、auth.json 与私有 .env。停止后备份整个私有目录；备份仍含敏感资料，不提交或公开。
 
-凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见[Linux 部署](deployment.md)。
+凭据不进入源码、Git、镜像、前端 EXPO_PUBLIC_* 或助手提示；私有 .env 保持 0600，运行账号独立控制访问。JSON 与 env 的分工、cwd 或工具来源分类都不是沙箱。Piko 没有自身登录验证/Origin 白名单，公开部署仍需反向代理认证覆盖页面、API、SSE，并限制绕过代理直连；见[Linux 运行说明](deployment.md)。
