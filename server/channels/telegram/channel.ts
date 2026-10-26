@@ -7,6 +7,7 @@ import { toolIcon } from "../../runtime/tool-activity";
 import { SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { AttachmentStore } from "../../attachments";
 import { telegramErrorCode, type TelegramTransport } from "./api";
+import { withTelegramQuote } from "./quote";
 import { deliverConversation, TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
 import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus";
 import { TelegramSubagentMenus } from "./subagent-menu";
@@ -16,7 +17,7 @@ import { WELCOME, busyMessage, formatCompaction, formatHelp, formatRecent, forma
 export { TELEGRAM_COMMANDS } from "./command-format";
 
 export type TelegramMessage = {
-  chatId: string; messageId: string; actorId: string; chatType: string; text?: string;
+  chatId: string; messageId: string; actorId: string; chatType: string; text?: string; replyText?: string;
   /** Photos and image documents; the channel downloads them into the shared attachment store. */
   attachments?: { fileId: string; name?: string; mime?: string }[];
   topic?: boolean; business?: boolean;
@@ -129,13 +130,20 @@ export class TelegramChannel {
           bytes: await this.api.download(item.fileId), name: item.name, mime: item.mime })).path);
       } catch { this.feedback(message, "Couldn't read that file. Send it again under 20 MB."); return; }
     }
-    try { normalizeMessage(text, paths.length > 0); } catch { this.feedback(message, "Send a message with 1–12,000 characters."); return; }
+    let prompt: string;
+    try {
+      const normalized = normalizeMessage(text, paths.length > 0);
+      prompt = normalizeMessage(withTelegramQuote(normalized, message.replyText), paths.length > 0);
+    } catch {
+      this.feedback(message, "Send a message with 1–12,000 characters.");
+      return;
+    }
     let expectedDelivery = false;
     try {
       const baseline = await this.conversations.snapshot();
       this.expectDelivery(message.chatId);
       expectedDelivery = true;
-      const result = await this.conversations.submit(text, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId }, paths);
+      const result = await this.conversations.submit(prompt, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId }, paths);
       if (result.duplicate) return;
       const known = new Set(baseline.messages.filter(item => item.role === "assistant" && !item.id.startsWith("live-")).map(item => item.id));
       this.startDelivery(message.chatId, known);

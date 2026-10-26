@@ -29,6 +29,8 @@ export class TelegramBot {
       const audio = "audio" in message ? message.audio : undefined;
       const voice = "voice" in message ? message.voice : undefined;
       const caption = "caption" in message ? message.caption : undefined;
+      const reply = message.reply_to_message;
+      const replyText = message.quote?.text ?? reply?.text ?? reply?.caption;
       // Whatever the user sends is stored and the path reaches the model; it decides how to inspect the file.
       const attachments = [
         ...(photo ? [{ fileId: photo.file_id, name: `photo-${Date.now()}.jpg`, mime: "image/jpeg" }] : []),
@@ -38,7 +40,7 @@ export class TelegramBot {
         ...(voice ? [{ fileId: voice.file_id, name: `voice-${Date.now()}.ogg`, mime: voice.mime_type ?? "audio/ogg" }] : []),
       ].slice(0, MAX_ATTACHMENTS);
       await this.channel?.handle({ chatId: String(ctx.chat.id), messageId: String(message.message_id),
-        actorId: String(ctx.from?.id ?? ""), chatType: ctx.chat.type, text: message.text ?? caption, attachments,
+        actorId: String(ctx.from?.id ?? ""), chatType: ctx.chat.type, text: message.text ?? caption, replyText, attachments,
         topic: message.message_thread_id !== undefined || message.is_topic_message,
         business: message.business_connection_id !== undefined || message.guest_query_id !== undefined });
     });
