@@ -1,4 +1,4 @@
-import { Trash2, MoreHorizontal, Pencil } from "lucide-react-native";
+import { Trash2, MoreVertical, Pencil } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../../../../shared/side-chats";
@@ -77,7 +77,7 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         <View collapsable={false} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
           <IconButton label={`旁聊菜单：${chat.title}`} hint="重命名或删除" size="sm" variant="plain"
             accessibilityState={{ expanded: menu?.chat.id === chat.id }} onPress={sideChatBusy ? undefined : () => openMenu(chat)}>
-            <MoreHorizontal size={20} strokeWidth={1.8} color={colors.muted} />
+            <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
           </IconButton>
         </View>
       </View>
@@ -90,8 +90,8 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         message="将永久删除聊天内容和所属后台执行，无法恢复。附件、工作区文件和历史备份不会删除。"
         onCancel={dismiss}
         onConfirm={() => void remove()}
-        confirmLabel="确认删除旁聊"
-        cancelLabel="取消删除旁聊"
+        confirmLabel="删除"
+        cancelLabel="取消"
         busyLabel="删除中…"
         busy={saving || !!sideChatBusy}
         error={deleteError}

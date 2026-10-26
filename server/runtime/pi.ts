@@ -136,6 +136,7 @@ class PikoRuntime {
           if (!this.main.canReport) throw new RuntimeBusyError();
           await this.main.ensureReady();
         },
+        opened.maintenance,
       );
       this.memory = new MemoryCurationService(
         harness,
@@ -143,6 +144,7 @@ class PikoRuntime {
         () => this.main.bindings,
       );
       this.main.attachMemory(this.memory);
+      await this.tasks.recoverDeletions();
       harness.resume();
       this.tasks.start();
       await this.memory.start();

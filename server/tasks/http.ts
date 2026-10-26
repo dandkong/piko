@@ -21,6 +21,7 @@ function command(value: unknown): AssistantTaskCommand {
   const id = taskId(input.id);
   if (input.action === "run") return { action: "run", requestId, id };
   if (input.action === "stop") return { action: "stop", requestId, id };
+  if (input.action === "delete") return { action: "delete", requestId, id };
   if (input.action === "update")
     return { action: "update", requestId, id, task: taskDraft(input.task) };
   if (

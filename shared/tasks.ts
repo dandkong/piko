@@ -25,5 +25,6 @@ export type AssistantTaskCommand = { requestId: string } & (
   | { action: "status"; id: string; status: AssistantTask["status"] }
   | { action: "run"; id: string }
   | { action: "stop"; id: string }
+  | { action: "delete"; id: string }
 );
 export type AssistantTaskReceipt = { id: string; executionId?: string; duplicate: boolean };

@@ -15,6 +15,21 @@ export const TaskDefinitions = defineDoc<{ tasks: StoredTask[] }>({
   checkpointWhen: () => false,
   initial: () => ({ tasks: [] }),
 });
+export type PendingTaskDeletion = {
+  taskId: string;
+  executionConversations: number[];
+  requestId: string;
+};
+export const TaskDeletionState = defineDoc<{
+  pending: PendingTaskDeletion[];
+}>({
+  kind: "piko.task-deletion",
+  version: 1,
+  scope: "session",
+  checkpointWhen: () => false,
+  initial: () => ({ pending: [] }),
+});
+
 export const Receipts = defineDocFamily<
   { hash: string; id: string; executionId: string | null },
   null

@@ -1,11 +1,19 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
   ChevronDown,
   ChevronUp,
+  MoreVertical,
+  Play,
+  Trash2,
 } from "lucide-react-native";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import type { TaskExecution, AssistantTask } from "../../../../../shared/tasks";
+import { AnchoredMenuContent } from "../../components/AnchoredMenu";
+import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
+import { IconButton } from "../../components/IconButton";
+import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
 import { TactilePressable } from "../../components/TactilePressable";
@@ -32,6 +40,7 @@ const statusNames: Record<FinishedExecution["status"], string> = {
   interrupted: "已中断",
 };
 const scheduleLabel = (task: AssistantTask) => task.scheduleText;
+type MenuState = { task: AssistantTask; left: number; top: number };
 
 /** The assistant's standing commitments: the task list stays lean, and detail shows finished records. */
 export function TasksScreen({
@@ -54,38 +63,49 @@ export function TasksScreen({
     openTask,
     toggle,
     toggleArchive,
+    runTask,
+    deleteTask,
+    clearError,
     toggleSection,
   } = useTasks();
+  const [menu, setMenu] = useState<MenuState>();
+  const [pendingDelete, setPendingDelete] = useState<AssistantTask>();
+  const [deleting, setDeleting] = useState(false);
+  const deletingRef = useRef(false);
+  const anchors = useRef(new Map<string, View>());
+  const { width, height } = useWindowDimensions();
+  useDismissOnBack(!!menu, () => setMenu(undefined));
+  useEffect(() => { setMenu(undefined); }, [width, height]);
+  const openMenu = (task: AssistantTask) => anchors.current.get(task.id)?.measureInWindow((x, y, w, h) => {
+    const menuWidth = 176;
+    const menuHeight = (task.status === "active" ? 3 : 2) * 48 + 16;
+    const below = y + h + 4;
+    const top = below + menuHeight <= height - 10 ? below : Math.max(10, y - menuHeight - 4);
+    setMenu({ task, left: Math.max(10, Math.min(width - menuWidth - 10, x + w - menuWidth)), top });
+  });
+  const confirmDelete = (task: AssistantTask) => {
+    setMenu(undefined);
+    clearError();
+    setPendingDelete(task);
+  };
+  const remove = async () => {
+    if (!pendingDelete || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    try {
+      if (await deleteTask(pendingDelete)) setPendingDelete(undefined);
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
+    }
+  };
   const currentTask = detail?.task;
   const activeTasks = tasks.filter((value) => value.status === "active");
   const archivedTasks = tasks.filter((value) => value.status === "archived");
   const records = detail?.executions.filter(isFinished) ?? [];
   const renderTask = (value: AssistantTask) => {
-    const archived = value.status === "archived";
     return (
       <ScreenCard key={value.id} style={styles.row}>
-        <TactilePressable
-          accessibilityLabel={archived ? "恢复任务" : "归档任务"}
-          accessibilityHint={
-            archived
-              ? "恢复任务和未来调度，不立即执行"
-              : "停止未来调度，保留任务和执行记录"
-          }
-          accessibilityRole="button"
-          disabled={busy || value.latest?.status === "running"}
-          hitSlop={11}
-          onPress={() => toggleArchive(value)}
-          scaleTo={0.9}
-          style={styles.archiveHit}
-          faceStyle={styles.archiveControl}
-          variant="plain"
-        >
-          {archived ? (
-            <ArchiveRestore size={18} strokeWidth={1.8} color={colors.muted} />
-          ) : (
-            <Archive size={18} strokeWidth={1.8} color={colors.muted} />
-          )}
-        </TactilePressable>
         <TactilePressable
           accessibilityRole="button"
           disabled={busy}
@@ -98,6 +118,26 @@ export function TasksScreen({
           <Text style={styles.name}>{value.title}</Text>
           <Text style={styles.meta}>{scheduleLabel(value)}</Text>
         </TactilePressable>
+        <View
+          collapsable={false}
+          ref={(node) => {
+            if (node) anchors.current.set(value.id, node);
+            else anchors.current.delete(value.id);
+          }}
+        >
+          <IconButton
+            label={`更多任务操作：${value.title}`}
+            hint="执行、归档或删除任务"
+            size="sm"
+            variant="plain"
+            accessibilityState={{ expanded: menu?.task.id === value.id }}
+            disabled={busy}
+            onPress={() => openMenu(value)}
+            testID="task-item-menu-button"
+          >
+            <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
+          </IconButton>
+        </View>
       </ScreenCard>
     );
   };
@@ -146,7 +186,7 @@ export function TasksScreen({
           ) : undefined
         }
       />
-      {!!error && (
+      {!!error && !pendingDelete && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
@@ -267,6 +307,69 @@ export function TasksScreen({
           )}
         </>
       )}
+
+      <Modal
+        transparent
+        visible={!!menu || !!pendingDelete}
+        animationType="fade"
+        onRequestClose={() => { if (!pendingDelete) setMenu(undefined); }}
+      >
+        {pendingDelete ? (
+          <ConfirmationDialogContent
+            title={`删除「${pendingDelete.title}」？`}
+            message="将永久删除任务定义、全部执行记录和专属工作区，无法恢复。已进入主聊天的内容、附件和历史备份不会删除，外部副作用也不会撤销。"
+            onCancel={() => setPendingDelete(undefined)}
+            onConfirm={() => void remove()}
+            confirmLabel="删除"
+            cancelLabel="取消"
+            busyLabel="删除中…"
+            busy={deleting || busy}
+            error={error}
+            testID="task-delete-dialog"
+          />
+        ) : menu ? (
+          <AnchoredMenuContent
+            left={menu.left}
+            top={menu.top}
+            width={176}
+            closeLabel="关闭任务菜单"
+            onClose={() => setMenu(undefined)}
+            testID="task-item-menu"
+            actions={[
+              ...(menu.task.status === "active" ? [{
+                id: "run",
+                label: "执行",
+                accessibilityLabel: `立即执行任务：${menu.task.title}`,
+                hint: "立即运行一次，不更改未来调度",
+                icon: <Play size={18} strokeWidth={1.8} color={colors.text} />,
+                disabled: busy || menu.task.latest?.status === "running",
+                onPress: () => { setMenu(undefined); void runTask(menu.task); },
+              }] : []),
+              {
+                id: menu.task.status === "archived" ? "restore" : "archive",
+                label: menu.task.status === "archived" ? "恢复" : "归档",
+                accessibilityLabel: menu.task.status === "archived" ? `恢复任务：${menu.task.title}` : `归档任务：${menu.task.title}`,
+                hint: menu.task.status === "archived" ? "重新启用未来调度，不立即执行" : "停止未来调度，保留任务和执行记录",
+                icon: menu.task.status === "archived"
+                  ? <ArchiveRestore size={18} strokeWidth={1.8} color={colors.text} />
+                  : <Archive size={18} strokeWidth={1.8} color={colors.text} />,
+                disabled: busy || (menu.task.status === "active" && menu.task.latest?.status === "running"),
+                onPress: () => { setMenu(undefined); void toggleArchive(menu.task); },
+              },
+              {
+                id: "delete",
+                label: "删除",
+                accessibilityLabel: `删除任务：${menu.task.title}`,
+                hint: menu.task.latest?.status === "running" ? "请先停止当前执行" : "永久删除任务及其执行记录和专属工作区",
+                icon: <Trash2 size={18} strokeWidth={1.8} color={colors.danger} />,
+                destructive: true,
+                disabled: busy || menu.task.latest?.status === "running",
+                onPress: () => confirmDelete(menu.task),
+              },
+            ]}
+          />
+        ) : null}
+      </Modal>
     </Screen>
   );
 }
@@ -305,14 +408,6 @@ const styles = StyleSheet.create({
     padding: 4,
     margin: -4,
     borderRadius: 12,
-  },
-  archiveHit: { width: 22, height: 22, marginTop: 2 },
-  archiveControl: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
   },
   sectionGroup: { gap: 12 },
   sectionTasks: { gap: 12 },

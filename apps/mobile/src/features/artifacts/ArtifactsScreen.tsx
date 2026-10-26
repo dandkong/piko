@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { ChevronRight, Download, FileText, Folder, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react-native";
+import { ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
@@ -206,7 +206,7 @@ export function ArtifactsScreen({
               onPress={() => openMenu(entry)}
               testID="artifact-item-menu-button"
             >
-              <MoreHorizontal size={20} strokeWidth={1.8} color={colors.muted} />
+              <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
             </IconButton>
           </View>
         </ScreenCard>

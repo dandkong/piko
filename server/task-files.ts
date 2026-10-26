@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isWithin, readGuidance } from "./workspace";
 import { AssistantTaskError, taskId } from "./domain/tasks";
@@ -71,5 +71,29 @@ export class TaskFiles {
     const directory = this.directory(id);
     await this.checked(join(directory, "MEMORY.md"), false);
     return readGuidance(directory, "MEMORY.md");
+  }
+  async remove(id: string) {
+    const parent = join(this.workspace, "tasks");
+    const directory = this.directory(id);
+    try {
+      await this.checked(parent, true);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    let info;
+    try {
+      info = await lstat(directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    // Unlink a task-directory symlink itself; never follow it into another workspace.
+    if (info.isSymbolicLink()) {
+      await rm(directory);
+      return;
+    }
+    await this.checked(directory, true);
+    await rm(directory, { recursive: true });
   }
 }

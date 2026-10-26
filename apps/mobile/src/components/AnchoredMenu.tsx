@@ -10,6 +10,7 @@ export type AnchoredMenuAction = {
   icon: ReactNode;
   onPress: () => void;
   destructive?: boolean;
+  disabled?: boolean;
   hint?: string;
 };
 
@@ -46,6 +47,7 @@ export function AnchoredMenuContent({
             accessibilityRole="menuitem"
             accessibilityLabel={action.accessibilityLabel}
             accessibilityHint={action.hint}
+            disabled={action.disabled}
             variant="plain"
             scaleTo={1}
             faceStyle={styles.item}

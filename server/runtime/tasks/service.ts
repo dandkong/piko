@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import {
+  LiveDoc,
   ROOT_CONVERSATION_ID,
   type Agent,
   type ConversationId,
@@ -24,6 +25,9 @@ import {
 import type { InputSource, AssistantTasksRuntime } from "../types";
 import { TaskFiles } from "../../task-files";
 import type { SubagentRuntime } from "../subagents/runtime";
+import { backgroundJobs, taskRecords } from "../subagents/queries";
+import { TaskContext } from "./context";
+import type { StorageMaintenance } from "../storage-maintenance";
 import {
   activeTaskExecutions,
   latestTaskExecutions,
@@ -31,7 +35,12 @@ import {
   taskExecutionResult,
 } from "./queries";
 
-import { TaskDefinitions, Receipts, type StoredTask } from "./documents";
+import {
+  TaskDefinitions,
+  TaskDeletionState,
+  Receipts,
+  type StoredTask,
+} from "./documents";
 
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const publicTask = ({ source: _source, ...task }: StoredTask) => plain(task);
@@ -46,6 +55,7 @@ function find(values: Awaited<ReturnType<typeof definitions>>, id: string) {
 export class DurableAssistantTasks implements AssistantTasksRuntime {
   private timer?: ReturnType<typeof setInterval>;
   private tickPending?: Promise<void>;
+  private deletionLine: Promise<void> = Promise.resolve();
   private closing = false;
   readonly files: TaskFiles;
   constructor(
@@ -53,6 +63,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     workspace: string,
     private readonly children: SubagentRuntime,
     private readonly ready: () => Promise<void>,
+    private readonly maintenance: StorageMaintenance,
     private readonly now = Date.now,
   ) {
     this.files = new TaskFiles(workspace);
@@ -78,9 +89,11 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     clearInterval(this.timer);
     this.timer = undefined;
     await this.tickPending?.catch(() => {});
+    await this.deletionLine.catch(() => {});
   }
 
   async list() {
+    await this.recoverDeletions();
     return this.harness.commit(async (tx) => {
       const latest = await latestTaskExecutions(tx);
       return (await definitions(tx))
@@ -132,21 +145,30 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
         );
       return value;
     };
-    const prior = await this.harness.commit(
-      async (tx) => ({ ...(await receipt(tx)) }),
+    const prior = (await this.harness.snapshot(
+      Receipts,
+      ROOT_CONVERSATION_ID,
+      command.requestId,
       ctx,
-    );
+    )) ?? { hash: "", id: "", executionId: null };
+    if (prior.hash && prior.hash !== hash)
+      throw new AssistantTaskError(
+        "Request identity was already used for a different command.",
+        409,
+      );
     if (prior.hash) {
       if (command.action === "stop" && prior.executionId)
         await this.children.stop(this.harness, ROOT_CONVERSATION_ID, [
           Number(prior.executionId) as ConversationId,
         ]);
+      if (command.action === "delete") await this.finishDeletion(command.id);
       return {
         id: prior.id,
         ...(prior.executionId && { executionId: prior.executionId }),
         duplicate: true,
       };
     }
+    if (command.action === "delete") return this.delete(command, hash, signal);
     if (command.action === "run") await this.ready();
     const agent =
       command.action === "run"
@@ -266,6 +288,119 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
       );
     return result;
   }
+
+  private async delete(
+    command: Extract<AssistantTaskCommand, { action: "delete" }>,
+    hash: string,
+    signal?: AbortSignal,
+  ): Promise<AssistantTaskReceipt> {
+    const id = taskId(command.id);
+    const existing = (await this.harness.snapshot(TaskDeletionState, ctx))
+      ?.pending.find((item) => item.taskId === id);
+    if (existing) {
+      await this.finishDeletion(id);
+      return { id, duplicate: true };
+    }
+    const result = await this.harness.commit(async (tx) => {
+      signal?.throwIfAborted();
+      const saved = await tx.doc(
+        Receipts,
+        ROOT_CONVERSATION_ID,
+        command.requestId,
+        null,
+      );
+      if (saved.hash) {
+        if (saved.hash !== hash)
+          throw new AssistantTaskError(
+            "Request identity was already used for a different command.",
+            409,
+          );
+        return { id: saved.id, duplicate: true };
+      }
+      const deletion = await tx.doc(TaskDeletionState);
+      if (deletion.pending.some((item) => item.taskId === id))
+        return { id, duplicate: true };
+      const values = await definitions(tx);
+      const task = find(values, id);
+      const jobs = await backgroundJobs(tx, ROOT_CONVERSATION_ID);
+      const rootTasks = await taskRecords(tx, ROOT_CONVERSATION_ID);
+      const executions: number[] = [];
+      for (const child of jobs.children) {
+        if ((await tx.doc(TaskContext, child)).binding?.taskId !== id) continue;
+        const live = await tx.doc(LiveDoc, child);
+        const reporters = jobs.reporters.get(child) ?? [];
+        const conversation = await tx.conversation(child);
+        const anchor = rootTasks.find(
+          (record) => record.id === conversation?.owner?.taskId,
+        );
+        const ownedTasks = await taskRecords(tx, child);
+        if (
+          live.run ||
+          reporters.some((record) => record.state.status !== "terminal") ||
+          anchor?.state.status !== "terminal" ||
+          ownedTasks.some((record) => record.state.status !== "terminal")
+        )
+          throw new AssistantTaskError(
+            "Stop this task and wait for its report to finish before deleting it.",
+            409,
+          );
+        executions.push(Number(child));
+      }
+      // Validate the full ownership/fork closure before recording an irreversible intent.
+      await this.maintenance.planTask(id, executions, command.requestId);
+      const remaining = values.filter((value) => value.id !== task.id).map(plain);
+      // Rebase this latest-only document as a new incarnation so historical deltas
+      // containing the deleted prompt are retired and physically erased.
+      await tx.retireDoc(TaskDefinitions, ROOT_CONVERSATION_ID);
+      (await tx.doc(TaskDefinitions, ROOT_CONVERSATION_ID)).tasks = remaining;
+      deletion.pending.push({
+        taskId: id,
+        executionConversations: executions,
+        requestId: command.requestId,
+      });
+      Object.assign(saved, { hash, id, executionId: null });
+      return { id, duplicate: false };
+    }, ctx);
+    await this.finishDeletion(id);
+    return result;
+  }
+
+  async recoverDeletions() {
+    const pending = (await this.harness.snapshot(TaskDeletionState, ctx))
+      ?.pending.slice() ?? [];
+    for (const item of pending) await this.finishDeletion(item.taskId);
+    await this.maintenance.compactIfRequired(this.harness);
+  }
+
+  private finishDeletion(id: string) {
+    const operation = this.deletionLine.then(async () => {
+      const pending = (await this.harness.snapshot(TaskDeletionState, ctx))
+        ?.pending.find((item) => item.taskId === id);
+      if (!pending) {
+        await this.maintenance.compactIfRequired(this.harness);
+        return;
+      }
+      await this.maintenance.eraseTask(
+        this.harness,
+        pending.taskId,
+        pending.executionConversations,
+        pending.requestId,
+      );
+      await this.files.remove(pending.taskId);
+      await this.harness.commit(async (tx) => {
+        const deletion = await tx.doc(TaskDeletionState);
+        const remaining = deletion.pending
+          .filter((item) => item.taskId !== id)
+          .map(plain);
+        await tx.retireDoc(TaskDeletionState);
+        (await tx.doc(TaskDeletionState)).pending = remaining;
+      }, ctx);
+      await this.maintenance.compact(this.harness);
+    });
+    this.deletionLine = operation.catch(() => {});
+    return operation;
+  }
+
   source(tx: Tx, callId: string) {
     return this.children.source(tx, callId);
   }

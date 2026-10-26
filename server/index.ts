@@ -37,8 +37,8 @@ const server = Bun.serve({
   development: false,
   hostname: config.hostname,
   port: config.port,
-  // Allow the 15-second SSE heartbeat to arrive before Bun's default idle timeout.
-  idleTimeout: 60,
+  // Leave room for large durable task deletions to compact SQLite before replying.
+  idleTimeout: 120,
   fetch: createApp({ config, runtime, conversations, chats, attachments, artifacts, web }),
 });
 

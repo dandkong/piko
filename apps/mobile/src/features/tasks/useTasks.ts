@@ -107,7 +107,7 @@ export function useTasks() {
   };
 
   const send = async (body: Command) => {
-    if (sending.current) return;
+    if (sending.current) return false;
     sending.current = true;
     setBusy(true);
     setError("");
@@ -119,22 +119,31 @@ export function useTasks() {
       };
     try {
       await sendCommand(pending.current.command);
-      if (!mounted.current) return;
+      if (!mounted.current) return true;
       pending.current = undefined;
       setRefresh((count) => count + 1);
-    } catch {
-      if (mounted.current) setError("操作没有成功，请稍后再试。");
+      return true;
+    } catch (failure) {
+      if (mounted.current)
+        setError(failure instanceof Error ? failure.message : "操作没有成功，请稍后再试。");
+      return false;
     } finally {
       sending.current = false;
       if (mounted.current) setBusy(false);
     }
   };
-  const toggleArchive = (entry: AssistantTask) => {
-    void send({
+  const toggleArchive = (entry: AssistantTask) =>
+    send({
       action: "status",
       id: entry.id,
       status: entry.status === "archived" ? "active" : "archived",
     });
+  const runTask = (entry: AssistantTask) =>
+    send({ action: "run", id: entry.id });
+  const deleteTask = async (entry: AssistantTask) => {
+    const succeeded = await send({ action: "delete", id: entry.id });
+    if (succeeded && selection.current === entry.id) openTask();
+    return succeeded;
   };
   const toggleSection = (section: "active" | "archived") => {
     setOpenSections((value) => ({ ...value, [section]: !value[section] }));
@@ -153,6 +162,9 @@ export function useTasks() {
     openTask,
     toggle,
     toggleArchive,
+    runTask,
+    deleteTask,
+    clearError: () => setError(""),
     toggleSection,
   };
 }
