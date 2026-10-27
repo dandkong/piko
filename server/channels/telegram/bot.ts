@@ -2,6 +2,7 @@ import { Bot } from "grammy";
 import type { ConversationStore } from "../../chat/conversations";
 import type { ChatRuntime } from "../../runtime/types";
 import { TelegramApi, telegramErrorCode } from "./api";
+import { richBlocksToPlainText } from "./quote";
 import { TelegramChannel, TELEGRAM_COMMANDS } from "./channel";
 import type { TelegramConfig } from "../../config";
 import type { AttachmentStore } from "../../attachments";
@@ -30,7 +31,9 @@ export class TelegramBot {
       const voice = "voice" in message ? message.voice : undefined;
       const caption = "caption" in message ? message.caption : undefined;
       const reply = message.reply_to_message;
-      const replyText = message.quote?.text ?? reply?.text ?? reply?.caption;
+      const replyText = [message.quote?.text, reply?.text, reply?.caption,
+        reply?.rich_message && richBlocksToPlainText(reply.rich_message.blocks)]
+        .find((text): text is string => typeof text === "string" && !!text.trim());
       // Whatever the user sends is stored and the path reaches the model; it decides how to inspect the file.
       const attachments = [
         ...(photo ? [{ fileId: photo.file_id, name: `photo-${Date.now()}.jpg`, mime: "image/jpeg" }] : []),

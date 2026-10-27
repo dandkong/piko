@@ -50,11 +50,12 @@ export function ChatTab({ headerHeight, footerHeight }: {
         >
           <View style={{ gap: 7 }}>
             <AttachmentList attachments={item.attachments} />
-            {hasContent ? (item.role === "assistant" ? (
-              <AssistantMessage content={item.content} streaming={item.id.startsWith("live-")} />
-            ) : (
-              <Text selectable style={styles.messageText}>{item.content}</Text>
-            )) : null}
+            {hasContent ? (
+              <AssistantMessage
+                content={item.content}
+                streaming={item.role === "assistant" && item.id.startsWith("live-")}
+              />
+            ) : null}
           </View>
         </View>
       </>

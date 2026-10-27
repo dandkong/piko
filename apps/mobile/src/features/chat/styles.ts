@@ -59,11 +59,6 @@ export const styles = StyleSheet.create({
     backgroundColor: "#EEEEF0",
     borderBottomLeftRadius: 7,
   },
-  messageText: {
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 24,
-  },
   errorNotice: {
     padding: 16,
     borderRadius: 14,
