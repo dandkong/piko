@@ -1,6 +1,6 @@
 # Durable 配置与运行时
 
-状态：服务端使用 pi-durable / pi-ai / chord 1.4.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 配置管理界面尚未实现，可编辑 JSON 并调用控制 API。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
+状态：服务端使用 pi-durable / pi-ai / chord 1.4.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 已提供只读设置概览，配置写入界面尚未实现；配置文件可在后端编辑。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
 原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。当前使用 Durable 原生 SQLite 存储；普通不确定执行在重启时不自动重跑，已完成子任务的报告与可恢复重试阶段会继续执行。存储位置和升级影响见[SQLite 存储](storage.md)。
 
@@ -170,7 +170,7 @@ Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发�
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 返回图片块，图片由 Photon 处理器缩放/转码；非视觉模型接收占位诊断，附件存储见[附件与图片读取](../features/attachments.md)。Tasks 任务展示、结果时间线、内部记忆整理和全局产物浏览/下载/确认删除已接入；RN 配置管理、工具轨迹及任务执行产物聚合尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 返回图片块，图片由 Photon 处理器缩放/转码；非视觉模型接收占位诊断，附件存储见[附件与图片读取](../features/attachments.md)。Tasks 任务展示、结果时间线、内部记忆整理和全局产物浏览/下载/确认删除已接入；RN 只读设置概览已接入，配置写入、工具轨迹及任务执行产物聚合尚未接入。
 
 类型检查覆盖 API 与移动端；程序不提供文件回滚或哈希冲突保护，真机后台与真实长对话仍需使用验证。
 

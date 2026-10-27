@@ -1,4 +1,5 @@
 import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
+import type { SettingsOverview } from "../../shared/settings";
 import type { ConversationResponse, ConversationActivity, HistoryPage, MessageEvent, SubmissionReceipt } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
@@ -57,6 +58,7 @@ export interface ChatRuntime {
   subagents(): Promise<AssistantSubagentsRuntime>;
   skill(name: string): Promise<WorkspaceSkillDetail | undefined>;
   isModelReady(): Promise<boolean>;
+  settings(): Promise<SettingsOverview>;
   sideChats: {
     list(): Promise<SideChat[]>;
     create(requestId: string, title: string): Promise<SideChat>;

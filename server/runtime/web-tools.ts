@@ -8,6 +8,7 @@ import { REMOTE_WEB_EXTRACT_PROVIDER_IDS, type WebExtractProviderId } from "../t
 import type { WebFetch } from "../tools/http";
 import type { WebToolsConfig } from "../config";
 import { defaultPikoFile } from "../config/defaults";
+import type { SettingsOverview } from "../../shared/settings";
 
 /** Environment is resolved once by the host; credentials never enter tool schemas or details. */
 export function createWebTools(env: Record<string, string | undefined>, options: { fetch?: WebFetch; settings?: WebToolsConfig } = {}) {
@@ -68,7 +69,12 @@ export function createWebTools(env: Record<string, string | undefined>, options:
   });
   const settings = options.settings ?? defaultPikoFile.tools;
   const tools = [...(settings.web_search.enabled ? [search] : []), ...(settings.web_extract.enabled ? [extract] : [])];
-  return { searchConfigured, extension: defineExtension({ name: "piko-web", tools, sections: [
+  const overview: SettingsOverview["tools"] = {
+    search: { enabled: settings.web_search.enabled,
+      providers: configuredProviders.map(id => ({ id, configured: providers.some(provider => provider.id === id) })) },
+    extract: { enabled: settings.web_extract.enabled, providers: [...availableExtractProviders] },
+  };
+  return { searchConfigured, overview, extension: defineExtension({ name: "piko-web", tools, sections: [
     section("web_tools", ({ agent }) => {
       const names = new Set(agent.tools.map(tool => tool.name));
       const lines: string[] = [];

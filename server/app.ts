@@ -12,6 +12,7 @@ import { sideChatRequest } from "./side-chats/http";
 import { attachmentRequest } from "./attachments/http";
 import type { AttachmentStore } from "./attachments";
 import { artifactRequest } from "./artifacts/http";
+import { settingsRequest } from "./settings/http";
 import type { ArtifactStore } from "./artifacts";
 import type { WebHandler } from "./web";
 
@@ -47,6 +48,7 @@ export function createApp({
       );
     try {
       const response =
+        (await settingsRequest(request, runtime)) ??
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
         (await artifactRequest(request, artifacts)) ??

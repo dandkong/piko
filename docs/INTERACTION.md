@@ -105,7 +105,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `TextInputDialog` / `TextInputDialogContent` | `apps/mobile/src/components/TextInputDialog.tsx` | 通用受控单行文本弹窗；已有 Modal 的菜单切换复用 Content，不叠加原生 Modal |
 | `AnchoredMenuContent` | `apps/mobile/src/components/AnchoredMenu.tsx` | 旁聊和产物列表的锚定式行菜单，共用菜单项交互与视觉 |
 | `ConfirmationDialogContent` | `apps/mobile/src/components/ConfirmationDialog.tsx` | 旁聊和产物删除共用二次确认内容；只能通过取消/确认按钮关闭 |
-| `FloatingPanel` | `apps/mobile/src/components/FloatingPanel.tsx` | 设置、产物预览等盖在主界面上的上浮面板；统一遮罩、圆角、动效与滚动内容，只通过面板关闭按钮关闭 |
+| `FloatingPanel` | `apps/mobile/src/components/FloatingPanel.tsx` | 设置、产物预览等盖在主界面上的上浮面板；统一遮罩、圆角、动效与滚动内容，只通过面板关闭按钮关闭；headerLeading 放内部返回，contentKey 只重置滚动内容 |
 | 令牌 | `apps/mobile/src/theme.ts` | `radii`、`controlSizes`、`motion`、`stateColors` |
 
 使用约定：
@@ -154,13 +154,14 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 
 已接入：
 
-- 顶栏菜单；层叠式推开抽屉、四个页签、底部设置占位/一键新建旁聊、旁聊标题左对齐、列表三点菜单/通用弹窗重命名/删除确认；底部导航。
+- 顶栏菜单；层叠式推开抽屉、四个页签、底部设置入口/一键新建旁聊、旁聊标题左对齐、列表三点菜单/通用弹窗重命名/删除确认；底部导航。
+- 设置只读概览、分类整行导航、内部返回与明确关闭、刷新及错误重试；同一浮层内切页，不提供伪造的编辑/保存操作。
 - 聊天附件 chip、附件移除、发送/停止、回到底部、重试。
 - 任务页返回、进行中/已归档常驻折叠标题（进行中默认展开、已归档默认收起，收起时箭头向上）、归档/恢复图标按钮、任务行和执行记录条目。归档使用 Archive、恢复使用 ArchiveRestore，不使用完成勾选；读屏说明未来调度的变化，执行成功仍显示“已完成”。
 
 待后续：
 
-- 设置页尚不存在，设置仍保持禁用占位；新建旁聊已启用，为抽屉唯一 Primary；点击直接创建并跳转，无命名表单。列表右侧三点按钮为 Tertiary，浮动菜单复用行控件和中性状态色；外点、Escape 或系统返回关闭菜单。
+- 设置已支持只读概览与分类详情，配置写入、密钥管理和保存应用尚未实现；新建旁聊已启用，点击直接创建并跳转，无命名表单。列表右侧三点按钮为 Tertiary，浮动菜单复用行控件和中性状态色；外点、Escape 或系统返回关闭菜单。
 - Artifacts 文件夹浏览、面包屑、Markdown/原始文本预览、行菜单下载/删除及统一二次确认已接入；预览使用 `FloatingPanel`。Posts 目前没有可交互控件。
 - 尚未补充 loading、danger、toggle 等专用变体，需要时先扩展组件和本文档。
 - 当前已在 Web 验证推开/归位抽屉、点击露出界面关闭、页签切换、悬停、键盘焦点环、聊天输入和任务页；原生真机视觉与触感仍需设备验证。

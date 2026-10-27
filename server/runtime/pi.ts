@@ -37,6 +37,7 @@ import { createSessionSearchTools } from "./session-search-tools";
 import { SideChatError, requireSideChat } from "./side-chats";
 import { SideChats } from "./side-chat-service";
 import { openRuntime } from "./bootstrap";
+import { settingsDefaults, settingsOverview } from "./settings";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -44,6 +45,7 @@ class PikoRuntime {
   sideChats!: SideChats;
   private harness!: Harness;
   private config!: WorkspaceModelConfig;
+  private settingsBase!: ReturnType<typeof settingsDefaults>;
   private readonly replies = new BackgroundReplies();
   private searchConfigured = false;
   private tasks!: DurableAssistantTasks;
@@ -94,6 +96,7 @@ class PikoRuntime {
       coding,
     });
     const web = createWebTools(env, { settings: settings.tools });
+    this.settingsBase = settingsDefaults(this.paths, settings, env, web.overview);
     const sessionSearch = createSessionSearchTools({
       search: async (conversationId, query, limit) =>
         (await this.session(conversationId)).searchHistory(query, limit),
@@ -220,6 +223,9 @@ class PikoRuntime {
   skill(name: string) {
     return loadWorkspaceSkill(this.paths, name);
   }
+  async settings() {
+    return settingsOverview(this.settingsBase, await this.main.native.agent(ctx), this.config, this.paths);
+  }
   close(): Promise<void> {
     if (this.closed) return this.closed;
     this.closing = true;
@@ -280,6 +286,7 @@ export function createPiRuntime(
       remove: async id => (await get()).sideChats.remove(id),
     },
     isModelReady: async () => (await session()).modelReady(),
+    settings: async () => (await get()).settings(),
     createSession: session,
     describe: async (id) => (await session(id)).describe(),
     configure: async (selection, id) =>

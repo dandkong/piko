@@ -27,6 +27,8 @@ export function FloatingPanel({
   closeLabel,
   children,
   headerActions,
+  headerLeading,
+  contentKey,
   testID,
   showScrollbar = false,
   scrollTestID,
@@ -37,6 +39,9 @@ export function FloatingPanel({
   closeLabel: string;
   children?: ReactNode;
   headerActions?: ReactNode;
+  headerLeading?: ReactNode;
+  /** Reset only the scrolling content when navigating inside the same panel. */
+  contentKey?: string;
   testID?: string;
   /** Show the platform scrollbar for long panel content. */
   showScrollbar?: boolean;
@@ -89,6 +94,7 @@ export function FloatingPanel({
         ]}
       >
         <View style={styles.header}>
+          {headerLeading}
           <Text numberOfLines={1} style={styles.title}>{title}</Text>
           <View style={styles.headerActions}>
             {headerActions}
@@ -98,6 +104,7 @@ export function FloatingPanel({
           </View>
         </View>
         <ScrollView
+          key={contentKey}
           testID={scrollTestID}
           contentContainerStyle={styles.body}
           showsVerticalScrollIndicator={showScrollbar}
