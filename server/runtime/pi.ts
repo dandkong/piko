@@ -12,9 +12,11 @@ import type { AssistantSubagentsRuntime, ChatRuntime } from "./types";
 import { RuntimeBusyError } from "./types";
 import { DurableChatSession } from "./conversation-session";
 import { createSubagentRuntime } from "./subagents/runtime";
-import { delegationStatus, listDelegations } from "./subagents/queries";
+import { delegationStatus, listDelegations } from "./subagents/delegations";
 import { createSubagentTools } from "./subagents/tools";
 import { DurableAssistantTasks } from "./tasks/service";
+import { prepareTaskAgent } from "./tasks/agent";
+import { TaskFiles } from "../task-files";
 import { createTaskTools } from "./tasks/tools";
 import { BackgroundReplies } from "./background-replies";
 import { createWorkspaceResources, loadWorkspaceSkill } from "./resources";
@@ -72,6 +74,7 @@ class PikoRuntime {
       availableBackground(config.models, config.background);
     const children = createSubagentRuntime({
       storage: () => this.storage,
+      prepareInput: (child, context) => prepareTaskAgent(this.harness, child, new TaskFiles(this.paths.workspace), context),
       acceptReport: async (id, operation) => {
         if (this.closing) return false;
         try {
@@ -82,7 +85,6 @@ class PikoRuntime {
           throw error;
         }
       },
-      background,
       onReply: (reply) => this.replies.publish(reply),
     });
     const memory = createMemoryCurationExtension({
@@ -105,7 +107,7 @@ class PikoRuntime {
       createWorkspaceResources(this.paths),
       web.extension,
       children.extension,
-      createSubagentTools(children),
+      createSubagentTools(children, background),
       createTaskTools(() => this.tasks),
       memory.extension,
       sessionSearch,
@@ -137,6 +139,7 @@ class PikoRuntime {
           await this.main.ensureReady();
         },
         opened.maintenance,
+        background,
       );
       this.memory = new MemoryCurationService(
         harness,

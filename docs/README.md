@@ -18,6 +18,7 @@
 | [会话事件与实时活动](features/conversation-events.md) | 运行时事实、SSE 契约、头像状态和 Telegram 有序呈现 |
 | [旁聊](features/side-chats.md) | 独立聊天、管理与删除边界 |
 | [后台工作](features/background-subagents.md) | 委派、结果回传和恢复 |
+| [Agent 构建与后台执行](features/agent-composition.md) | Agent 配置、资源策略、原生 fork 和公共执行边界 |
 | [任务与执行记录](features/tasks.md) | 手动/定时任务、执行记录、归档与恢复 |
 | [Telegram 通道](features/telegram-channel.md) | 主会话共享、命令、附件与投递限制 |
 | [网页工具](features/web-tools.md) | 网页搜索、正文提取和凭据配置 |

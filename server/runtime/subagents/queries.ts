@@ -6,7 +6,7 @@ import {
   type TaskRecord,
   type Tx,
 } from "@earendil-works/pi-durable";
-import { TaskContext } from "../tasks/context";
+import { Recovery } from "../conversation-docs";
 import {
   JobControl,
   ANCHOR_KIND,
@@ -17,7 +17,6 @@ import {
 } from "./documents";
 import { summarizeToolArgs, toolIcon } from "../tool-activity";
 import { DETAIL_TEXT_LIMIT, singleLine } from "../text";
-import { requireSideChat, SideChatError } from "../side-chats";
 
 export async function taskRecords(
   tx: Tx,
@@ -119,20 +118,6 @@ export async function recentActivity(
   return chrono.slice(-limit);
 }
 
-export async function isUserConversation(
-  tx: Tx,
-  id: ConversationId,
-): Promise<boolean> {
-  if (id === ROOT_CONVERSATION_ID) return true;
-  try {
-    const side = await requireSideChat(tx, String(id));
-    return side.metadata.archivedAt === null;
-  } catch (error) {
-    if (error instanceof SideChatError) return false;
-    throw error;
-  }
-}
-
 /** A transaction-local index; no persisted execution state or cross-transaction cache. */
 export async function backgroundJobs(tx: Tx, owner = ROOT_CONVERSATION_ID) {
   const records = await taskRecords(tx, owner);
@@ -158,7 +143,7 @@ export async function jobFacts(
   jobs: BackgroundJobs,
   child: ConversationId,
 ) {
-  const binding = (await tx.doc(TaskContext, child)).binding;
+  const interrupted = !!(await tx.doc(Recovery, child)).interruption;
   const live = await tx.doc(LiveDoc, child);
   const epoch = (await tx.doc(JobControl, child)).epoch;
   const reporters = jobs.reporters.get(child) ?? [];
@@ -214,7 +199,7 @@ export async function jobFacts(
         ? reportCheckpoint.answer
         : result?.answer;
   return {
-    binding: binding && { ...binding },
+    interrupted,
     running: !!live.run,
     delivering,
     stopped,
@@ -230,60 +215,3 @@ export async function jobFacts(
   };
 }
 export type JobFacts = Awaited<ReturnType<typeof jobFacts>>;
-function delegationState(facts: JobFacts) {
-  if (facts.running || facts.delivering) return { status: "working" as const };
-  if (facts.binding?.interrupted) return { status: "interrupted" as const };
-  if (facts.stopped) return { status: "stopped" as const };
-  return facts.error
-    ? { status: "failed" as const, detail: singleLine(facts.error, DETAIL_TEXT_LIMIT) }
-    : { status: "finished" as const };
-}
-export async function ownedJobId(tx: Tx, owner: ConversationId, value: string) {
-  const jobs = await backgroundJobs(tx, owner);
-  return jobs.children.find((child) => String(child) === value);
-}
-export async function listDelegations(tx: Tx, owner: ConversationId) {
-  const jobs = await backgroundJobs(tx, owner);
-  const values = [];
-  for (const child of jobs.children) {
-    if ((await tx.doc(TaskContext, child)).binding) continue;
-    const facts = await jobFacts(tx, jobs, child);
-    values.push({
-      id: String(child),
-      task: facts.task,
-      status: delegationState(facts).status,
-    });
-  }
-  return values;
-}
-export async function delegationStatus(
-  tx: Tx,
-  owner: ConversationId,
-  value: string,
-) {
-  const jobs = await backgroundJobs(tx, owner);
-  const child = jobs.children.find((child) => String(child) === value);
-  if (child === undefined) return undefined;
-  return {
-    id: String(child),
-    ...delegationState(await jobFacts(tx, jobs, child)),
-    recentSteps: await recentActivity(tx, child, 5),
-  };
-}
-/** Archive only unfinished ordinary delegations, leaving completed history intact. */
-export async function activeSubagentIds(tx: Tx, owner: ConversationId) {
-  const jobs = await backgroundJobs(tx, owner);
-  const active: ConversationId[] = [];
-  for (const child of jobs.children) {
-    if ((await tx.doc(TaskContext, child)).binding) continue;
-    const live = await tx.doc(LiveDoc, child);
-    if (
-      live.run ||
-      jobs.reporters
-        .get(child)
-        ?.some((record) => record.state.status !== "terminal")
-    )
-      active.push(child);
-  }
-  return active;
-}

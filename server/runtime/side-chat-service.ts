@@ -11,6 +11,7 @@ import {
   type UpdateSideChat,
 } from "../../shared/side-chats";
 import { sideChatScope } from "./background";
+import { setAgentResources, workspaceAgentResources } from "./agents/resources";
 import type { StorageMaintenance } from "./storage-maintenance";
 import {
   SideChatDoc,
@@ -58,6 +59,7 @@ export class SideChats {
         ...sideChatScope(rootAgent),
         instructions: SIDE_CHAT_INSTRUCTIONS,
       });
+      await setAgentResources(tx, created.id, workspaceAgentResources(this.workspace));
       const metadata = await tx.doc(SideChatDoc, created.id);
       metadata.title = validTitle(title);
       metadata.createdAt = Date.now();

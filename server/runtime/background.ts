@@ -1,4 +1,4 @@
-import { configure, type Agent, type AgentChange, type ConversationId, type TaskId, type Tx } from "@earendil-works/pi-durable";
+import type { Agent } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 
 /** The model a background child starts with; Piko resolves it from agent.profiles.background, not from the main selection. */
@@ -10,6 +10,8 @@ export function backgroundAgent(selection: BackgroundSelection | undefined, pare
     ? { model: { provider: selection.provider, modelId: selection.modelId }, thinkingLevel: selection.thinkingLevel }
     : { model: parent.model, thinkingLevel: parent.thinkingLevel };
 }
+
+export const BACKGROUND_AGENT_INSTRUCTIONS = "You are a background workspace assistant delegated from a conversation. Complete the assigned work using the provided task context and available tools, then return your findings to that conversation only. You do not receive the parent conversation or its global memory. Your answer is internal; the delegating assistant decides what to tell the user.";
 
 /** Background children never delegate or manage tasks, and never re-enter the curation task. */
 const CHILD_TOOL_PREFIXES = ["subagent_", "task_", "sessions_"];
@@ -31,11 +33,4 @@ export function sideChatScope(agent: Agent) {
     extensions: agent.extensions.filter(value => !TASK_EXTENSIONS.includes(value.name)),
     tools: agent.tools.filter(value => !TASK_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
   };
-}
-
-/** Create a task-owned conversation and configure it in the same commit. */
-export async function spawnBackgroundChild(tx: Tx, taskId: TaskId, change: Omit<AgentChange, "instructions"> & { instructions: string }): Promise<ConversationId> {
-  const child = await tx.createConversation({ ownership: { kind: "task", taskId } });
-  await configure(tx, child.id, change);
-  return child.id;
 }

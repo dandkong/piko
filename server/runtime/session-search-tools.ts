@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { SessionHistoryWindow, SessionSearchHit } from "./pi-history";
-import { isUserConversation } from "./subagents/queries";
+import { isUserConversation } from "./subagents/delegations";
 
 const SEARCH_DEFAULT_LIMIT = 10;
 const SEARCH_MAX_LIMIT = 25;

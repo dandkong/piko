@@ -43,12 +43,13 @@ type AssistantTaskDraft = {
 | `server/domain/tasks.ts`、`server/task-files.ts` | 分别负责纯定义/时间规则和任务文件目录边界 |
 | `server/runtime/tasks/service.ts`、`documents.ts` | 定义、游标、命令幂等、调度及固定持久化文档 |
 | `server/runtime/tasks/queries.ts` | 活动执行、最新摘要、目标任务分页和单项完整回答 |
+| `server/runtime/tasks/agent.ts` | 任务目录准备、Agent 配置、任务记忆/技能策略、固定执行指令和回报来源说明 |
 | `server/runtime/tasks/tools.ts` | `task_*` 模型工具入口 |
 | `server/runtime/subagents/runtime.ts`、`queries.ts`、`recovery.ts` | 共用执行、原生事实查询与恢复 |
 | `server/runtime/subagents/tools.ts` | 普通委派的 `subagent_*` 模型工具入口 |
-| `server/runtime/background.ts` | 后台模型、继承工具范围和子会话创建策略 |
+| `server/runtime/background.ts`、`agents/` | 后台默认角色/工具范围，以及通用子会话构建和显式资源策略 |
 
-任务服务依赖共用执行模块，不依赖普通委派工具。查询不维护状态副本：事务内扫描只索引一次并按 child 分组；调度和并发检查不读取回答正文，列表只读每项最新回答，详情先过滤任务再读取一页，单项结果只读目标回答。原生存储没有 task binding 索引，归属扫描仍随历史增长，不声称常量查询成本。普通后台子 Agent 不提供 `task_*` 与 `subagent_*`；旁聊不提供 `task_*`，并允许作用域限定的 `subagent_*`。任务管理工具执行处仍检查 root 权限，不能嵌套委派或创建调度。
+任务服务依赖共用执行模块，不依赖普通委派工具；任务专属的 cwd、Prompt、记忆及回报来源说明由 `tasks/agent.ts` 组装，公共 runner、原生事实查询和恢复模块不依赖 TaskContext 或 TaskFiles。构建接口与动态资源策略见[Agent 构建与后台执行](agent-composition.md)。查询不维护状态副本：事务内扫描只索引一次并按 child 分组；调度和并发检查不读取回答正文，列表只读每项最新回答，详情先过滤任务再读取一页，单项结果只读目标回答。原生存储没有 task binding 索引，归属扫描仍随历史增长，不声称常量查询成本。普通后台子 Agent 不提供 `task_*` 与 `subagent_*`；旁聊不提供 `task_*`，并允许作用域限定的 `subagent_*`。任务管理工具执行处仍检查 root 权限，不能嵌套委派或创建调度。
 
 ## 持久化与目录
 

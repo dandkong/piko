@@ -14,14 +14,16 @@ export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
   checkpointWhen: () => false,
   initial: () => ({ epoch: 0, reported: [] }),
 });
-export const SubagentPromptScope = defineDoc<{ isSubagent: boolean }>({
-  kind: "piko.subagent-prompt-scope",
-  version: 1,
-  scope: "conversation",
-  history: "latest",
-  fork: "initial",
+/** Product provenance and reporting policy, never execution state or a second agent configuration. */
+export type BackgroundJobPolicy = {
+  kind: string;
+  continuable: boolean;
+  report: { heading: string; deliver: "origin" | "all" };
+};
+export const BackgroundJob = defineDoc<{ policy: BackgroundJobPolicy | null }>({
+  kind: "piko.background-job", version: 1, scope: "conversation", history: "latest", fork: "initial",
   checkpointWhen: () => false,
-  initial: () => ({ isSubagent: false }),
+  initial: () => ({ policy: null }),
 });
 export const ANCHOR_KIND = "piko.subagent-anchor";
 export const REPORTER_KIND = "piko.subagent-reporter";

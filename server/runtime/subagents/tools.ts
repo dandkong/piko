@@ -7,15 +7,17 @@ import {
   type ToolExecutionResult,
 } from "@earendil-works/pi-durable";
 import type { SubagentRuntime } from "./runtime";
+import type { BackgroundSelection } from "../background";
 import {
   isUserConversation,
   listDelegations,
   ownedJobId,
   delegationStatus,
-} from "./queries";
+  spawnDelegation,
+} from "./delegations";
 
 /** Main-assistant entry points; shared execution lives in subagent-runtime. */
-export function createSubagentTools(children: SubagentRuntime) {
+export function createSubagentTools(children: SubagentRuntime, background: () => Promise<BackgroundSelection | undefined>) {
   type Command =
     | { action: "spawn"; task: string; id?: never }
     | { action: "send"; id: string; task: string }
@@ -64,11 +66,12 @@ export function createSubagentTools(children: SubagentRuntime) {
     if (!args.task?.trim())
       return failure("Non-empty instructions are required.");
     const agent = await api.agent(ctx);
+    const selection = args.action === "spawn" ? await background() : undefined;
     const result = await api.commit(async (tx) => {
       const source = await children.source(tx, api.callId, parent);
       return args.action === "send"
         ? children.send(tx, id!, args.task!, source, parent)
-        : children.spawn(tx, agent, args.task!, source, undefined, parent);
+        : spawnDelegation(tx, children, agent, selection, parent, args.task!, source);
     }, ctx);
     return output({ id: String(result), status: "accepted" });
   };

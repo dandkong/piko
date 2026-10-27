@@ -16,12 +16,12 @@ import { runtimePaths } from "./config/paths";
 import { Recovery } from "./conversation-docs";
 import { prepareRestart } from "./subagents/recovery";
 import { subagentIds } from "./subagents/queries";
-import { SubagentPromptScope } from "./subagents/documents";
-import { childScope, sideChatScope } from "./background";
-import { TaskContext } from "./tasks/context";
+import { sideChatScope } from "./background";
+import { initializeTaskAgent, markTaskInterrupted } from "./tasks/agent";
+import { initializeDelegation } from "./subagents/delegations";
+import { initializeAgentResources, workspaceAgentResources } from "./agents/resources";
 import {
   requireAvailableModel,
-  configuredBackground,
   type WorkspaceModelConfig,
 } from "./model-config";
 import { sideChats, SIDE_CHAT_INSTRUCTIONS } from "./side-chats";
@@ -113,37 +113,16 @@ export async function openRuntime(
     for (const id of recovery.interruptedIds)
       if (!interrupted.includes(id)) interrupted.push(id);
     const rootAgent = await root.agent(ctx);
-    const parentAgents = new Map([[ROOT_CONVERSATION_ID, rootAgent]]);
-    for (const chat of chats) {
-      const id = Number(chat.id) as ConversationId;
-      const conversation = await harness.conversation(id, ctx);
-      if (conversation) parentAgents.set(id, await conversation.agent(ctx));
-    }
     await harness.commit(async (tx) => {
-      const selection = configuredBackground(config.background);
+      const files = new TaskFiles(paths.workspace);
       for (const owner of chatIds) {
-        const parent = parentAgents.get(owner) ?? rootAgent;
-        const scope = childScope(parent);
+        await initializeAgentResources(tx, owner, workspaceAgentResources(paths.workspace));
         for (const id of await subagentIds(tx, owner)) {
-          (await tx.doc(SubagentPromptScope, id)).isSubagent = true;
-          const binding = (await tx.doc(TaskContext, id)).binding;
-          await configure(tx, id, {
-            ...(selection
-              ? {
-                  model: {
-                    provider: selection.provider,
-                    modelId: selection.modelId,
-                  },
-                  thinkingLevel: selection.thinkingLevel,
-                }
-              : { model: parent.model, thinkingLevel: parent.thinkingLevel }),
-            cwd: binding
-              ? new TaskFiles(paths.workspace).directory(binding.taskId)
-              : parent.cwd,
-            ...scope,
-          });
+          if (!(await initializeTaskAgent(tx, id, files))) await initializeDelegation(tx, id);
         }
       }
+      for (const id of recovery.interruptedChildren) await markTaskInterrupted(tx, id);
+      // AgentDoc is already durable. Do not replace per-worker model/cwd/capability choices on restart.
       // Refresh side tools without resetting a side chat's selected model or history.
       for (const chat of chats)
         await configure(tx, Number(chat.id) as ConversationId, {

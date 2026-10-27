@@ -1,12 +1,10 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import {
-  AgentDoc,
   defineExtension,
   defineTask,
   InboxDoc,
   LiveDoc,
   ROOT_CONVERSATION_ID,
-  type Agent,
   type ConversationId,
   type SubmissionId,
   type Storage,
@@ -16,17 +14,12 @@ import {
 import type { BackgroundReply, InputSource } from "../types";
 import { InputOrigin, registerInput } from "../input-origin";
 import { entriesFromTransaction, messageText } from "../pi-history";
-import { TaskContext, type TaskBinding } from "../tasks/context";
-import { TaskFiles } from "../../task-files";
-import {
-  childScope,
-  spawnBackgroundChild,
-  backgroundAgent,
-  type BackgroundSelection,
-} from "../background";
+import { createChildAgent, type ChildAgentSpec } from "../agents/create";
+import { Recovery } from "../conversation-docs";
 import {
   JobControl,
-  SubagentPromptScope,
+  BackgroundJob,
+  type BackgroundJobPolicy,
   ANCHOR_KIND,
   REPORTER_KIND,
   type ReporterInput,
@@ -38,11 +31,12 @@ export type SubagentRuntime = ReturnType<typeof createSubagentRuntime>;
 
 export function createSubagentRuntime(options: {
   storage: () => Storage;
+  /** Application preflight; shared execution does not know the caller's filesystem or business metadata. */
+  prepareInput?: (child: ConversationId, ctx: typeof context) => Promise<void>;
   acceptReport: (
     conversationId: ConversationId,
     operation: () => Promise<void>,
   ) => Promise<boolean>;
-  background: () => Promise<BackgroundSelection | undefined>;
   onReply: (reply: BackgroundReply) => Promise<void>;
 }) {
   // Serialize report admission with explicit cancellation; body/state stays native.
@@ -154,29 +148,15 @@ export function createSubagentRuntime(options: {
     phases: {
       deliver: async (task, runtime, ctx) => {
         const child = (await runtime.conversation(task.input.child, ctx))!;
-        const binding = (
-          await runtime.snapshot(TaskContext, task.input.child, ctx)
-        )?.binding;
-        if (binding) {
-          const root = await runtime.agent(ctx);
-          try {
-            await new TaskFiles(root.cwd!).prepare(binding.taskId);
-          } catch (error) {
-            await runtime.commit(
-              () => ({
-                status: "running",
-                checkpoint: {
-                  phase: "report",
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Cannot prepare the task directory.",
-                },
-              }),
-              ctx,
-            );
-            return;
-          }
+        try {
+          await options.prepareInput?.(task.input.child, ctx);
+        } catch (error) {
+          if (ctx.abortSignal?.aborted) return;
+          await runtime.commit(() => ({
+            status: "running",
+            checkpoint: { phase: "report", error: error instanceof Error ? error.message : "Cannot prepare background work." },
+          }), ctx);
+          return;
         }
         const handle = await admit(async () => {
           if (
@@ -184,6 +164,10 @@ export function createSubagentRuntime(options: {
               ?.epoch ?? 0) !== task.input.epoch
           )
             return undefined;
+          await runtime.commit(async tx => {
+            (await tx.doc(Recovery, task.input.child)).interruption = "";
+            return undefined;
+          }, ctx);
           return child.submit(
             {
               type: "input",
@@ -284,17 +268,13 @@ export function createSubagentRuntime(options: {
           )
             .filter((entry) => entry.kind === "pi.assistant")
             .map((entry) => String(entry.id));
-          const binding = (await tx.doc(TaskContext, task.input.child)).binding;
-          // Provenance: saved-task execution carries its task; ordinary delegation carries its job id.
-          const heading = binding
-            ? `Saved task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${task.input.child}. This is the task's persistent directory under tasks/${binding.taskId}/ in the main workspace.\n\n`
-            : `Background subagent ${task.input.child}.\n\n`;
-          // Scheduled work is broadcast to every channel; ordinary delegation only answers where it started.
+          const policy = (await tx.doc(BackgroundJob, task.input.child)).policy;
+          if (!policy) throw new Error("Background job policy is missing.");
           prepared.payload = {
             requestId,
             knownMessageIds,
-            body: heading + body,
-            deliver: binding ? "all" : "origin",
+            body: policy.report.heading + body,
+            deliver: policy.report.deliver,
           };
         }, ctx);
         const payload = prepared.payload;
@@ -378,38 +358,25 @@ export function createSubagentRuntime(options: {
         ctx,
       ),
   });
-  async function spawn(
-    tx: Tx,
-    agent: Agent,
-    message: string,
-    source: InputSource,
-    task?: TaskBinding,
-    conversationId = ROOT_CONVERSATION_ID,
-  ) {
+  async function spawn(tx: Tx, spec: {
+    owner: ConversationId;
+    agent: ChildAgentSpec;
+    source: InputSource;
+    message: string | ((child: ConversationId) => string);
+    policy: (child: ConversationId) => BackgroundJobPolicy;
+  }) {
+    const conversationId = spec.owner;
     const anchor = await tx.createTask(Anchor, null, {
       ownership: { kind: "conversation" },
       conversationId,
       background: true,
     });
-    const current = await tx.doc(AgentDoc, conversationId);
-    const child = await spawnBackgroundChild(tx, anchor, {
-      ...backgroundAgent(await options.background(), {
-        model: current.model ?? agent.model,
-        thinkingLevel: current.thinkingLevel ?? agent.thinkingLevel,
-      }),
-      cwd: task ? new TaskFiles(agent.cwd!).directory(task.taskId) : agent.cwd,
-      ...childScope(agent),
-      instructions:
-        "You are a background workspace assistant delegated from a conversation. Complete the assigned work using the provided task context and available tools, then return your findings to that conversation only. You do not receive the parent conversation or its global memory. Your answer is internal; the delegating assistant decides what to tell the user.",
-    });
-    (await tx.doc(SubagentPromptScope, child)).isSubagent = true;
-    if (task) (await tx.doc(TaskContext, child)).binding = task;
-    const instruction = task
-      ? `${message}\n\nThis is task ${JSON.stringify(task.title)} (${task.taskId}), execution ${child}. ${task.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(task.scheduledAt).toISOString()}.`} Started at ${new Date(task.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.`
-      : message;
+    const child = await createChildAgent(tx, anchor, spec.agent);
+    (await tx.doc(BackgroundJob, child)).policy = spec.policy(child);
+    const instruction = typeof spec.message === "string" ? spec.message : spec.message(child);
     await tx.createTask(
       Reporter,
-      { child, message: instruction, epoch: 0, source },
+      { child, message: instruction, epoch: 0, source: spec.source },
       { ownership: { kind: "conversation" }, conversationId, background: true },
     );
     return child;
@@ -427,10 +394,8 @@ export function createSubagentRuntime(options: {
       source: InputSource,
       conversationId = ROOT_CONVERSATION_ID,
     ) {
-      if ((await tx.doc(TaskContext, child)).binding)
-        throw new Error(
-          "Task executions use a fixed prompt snapshot. Edit the task or start a new execution instead.",
-        );
+      if (!(await tx.doc(BackgroundJob, child)).policy?.continuable)
+        throw new Error("This background job uses fixed instructions and cannot be continued.");
       const epoch = (await tx.doc(JobControl, child)).epoch;
       await tx.createTask(
         Reporter,

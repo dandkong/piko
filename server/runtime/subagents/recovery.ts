@@ -11,7 +11,7 @@ import {
   type ReporterState,
 } from "./documents";
 import { subagentIds } from "./queries";
-import { TaskContext } from "../tasks/context";
+import { Recovery } from "../conversation-docs";
 
 /** Mark inherited uncertain work before enabling the scheduler; report and retry phases may resume. */
 export async function prepareRestart(
@@ -31,6 +31,7 @@ export async function prepareRestart(
           (item.record.state.checkpoint as ReporterState).phase === "retry"),
     )
     .map((item) => item.record.id);
+  const interruptedChildren: ConversationId[] = [];
   const conversations = await harness.commit(async (tx) => {
     const children = (
       await Promise.all(userConversations.map((id) => subagentIds(tx, id)))
@@ -43,10 +44,9 @@ export async function prepareRestart(
         item.record.state.status !== "terminal" &&
         (item.record.state.checkpoint as ReporterState).phase === "deliver"
       ) {
-        const binding = (
-          await tx.doc(TaskContext, (item.record.input as ReporterInput).child)
-        ).binding;
-        if (binding) binding.interrupted = true;
+        const child = (item.record.input as ReporterInput).child;
+        interruptedChildren.push(child);
+        (await tx.doc(Recovery, child)).interruption = "The previous work was interrupted by a server restart. Please resend if needed.";
       }
     }
     for (const id of ids) {
@@ -69,6 +69,7 @@ export async function prepareRestart(
       (item) => !preserved.includes(item.record.id),
     ),
     conversations,
+    interruptedChildren,
     interruptedIds: [
       ...new Set(
         inspection.tasks

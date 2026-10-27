@@ -14,7 +14,7 @@
 
 子会话在 spawn 时直接新建，不 fork 或继承主聊天历史；加载技能索引和工具，并接收本次委派任务，不加载全局指导与记忆。保存任务的执行仍会加载该任务自己的 `MEMORY.md`。后续 send 复用该子会话的历史，主 Agent 仍应把新增背景写入 `subagent_send.message`。任务由 Reporter 单独提交，子执行不实时回灌 root；工具、压缩和回答保存在子 conversation 中。UI 只投影 root 的完整历史。
 
-主会话模型和思考强度只作用于主会话。后台子会话在 spawn 时读取 `agent.profiles.background`，启动时同步已有子会话的后台选择。后台供应商缺凭据时 spawn 报错并使该次任务失败，不阻止后端启动，也不静默回退到主模型。已经准备的模型请求继续完成，后续请求使用新选择。重启时同步当前后台选择、cwd 与工具选择。配置需重启生效；指导和技能索引按每次模型请求刷新。
+主会话模型和思考强度只作用于主会话。后台子会话在 spawn 时读取 `agent.profiles.background`；已有子会话保持自己的原生模型选择，重启不按后台默认值覆盖。后台供应商缺凭据时 spawn 报错并使该次任务失败，不阻止后端启动，也不静默回退到主模型。已经准备的模型请求继续完成，后续请求使用新选择。重启保留已有子会话的模型、cwd、工具和资源选择，配置文件需重启读取并作用于之后新建的子会话；指导和技能索引按每次模型请求依据显式资源策略刷新。
 
 共享文件并发修改由主 Agent 分工协调，不强制独立 cwd 或 artifacts 目录。本机权限与当前基本工具一致，cwd 和提示词不是沙箱。
 
@@ -30,7 +30,7 @@
 | `subagent_status` | `id`；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
 | `subagent_stop` | `id`；取消指定的子任务，不停止主 Agent |
 
-结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。五个入口使用 Durable 原生任务、提交、权限和取消路径，不复制执行状态。`subagents/tools.ts` 负责 schema、服务/查询调用与输出；`subagents/runtime.ts` 承载共享 Anchor/Reporter、创建/继续/停止和回传；`subagents/queries.ts` 负责原生事实读取、owner 校验与普通委派投影；`subagents/recovery.ts` 在 resume 前实施恢复。任务服务依赖共用执行和事实读取，不依赖普通委派工具。列表可用于重新找到已有工作；任务摘要从原生 Reporter 输入读取，状态从 task/submission/live 投影。
+结果自动私下回传，不提供额外 wait/yield 工具，也不鼓励循环轮询。五个入口使用 Durable 原生任务、提交、权限和取消路径，不复制执行状态。`subagents/tools.ts` 负责 schema、服务/查询调用与输出；`subagents/delegations.ts` 负责普通委派配置、owner/用途校验及列表投影；`subagents/runtime.ts` 承载共享 Anchor/Reporter、创建/继续/停止和回传；`subagents/queries.ts` 只负责公共原生事实；`subagents/recovery.ts` 在 resume 前实施恢复。Agent 的空白/fork 构建与资源选择独立在 `agents/`；保存任务的 Prompt、目录和记忆由 `tasks/agent.ts` 组装，不进入公共 runner。详见[Agent 构建与后台执行](agent-composition.md)。任务服务依赖共用执行和事实读取，不依赖普通委派工具。列表可用于重新找到已有工作；任务摘要从原生 Reporter 输入读取，状态从 task/submission/live 投影。
 
 工具成功返回统一使用 JSON 文本：
 
@@ -60,7 +60,7 @@ Anchor 是立即完成的持久化所有权节点，不是常驻线程；子会�
 
 Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对应同一个原生 answer entry，按 answer 身份只回传一次；回传决定与下一阶段 checkpoint 在同一 native commit 保存。checkpoint 保存 answer entry 引用或原生失败原因，报告正文从原生回答读取。
 
-两个原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID。执行状态仍以 Durable 为准，不保存状态副本。报告先经过父会话的 ConversationControl 接纳线，再进入后台取消接纳线，并在两者内部复核 epoch；同一顺序用于归档，避免反向持锁。归档预留覆盖停止前台、撤回报告、停止子工作和写入元数据全过程，归档后的报告不能再次唤起会话。原生提交去重与 checkpoint 保持不变。
+原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID；piko.agent-resources 保存资源选择，piko.background-job 保存用途、继续规则和回报来源标题/投递提示。执行状态仍以 Durable 为准，不保存状态副本。报告先经过父会话的 ConversationControl 接纳线，再进入后台取消接纳线，并在两者内部复核 epoch；同一顺序用于归档，避免反向持锁。归档预留覆盖停止前台、撤回报告、停止子工作和写入元数据全过程，归档后的报告不能再次唤起会话。原生提交去重与 checkpoint 保持不变。
 
 ## 停止、失败与重启
 

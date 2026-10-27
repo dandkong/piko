@@ -56,7 +56,7 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 }
 ```
 
-`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话及尚未保存模型选择的会话的初始模型；`background` 供后台子 Agent 使用，普通后台工作、任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。启动时会把已存在的后台子会话同步到当前 `background`。主会话的选择保存在 Durable Agent 文档中，重启后保持不变，修改 JSON 不会覆盖它。
+`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话及尚未保存模型选择的会话的初始模型；`background` 供后台子 Agent 使用，普通后台工作、任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。已有后台子会话保留创建时或后来显式配置的选择，重启不会按当前 `background` 覆盖；新的委派、任务执行和记忆整理才使用最新默认值。主会话的选择保存在 Durable Agent 文档中，重启后保持不变，修改 JSON 不会覆盖它。
 
 上述 ID 来自锁定的 pi-ai 1.4.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 TG `/models` 列表为准：目录中存在模型也须有可用凭据。
 
@@ -134,14 +134,14 @@ piko/models/auth JSON 与后端环境修改后重启后端生效。指导和技�
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
 | 工作区 .agents/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
-| config/piko.json、models.json | 重启后端；profiles.main 不自动切换已有会话，profiles.background 在重启时同步到子会话 |
+| config/piko.json、models.json | 重启后端；profiles.main 不自动切换已有会话，profiles.background 作用于重启后新建的子会话，已有子会话保持原选择 |
 | config/auth.json 中的模型凭据 | 手工修改需重启；Piko 只读，不提供交互登录或凭据写回 |
 | config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
 | 工作区其他 md、JSONL 和 Durable 原生文档 | 普通文件按需读取，重启保留存储和文档状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 TG `/models`、`/thinking` 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，后台子 Agent 始终跟随 `agent.profiles.background`。编辑 piko/models/auth JSON 或通道/工具凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+通过 TG `/models`、`/thinking` 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，新建后台子 Agent 使用 `agent.profiles.background`，已有子会话保留自己的模型选择。编辑 piko/models/auth JSON 或通道/工具凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 
@@ -176,4 +176,4 @@ read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱�
 
 ## 后台子 Agent
 
-主 Agent 的 `subagent_*` 系列工具通过同一个 Harness 创建持久化 owned 子会话，基本工具、内建扩展、全局指导和技能共用，移除委派与任务管理工具；任务执行额外使用本任务目录与记忆。模型/思考选择同步已有子会话，当前已准备请求继续使用原选择；主会话空闲限制不因独立子任务运行而拒绝。重启同步当前配置，取消不确定执行，仅恢复已完成结果的回传阶段。详见[后台工作说明](../features/background-subagents.md)。
+主 Agent 的 `subagent_*` 系列工具通过同一个 Harness 创建持久化 owned 子会话，默认提供基本工具和技能索引，不自动注入全局 core、AGENTS.md 或 MEMORY.md，移除委派与任务管理工具；任务执行由 Tasks 层组装本任务目录、记忆和固定 Prompt。Agent 构建与资源选择不依赖 Reporter，模型、cwd、指令和工具由原生 AgentDoc 保存，自动资源策略单独保存文件/技能选择。已有子会话重启保留这些选择；新建子会话解析当前后台默认模型。主会话空闲限制不因独立子任务运行而拒绝。重启取消不确定执行，仅恢复已完成结果的回传阶段。详见[后台工作说明](../features/background-subagents.md)与[Agent 构建](../features/agent-composition.md)。

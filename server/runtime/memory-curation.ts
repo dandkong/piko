@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
   type ConversationId, type Harness, type TaskId, type TaskRuntime } from "@earendil-works/pi-durable";
-import { spawnBackgroundChild, backgroundAgent, type BackgroundSelection } from "./background";
+import { backgroundAgent, type BackgroundSelection } from "./background";
+import { createChildAgent } from "./agents/create";
+import { NO_AGENT_RESOURCES } from "./agents/resources";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 import { curatorTools, type CodingExtension } from "./coding-tools";
@@ -72,8 +74,12 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
           let childId = taskRecord.state.checkpoint.childId as ConversationId | undefined;
           if (childId === undefined) {
             await runtime.commit(async tx => {
-              childId = await spawnBackgroundChild(tx, taskRecord.id, { ...backgroundAgent(selection, agent),
-                extensions: [coding], tools: curatorTools(coding), cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS });
+              const model = backgroundAgent(selection, agent);
+              childId = await createChildAgent(tx, taskRecord.id, {
+                agent: { ...model, model: model.model ?? null, extensions: [coding], tools: curatorTools(coding),
+                  cwd: workspace, instructions: CURATOR_AGENT_INSTRUCTIONS },
+                resources: NO_AGENT_RESOURCES,
+              });
               return { status: "running", checkpoint: { phase: "curation", childId: Number(childId) } } as const;
             }, ctx);
           }

@@ -27,6 +27,8 @@ import { TaskFiles } from "../../task-files";
 import type { SubagentRuntime } from "../subagents/runtime";
 import { backgroundJobs, taskRecords } from "../subagents/queries";
 import { TaskContext } from "./context";
+import { spawnTaskAgent } from "./agent";
+import type { BackgroundSelection } from "../background";
 import type { StorageMaintenance } from "../storage-maintenance";
 import {
   activeTaskExecutions,
@@ -64,6 +66,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     private readonly children: SubagentRuntime,
     private readonly ready: () => Promise<void>,
     private readonly maintenance: StorageMaintenance,
+    private readonly background: () => Promise<BackgroundSelection | undefined>,
     private readonly now = Date.now,
   ) {
     this.files = new TaskFiles(workspace);
@@ -412,13 +415,13 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     scheduledAt: number | null,
     now: number,
   ) {
-    return this.children.spawn(tx, agent, task.prompt, source, {
+    return spawnTaskAgent(tx, this.children, this.files, agent, await this.background(), ROOT_CONVERSATION_ID, task.prompt, {
       taskId: task.id,
       title: task.title,
       startedAt: now,
       scheduledAt,
       interrupted: false,
-    });
+    }, source);
   }
   /** Public for deterministic tests; the native transaction serializes timer/manual admissions. */
   tick(): Promise<void> {

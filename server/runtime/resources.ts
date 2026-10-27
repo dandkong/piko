@@ -1,10 +1,8 @@
 import { readFile, readdir, realpath, lstat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../workspace";
-import { TaskFiles } from "../task-files";
-import { TaskContext } from "./tasks/context";
-import { SubagentPromptScope } from "./subagents/documents";
+import { AgentResources, NO_AGENT_RESOURCES, workspaceAgentResources, type AgentResourcePolicy } from "./agents/resources";
 import type { WorkspaceSkillDetail } from "./types";
 
 export type WorkspaceSkill = {
@@ -35,7 +33,7 @@ async function loadWorkspaceResourcesInternal(
   paths: WorkspacePaths,
   signal?: AbortSignal,
   detailName?: string,
-  includeInstructions = true,
+  policy: AgentResourcePolicy = workspaceAgentResources(paths.workspace),
 ): Promise<LoadedWorkspaceResources> {
   const result: WorkspaceResources = {
     instructions: [],
@@ -44,20 +42,17 @@ async function loadWorkspaceResourcesInternal(
   };
   const warn = (path: string, message: string) =>
     result.diagnostics.push({ path, message });
-  if (includeInstructions) {
-    for (const [root, name, role] of [
-      [join(paths.resources, "prompts"), "core.md", "core"],
-      [paths.workspace, "AGENTS.md", "work_guidance"],
-      [paths.workspace, "MEMORY.md", "memory"],
-    ] as [string, string, GuidanceRole][]) {
-      signal?.throwIfAborted();
-      result.instructions.push({
-        role,
-        path: join(root, name),
-        content: readGuidance(root, name),
-      });
-    }
+  const instructionFiles: [string, GuidanceRole][] = [
+    ...(policy.core ? [[join(paths.resources, "prompts", "core.md"), "core"] as [string, GuidanceRole]] : []),
+    ...(policy.guidance ? [[join(paths.workspace, "AGENTS.md"), "work_guidance"] as [string, GuidanceRole]] : []),
+    ...policy.memory.map(path => [path, "memory"] as [string, GuidanceRole]),
+  ];
+  for (const [path, role] of instructionFiles) {
+    signal?.throwIfAborted();
+    if (await realpath(dirname(path)) !== resolve(dirname(path))) throw new Error("Instruction paths must not follow directory links.");
+    result.instructions.push({ role, path, content: readGuidance(dirname(path), basename(path)) });
   }
+  if (Array.isArray(policy.skills) && !policy.skills.length) return { resources: result };
   const byName = new Map<string, WorkspaceSkill>();
   let skillDetail: WorkspaceSkillDetail | undefined;
   for (const root of [
@@ -143,23 +138,23 @@ async function loadWorkspaceResourcesInternal(
       }
     }
   }
-  result.skills = [...byName.values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  result.skills = [...byName.values()]
+    .filter(skill => policy.skills === "workspace" || policy.skills.includes(skill.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
   return { resources: result, ...(skillDetail && { skillDetail }) };
 }
 
 export async function loadWorkspaceResources(
   paths: WorkspacePaths,
   signal?: AbortSignal,
-  options: { includeGuidance?: boolean } = {},
+  options: { policy?: AgentResourcePolicy } = {},
 ): Promise<WorkspaceResources> {
   return (
     await loadWorkspaceResourcesInternal(
       paths,
       signal,
       undefined,
-      options.includeGuidance ?? true,
+      options.policy,
     )
   ).resources;
 }
@@ -168,7 +163,8 @@ export async function loadWorkspaceSkill(
   paths: WorkspacePaths,
   name: string,
 ): Promise<WorkspaceSkillDetail | undefined> {
-  return (await loadWorkspaceResourcesInternal(paths, undefined, name, false)).skillDetail;
+  return (await loadWorkspaceResourcesInternal(paths, undefined, name,
+    { ...NO_AGENT_RESOURCES, skills: "workspace" })).skillDetail;
 }
 
 export function formatWorkspaceResources(
@@ -202,25 +198,12 @@ export function createWorkspaceResources(paths: WorkspacePaths) {
         return `Current date: ${date}
 Time zone: ${timeZone}`;
       }),
-      section("task_memory", async (input, context) => {
-        const binding = (
-          await input.read.snapshot(TaskContext, input.conversationId, context)
-        )?.binding;
-        if (!binding) return undefined;
-        return `<instructions_file role="memory" path="${escape(new TaskFiles(paths.workspace).directory(binding.taskId))}/MEMORY.md">\n${await new TaskFiles(paths.workspace).memory(binding.taskId)}\n</instructions_file>`;
-      }),
       section("workspace_resources", async (input, context) => {
-        const isSubagent = (
-          await input.read.snapshot(
-            SubagentPromptScope,
-            input.conversationId,
-            context,
-          )
-        )?.isSubagent;
+        const policy = (await input.read.snapshot(AgentResources, input.conversationId, context))?.policy ?? NO_AGENT_RESOURCES;
         const resources = await loadWorkspaceResources(
           paths,
           context.abortSignal,
-          { includeGuidance: !isSubagent },
+          { policy },
         );
         for (const diagnostic of resources.diagnostics) {
           const key = `${diagnostic.path}:${diagnostic.message}`;

@@ -104,21 +104,6 @@ export async function loadWorkspaceModels({
   };
 }
 
-function select(profile: ModelProfile): BackgroundSelection {
-  return {
-    provider: profile.provider,
-    modelId: profile.model,
-    thinkingLevel: (profile.thinking ?? "off") as ModelThinkingLevel,
-  };
-}
-
-/** Startup applies the configured model to stored children without touching credentials. */
-export function configuredBackground(
-  profile: ModelProfile | undefined,
-): BackgroundSelection | undefined {
-  return profile && select(profile);
-}
-
 /** Spawn fails a background job, not startup, when its provider has no usable credentials. */
 export async function availableBackground(
   models: Models,

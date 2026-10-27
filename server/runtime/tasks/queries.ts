@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { TaskExecution } from "../../../shared/tasks";
 import { AssistantTaskError } from "../../domain/tasks";
-import { TaskContext } from "./context";
+import { TaskContext, type TaskBinding } from "./context";
 import {
   backgroundJobs,
   jobFacts,
@@ -19,13 +19,13 @@ import { DETAIL_TEXT_LIMIT, truncateText } from "../text";
 function execution(
   child: ConversationId,
   facts: JobFacts,
+  binding: TaskBinding,
   preview?: string,
 ): TaskExecution {
-  const binding = facts.binding!;
   // Cancellation keeps a slot occupied until the native run/tools actually stop.
   const status = facts.running
     ? "running"
-    : binding.interrupted
+    : binding.interrupted || facts.interrupted
       ? "interrupted"
       : facts.stopped
         ? "stopped"
@@ -53,6 +53,8 @@ async function answerText(tx: Tx, facts: JobFacts): Promise<string> {
     .join("");
 }
 async function summary(tx: Tx, jobs: BackgroundJobs, child: ConversationId) {
+  const binding = (await tx.doc(TaskContext, child)).binding;
+  if (!binding) throw new AssistantTaskError("Execution not found.", 404);
   const facts = await jobFacts(tx, jobs, child);
   const answer = await answerText(tx, facts);
   const preview = truncateText(
@@ -62,7 +64,7 @@ async function summary(tx: Tx, jobs: BackgroundJobs, child: ConversationId) {
       .trim(),
     DETAIL_TEXT_LIMIT,
   );
-  return { execution: execution(child, facts, preview), answer };
+  return { execution: execution(child, facts, binding, preview), answer };
 }
 
 /** Scheduling and command guards do not read any answer bodies or completed submissions. */
@@ -76,7 +78,7 @@ export async function activeTaskExecutions(tx: Tx) {
     const reporter = jobs.reporters.get(child)?.at(-1);
     if (!reporter || (!live.run && reporter.state.status === "terminal"))
       continue;
-    const value = execution(child, await jobFacts(tx, jobs, child));
+    const value = execution(child, await jobFacts(tx, jobs, child), binding);
     if (value.status === "running")
       active.push({ binding: { ...binding }, execution: value });
   }

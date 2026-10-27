@@ -26,8 +26,9 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/tools/ | 不依赖 Agent SDK 的联网请求、搜索与正文提取 |
 | server/chat/http.ts、side-chats/http.ts、tasks/http.ts、attachments/http.ts | 分功能 HTTP 输入校验与业务调用 |
 | server/domain/tasks.ts | 纯任务定义校验和日历规则；业务类型 AssistantTask |
-| server/runtime/subagents/ | 共用执行、原生事实查询、固定文档、恢复和薄工具入口 |
-| server/runtime/tasks/ | 任务定义、游标、命令幂等、调度及按需执行查询；依赖共用执行，不依赖普通委派工具 |
+| server/runtime/agents/ | 原生 create/fork、显式 Agent 配置及独立资源策略，不依赖保存任务业务 |
+| server/runtime/subagents/ | 共用执行、原生事实查询和恢复；delegations.ts 承载普通委派业务，tools.ts 为薄入口 |
+| server/runtime/tasks/ | 任务定义、游标、命令幂等、调度及执行查询；agent.ts 组装目录、资源和固定提示词，依赖共用执行，不依赖普通委派工具 |
 | server/runtime/side-chat-service.ts、side-chats.ts | 旁聊业务规则与原生元数据/查询，运行时提供会话接纳和生命周期 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
@@ -73,6 +74,8 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 
+Agent 构建与后台驱动是两个独立能力：调用者显式提供历史起点、模型、cwd、角色、工具和资源选择，公共 Anchor/Reporter 只驱动执行与回传；记忆整理保留自己的 Durable task 流程。已有子会话的 AgentDoc 和资源选择在重启后保留，不重新套用父会话模板；后台默认模型仅在创建新子会话时选择。内部支持原生 fork、无自动资源及技能白名单，不扩大模型工具或 HTTP 能力，详见[Agent 构建与后台执行](features/agent-composition.md)。
+
 模型配置在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
 
 - 技能来源：工作区 `.agents/skills/<目录>/SKILL.md` 与应用 `server/resources/skills/<目录>/SKILL.md`，只读单层，不递归或跟随链接目录/文件；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
@@ -95,6 +98,7 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 | piko.recovery | 原生文档记录重启中断提示，下一次接纳清除 |
 | piko.stop | 按停止请求身份保存原目标 task ID；原生文档，不复制执行状态 |
 | piko.input-origin / piko.subagent-control | 原生文档保存通道/内部来源与取消 epoch、已报告回答 ID；不复制执行状态或正文 |
+| piko.agent-resources / piko.background-job | 资源文件/技能选择与用途、继续/回报策略；不复制 AgentDoc、文件正文或执行状态 |
 | piko.tasks / piko.task-command / piko.task-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |

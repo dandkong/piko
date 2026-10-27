@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { isWithin, readGuidance } from "./workspace";
+import { isWithin } from "./workspace";
 import { AssistantTaskError, taskId } from "./domain/tasks";
 
 /** Explicit paths, no title-derived directory names, no symlink traversal in product file APIs. */
@@ -66,11 +66,6 @@ export class TaskFiles {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
     await this.checked(memory, false);
-  }
-  async memory(id: string) {
-    const directory = this.directory(id);
-    await this.checked(join(directory, "MEMORY.md"), false);
-    return readGuidance(directory, "MEMORY.md");
   }
   async remove(id: string) {
     const parent = join(this.workspace, "tasks");
