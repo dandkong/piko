@@ -30,7 +30,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/runtime/subagents/ | 共用执行、原生事实查询和恢复；delegations.ts 承载普通委派业务，tools.ts 为薄入口 |
 | server/runtime/tasks/ | 任务定义、游标、命令幂等、调度及执行查询；agent.ts 组装目录、资源和固定提示词，依赖共用执行，不依赖普通委派工具 |
 | server/runtime/side-chat-service.ts、side-chats.ts | 旁聊业务规则与原生元数据/查询，运行时提供会话接纳和生命周期 |
-| server/settings/http.ts、runtime/settings.ts | 只读概览接口与安全配置投影，不提供配置写入或密钥回传 |
+| server/settings/http.ts、runtime/settings.ts | 模型配置读取与安全投影；配置服务校验并保存模型目录和凭据，不回传密钥 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
 
@@ -121,7 +121,9 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/health | 后端和模型可用状态 |
-| GET /api/settings | 当前加载配置与主会话选择的安全只读投影，不含密钥或原始配置 |
+| GET /api/settings | 模型选择器所需的可用模型列表与当前主会话模型 |
+| GET /api/settings/config | 配置修订、模型选择、脱敏目录和凭据状态 |
+| PUT /api/settings/config | 校验并保存模型选择、非敏感模型目录和显式凭据操作；当前未鉴权 |
 | GET /api/artifacts?path=… | 列出 `workspace/artifacts/` 的子目录与文件 |
 | GET /api/artifacts/content?path=… | 读取 allowlist 中且不超过 1 MiB 的 UTF-8 文本 |
 | GET /api/artifacts/download?path=… | 下载工作区产物文件，不执行或转换内容 |

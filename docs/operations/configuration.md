@@ -45,7 +45,7 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
 - Telegram 默认关闭；enabled 和允许访问的 userId 仅由 JSON 管理。有 Token 不自动启用通道。
 - 两个网络工具默认启用。关闭时从主/子 Agent 的实际工具表移除；即使有搜索 Key，也不会反向启用被关闭的工具。正常运行时工具清单不列出已禁用工具。
 - `tools.web_search.providers` 是非敏感的搜索后端优先级，默认 `brave → exa → tavily → deepseek`；只尝试列出的且有 Key 的后端。顺序非空、不得重复，未知名称拒绝启动。一次查询顺序调用：仅上游错误时回退；空结果是成功，不继续广播到其他后端。`web_extract` 保持单一工具，实际 provider 由 Agent 通过工具参数选择；可选项根据后端已配置凭据在启动时动态生成。
-- 模型角色固定为 agent.profiles.main（主聊天与所有旁聊统一使用的全局主模型）和 agent.profiles.background（之后新建的后台工作模型），不接受其他名字；两者模型与思考级别启动时校验。省略 background 表示跟随主模型，显式 profile 决定之后新建的后台工作。Durable AgentDoc 保存 SDK 当前执行模型，在启动与前台新一轮接纳时对齐全局 main；正在运行的执行不被切换。省略 main 时不会自动选第一个可用模型，模型执行前要求用户明确选择。可选 agent.stream 保留模型连接参数，没有环境覆盖入口。
+- 模型角色固定为 agent.profiles.main（主聊天与所有旁聊统一使用的全局主模型）和 agent.profiles.background（之后新建的后台工作模型），不接受其他名字；两者模型与思考级别启动时校验。未单独配置 background 时以当时的 main 作为初始值，之后独立生效，不实时跟随 main。Durable AgentDoc 保存 SDK 当前执行模型，在启动与前台新一轮接纳时对齐全局 main；正在运行的执行不被切换。省略 main 时不会自动选第一个可用模型，模型执行前要求用户明确选择。可选 agent.stream 保留模型连接参数，没有环境覆盖入口。
 - Piko 不配置 retry/compaction，使用 Durable 默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
 - models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值。供应商凭据写 `providers.<id>.apiKey`（内联，格式与 Pi 一致），或放在 auth.json；`keyless` 与 `apiKey` 互斥，两者都不配置时供应商视为未配置。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
 

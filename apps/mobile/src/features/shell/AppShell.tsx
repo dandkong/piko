@@ -21,7 +21,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { navigation, type AppTab } from "../../navigation";
-import { colors, motion, stateColors } from "../../theme";
+import { colors, motion, radii, stateColors } from "../../theme";
 import {
   EdgeFade,
   FOOTER_FADE_OVERHANG,
@@ -157,7 +157,7 @@ function Mascot({ size }: { size: number }) {
           width: size * 0.76,
           height: size * 0.76,
           borderRadius: size,
-          backgroundColor: "#ECF5FA",
+          backgroundColor: colors.mascot,
         }}
       />
       <Image
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     gap: 1,
-    borderRadius: 999,
+    borderRadius: radii.pill,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
@@ -391,21 +391,21 @@ const styles = StyleSheet.create({
     maxWidth: 370,
     padding: 5,
     backgroundColor: colors.card,
-    borderRadius: 40,
-    shadowColor: "#132631",
+    borderRadius: radii.pill,
+    shadowColor: colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
     shadowRadius: 18,
     elevation: 3,
     borderWidth: 1,
-    borderColor: "#F8F8F8",
+    borderColor: colors.line,
   },
   activePill: {
     position: "absolute",
     top: 5,
     left: 5,
     height: 47,
-    borderRadius: 28,
+    borderRadius: radii.pill,
     backgroundColor: stateColors.selected,
   },
   tab: {
@@ -413,11 +413,11 @@ const styles = StyleSheet.create({
     height: 47,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 28,
+    borderRadius: radii.pill,
   },
   tabFace: {
     width: "100%",
     height: "100%",
-    borderRadius: 28,
+    borderRadius: radii.pill,
   },
 });

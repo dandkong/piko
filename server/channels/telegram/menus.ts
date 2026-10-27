@@ -160,8 +160,9 @@ export class TelegramMenus {
         const active = await this.runtime.describe();
         const settings = await this.runtime.settings();
         const selected = settings.mainModel;
-        deferred = !!selected && (active.selection?.provider !== selected.provider || active.selection.model !== selected.model ||
-          (active.selection.thinking ?? "off") !== (selected.thinking ?? "off"));
+        const activeSelection = active.selection;
+        deferred = !!selected && (!activeSelection || activeSelection.provider !== selected.provider || activeSelection.model !== selected.model ||
+          (activeSelection.thinking ?? "off") !== (selected.thinking ?? "off"));
         return { ...active, selection: selected ?? active.selection };
       });
       menu.description = { ...menu.description, selection: description.selection };

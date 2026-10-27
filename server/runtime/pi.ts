@@ -39,7 +39,7 @@ import { createSessionSearchTools } from "./session-search-tools";
 import { SideChatError, requireSideChat } from "./side-chats";
 import { SideChats } from "./side-chat-service";
 import { openRuntime } from "./bootstrap";
-import { settingsDefaults, settingsOverview } from "./settings";
+import { settingsOverview } from "./settings";
 import { SettingsConfigurationStore, SettingsValidationError, type SettingsCandidate } from "../settings/configuration";
 import type { SaveSettingsConfiguration, SettingsBackgroundModel } from "../../shared/settings";
 import type { ModelProfile } from "../config/schema";
@@ -56,7 +56,6 @@ class PikoRuntime {
   private env: Record<string, string | undefined> = {};
   private configuredProviderIds = new Set<string>();
   private readonly settingsStore: SettingsConfigurationStore;
-  private settingsBase!: ReturnType<typeof settingsDefaults>;
   private readonly replies = new BackgroundReplies();
   private searchConfigured = false;
   private tasks!: DurableAssistantTasks;
@@ -86,7 +85,7 @@ class PikoRuntime {
     }));
     const coding = await createPikoCodingTools();
     const background = async () => {
-      const profile = config.backgroundFollowsMain ? config.main : config.background;
+      const profile = config.background;
       if (!profile) throw new Error("No background model is selected; choose a main or background model in Settings.");
       return availableBackground(config.models, profile);
     };
@@ -112,7 +111,6 @@ class PikoRuntime {
       coding,
     });
     const web = createWebTools(env, { settings: settings.tools });
-    this.settingsBase = settingsDefaults(this.paths, settings, env, web.overview);
     const sessionSearch = createSessionSearchTools({
       search: async (conversationId, query, limit) =>
         (await this.session(conversationId)).searchHistory(query, limit),
@@ -240,7 +238,7 @@ class PikoRuntime {
     return loadWorkspaceSkill(this.paths, name);
   }
   async settings() {
-    return settingsOverview(this.settingsBase, await this.main.native.agent(ctx), this.config, this.paths);
+    return settingsOverview(await this.main.native.agent(ctx), this.config);
   }
   settingsConfiguration() { return this.settingsStore.snapshot(); }
   private async validateSettingsSelection(selection: import("../../shared/runtime").ModelSelection | null, candidate: SettingsCandidate) {
@@ -277,8 +275,7 @@ class PikoRuntime {
         }
       }
       await this.validateSettingsSelection(candidate.mainModel, candidate);
-      if (candidate.backgroundModel.mode === "model")
-        await this.validateSettingsSelection(candidate.backgroundModel.selection, candidate);
+      await this.validateSettingsSelection(candidate.backgroundModel, candidate);
     });
     let pendingConversations = 0;
     if (!saved.restartRequired) {
@@ -287,17 +284,19 @@ class PikoRuntime {
         model: draft.mainModel.model,
         thinking: draft.mainModel.thinking ?? "off",
       } satisfies ModelProfile : undefined;
-      const background = draft.backgroundModel.mode === "model" ? {
-        provider: draft.backgroundModel.selection.provider,
-        model: draft.backgroundModel.selection.model,
-        thinking: draft.backgroundModel.selection.thinking ?? "off",
+      const background = draft.backgroundModel ? {
+        provider: draft.backgroundModel.provider,
+        model: draft.backgroundModel.model,
+        thinking: draft.backgroundModel.thinking ?? "off",
+      } satisfies ModelProfile : draft.mainModel ? {
+        provider: draft.mainModel.provider,
+        model: draft.mainModel.model,
+        thinking: draft.mainModel.thinking ?? "off",
       } satisfies ModelProfile : undefined;
       this.applicationSettings.agent.profiles.main = main;
       this.applicationSettings.agent.profiles.background = background;
       this.config.main = main;
       this.config.background = background;
-      this.config.backgroundFollowsMain = !background;
-      this.settingsBase = settingsDefaults(this.paths, this.applicationSettings, this.env, this.settingsBase.tools);
       if (main) {
         for (const opening of this.sessions.values()) {
           try {
@@ -321,12 +320,10 @@ class PikoRuntime {
     const model = await requireAvailableModel(this.config.models, requested);
     const thinking = requested.thinking ?? clampThinkingLevel(model, current?.thinking ?? "off");
     const snapshot = await this.settingsStore.snapshot();
-    const backgroundModel: SettingsBackgroundModel = this.config.backgroundFollowsMain
-      ? { mode: "follow-main" }
-      : { mode: "model", selection: {
-          provider: this.config.background!.provider, model: this.config.background!.model,
-          thinking: this.config.background!.thinking ?? "off",
-        } };
+    const backgroundModel: SettingsBackgroundModel = this.config.background
+      ? { provider: this.config.background.provider, model: this.config.background.model,
+          thinking: this.config.background.thinking ?? "off" }
+      : null;
     await this.saveSettingsConfiguration({
       baseRevision: snapshot.revision,
       mainModel: { provider: model.provider, model: model.id, thinking },

@@ -8,7 +8,7 @@ import Markdown, {
   type MarkdownStyles,
   type RenderRules,
 } from "react-native-markdown-renderer";
-import { colors } from "../../theme";
+import { colors, radii, stateColors } from "../../theme";
 import { assistantMarkdown, isAssistantLink, prepareAssistantMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
@@ -32,9 +32,9 @@ const markdownStyles: MarkdownStyles = {
   listItem: { minWidth: 0 },
   listUnorderedItemIcon: { ...body, marginLeft: 2, marginRight: 8 },
   listOrderedItemIcon: { ...body, marginLeft: 2, marginRight: 8 },
-  blockquote: { borderLeftWidth: 3, borderLeftColor: "#B7C9D4", paddingHorizontal: 12, marginBottom: 8 },
-  codeInline: { color: colors.text, backgroundColor: "#E2E4E7", fontFamily: monospace, fontSize: 14, lineHeight: 24 },
-  hr: { backgroundColor: "#D8DDE1", height: 1, marginVertical: 12 },
+  blockquote: { borderLeftWidth: 3, borderLeftColor: colors.lineStrong, paddingHorizontal: 12, marginBottom: 8 },
+  codeInline: { color: colors.text, backgroundColor: colors.codeSurface, fontFamily: monospace, fontSize: 14, lineHeight: 24 },
+  hr: { backgroundColor: colors.lineStrong, height: 1, marginVertical: 12 },
 };
 
 const resolvedMarkdownStyles: MarkdownStyles = {
@@ -59,15 +59,15 @@ const ui = StyleSheet.create({
   container: { minWidth: 0, flexShrink: 1, maxWidth: "100%" },
   // Paragraphs retain spacing between blocks without adding space below a reply.
   content: { marginBottom: -8 },
-  code: { marginBottom: 8, backgroundColor: "#E2E4E7", borderRadius: 10, overflow: "hidden", maxWidth: "100%" },
+  code: { marginBottom: 8, backgroundColor: colors.codeSurface, borderRadius: radii.control, overflow: "hidden", maxWidth: "100%" },
   language: { color: colors.muted, fontSize: 12, paddingHorizontal: 12, paddingTop: 8 },
   codeContent: { padding: 12 },
   codeText: { color: colors.text, fontFamily: monospace, fontSize: 14, lineHeight: 21 },
   horizontal: { maxWidth: "100%", flexGrow: 0 },
-  table: { marginBottom: 8, borderWidth: 1, borderColor: "#CDD5DC", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start" },
+  table: { marginBottom: 8, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radii.control, overflow: "hidden", alignSelf: "flex-start" },
   row: { flexDirection: "row" },
-  cell: { width: 160, flexShrink: 0, padding: 10, borderRightWidth: 1, borderBottomWidth: 1, borderColor: "#CDD5DC" },
-  headerCell: { backgroundColor: "#E2E8ED" },
+  cell: { width: 160, flexShrink: 0, padding: 10, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.lineStrong },
+  headerCell: { backgroundColor: stateColors.selected },
   headerText: { ...body, fontWeight: "600" },
   link: { color: colors.blueDark, textDecorationLine: "underline" },
   imageAlt: { ...body, color: colors.muted },

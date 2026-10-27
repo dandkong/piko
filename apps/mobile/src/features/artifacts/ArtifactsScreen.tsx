@@ -5,11 +5,12 @@ import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { IconButton } from "../../components/IconButton";
-import { Screen, ScreenCard } from "../../components/Screen";
+import { Screen } from "../../components/Screen";
+import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors, radii } from "../../theme";
+import { colors, controlSizes, radii } from "../../theme";
 import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
 
 const fileSize = (bytes: number) => {
@@ -176,14 +177,14 @@ export function ArtifactsScreen({
           </TextButton>
         </View>
       )}
-      {loading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.blueDark} />}
+      {loading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.muted} />}
       {!loading && !error && !entries.length && (
         <Text style={styles.empty}>
           {path ? "这个文件夹还没有内容。" : "产物文件夹还没有内容。你可以让 Piko 把文件保存到 artifacts/。"}
         </Text>
       )}
       {!loading && !error && entries.map(entry => (
-        <ScreenCard key={entry.path} style={styles.rowCard}>
+        <TactileListRow key={entry.path} surfaceVariant="card" style={styles.rowCard}>
           <TactilePressable
             accessibilityRole="button"
             accessibilityLabel={entry.kind === "directory" ? `打开文件夹 ${entry.name}` : `查看文件 ${entry.name}`}
@@ -192,6 +193,7 @@ export function ArtifactsScreen({
             scaleTo={1}
             style={styles.rowHit}
             faceStyle={styles.row}
+            stateFill={false}
             variant="plain"
             testID={`artifact-${entry.kind}`}
           >
@@ -219,13 +221,14 @@ export function ArtifactsScreen({
               scaleTo={0.94}
               style={styles.menuHit}
               faceStyle={styles.menuFace}
+              stateFill={false}
               variant="plain"
               testID="artifact-item-menu-button"
             >
               <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
             </TactilePressable>
           </View>
-        </ScreenCard>
+        </TactileListRow>
       ))}
 
       <Modal
@@ -294,7 +297,7 @@ const styles = StyleSheet.create({
   crumbFace: { minHeight: 32, paddingHorizontal: 4, paddingVertical: 4, gap: 4 },
   crumbText: { maxWidth: 140, color: colors.muted, fontSize: 16 },
   crumbCurrent: { color: colors.muted, fontWeight: "500" },
-  rowCard: { padding: 0, flexDirection: "row", alignItems: "stretch", gap: 0 },
+  rowCard: { flexDirection: "row", alignItems: "stretch", gap: 0 },
   rowHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
   row: {
     flex: 1,
@@ -310,7 +313,7 @@ const styles = StyleSheet.create({
   },
   menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
   menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
-  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  menuFace: { width: controlSizes.md, height: controlSizes.md, alignSelf: "center", borderRadius: controlSizes.md / 2, alignItems: "center", justifyContent: "center" },
   rowInfo: { flex: 1, minWidth: 0, gap: 4 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   meta: { color: colors.muted, fontSize: 12 },

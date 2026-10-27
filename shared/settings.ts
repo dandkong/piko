@@ -1,15 +1,21 @@
 import type { ModelSelection, RuntimeDescription } from "./runtime";
 
-/** Safe projection and editable configuration snapshot; never return raw credentials or arbitrary environment values. */
-export type SettingsBackgroundModel =
-  | { mode: "follow-main" }
-  | { mode: "model"; selection: ModelSelection };
+export const SETTINGS_CREDENTIAL_PROVIDERS = [
+  { id: "deepseek", label: "DeepSeek" },
+  { id: "openai", label: "OpenAI" },
+  { id: "anthropic", label: "Anthropic" },
+  { id: "google", label: "Google Gemini" },
+] as const;
+
+/** Settings configuration snapshot; API keys are returned only here for masked editing/reveal in Settings. */
+export type SettingsBackgroundModel = ModelSelection | null;
 
 export type SettingsCredentialState = {
   providerId: string;
   configured: boolean;
   type: "api_key" | "oauth" | null;
   sources: ("auth.json" | "models.json")[];
+  apiKey?: string;
 };
 
 export type SettingsConfigurationSnapshot = {
@@ -40,19 +46,7 @@ export type SaveSettingsResult = {
 };
 
 export type SettingsOverview = {
-  mode: "configuration";
-  app: { name: "Piko"; version: string; runtime: "pi-durable" };
-  currentModel: ModelSelection | null;
   mainModel: ModelSelection | null;
-  backgroundModel: SettingsBackgroundModel;
+  currentModel: ModelSelection | null;
   availableModels: RuntimeDescription["models"];
-  tools: {
-    search: { enabled: boolean; providers: { id: string; configured: boolean }[] };
-    extract: { enabled: boolean; providers: string[] };
-  };
-  skills: { name: string; description: string; modelInvocable: boolean }[];
-  telegram: { enabled: boolean; credentialConfigured: boolean };
-  workspace: { path: string; artifactsPath: string };
-  memory: { idleMinutes: number; minimumUserMessages: number };
-  modelReady: boolean;
 };

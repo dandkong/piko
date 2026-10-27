@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, type AccessibilityState, type StyleProp, type ViewStyle } from "react-native";
 import { radii } from "../theme";
 import { TactilePressable, type PressableVariant } from "./TactilePressable";
 
@@ -9,6 +9,7 @@ type Props = {
   onPress?: () => void;
   variant?: PressableVariant;
   disabled?: boolean;
+  accessibilityState?: AccessibilityState;
   hint?: string;
   testID?: string;
   style?: StyleProp<ViewStyle>;
@@ -22,6 +23,7 @@ export function TextButton({
   onPress,
   variant = "soft",
   disabled = false,
+  accessibilityState,
   hint,
   testID,
   style,
@@ -32,6 +34,7 @@ export function TextButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
+      accessibilityState={accessibilityState}
       disabled={disabled}
       hitSlop={4}
       onPress={onPress}

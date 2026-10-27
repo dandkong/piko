@@ -1,7 +1,6 @@
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   Text,
   View,
   type ListRenderItemInfo,
@@ -10,6 +9,7 @@ import { ArrowDown, RotateCcw } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { colors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
+import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { AssistantMessage } from "./AssistantMessage";
 import { AttachmentList } from "./AttachmentList";
@@ -89,16 +89,17 @@ export function ChatTab({ headerHeight, footerHeight }: {
           {...scroll.listProps}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
-              {loadingOlder ? <ActivityIndicator accessibilityLabel="正在加载更早的消息" color={colors.blueDark} size="small" /> : (
-                <Pressable accessibilityRole="button" onPress={fetchOlder}>
+              {loadingOlder ? <ActivityIndicator accessibilityLabel="正在加载更早的消息" color={colors.muted} size="small" /> : (
+                <TactilePressable accessibilityRole="button" accessibilityLabel={olderError ? "重试加载更早的消息" : "加载更早的消息"}
+                  onPress={fetchOlder} variant="plain" scaleTo={1} faceStyle={styles.loadOlderButton}>
                   <Text style={styles.muted}>{olderError ? "历史记录加载失败，点击重试" : "加载更早的消息"}</Text>
-                </Pressable>
+                </TactilePressable>
               )}
             </View>
           ) : null}
           ListEmptyComponent={loading ? (
             <View style={styles.centerState}>
-              <ActivityIndicator color={colors.blueDark} />
+              <ActivityIndicator color={colors.muted} />
               <Text style={styles.muted}>正在打开对话…</Text>
             </View>
           ) : null}

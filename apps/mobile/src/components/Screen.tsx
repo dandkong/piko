@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors } from "../theme";
+import { colors, radii } from "../theme";
 
 /** Every non-chat tab shares this page rhythm so the modules feel like one product. */
 export function Screen({ children, topInset, bottomInset, testID }: {
@@ -32,6 +32,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   spacer: { flex: 1 },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 16, gap: 10 },
+  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 16, gap: 10 },
   muted: { opacity: 0.55 },
 });

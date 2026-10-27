@@ -10,6 +10,7 @@ import type {
   SaveSettingsConfiguration, SettingsBackgroundModel, SettingsConfigurationSnapshot,
   SettingsCredentialOperation,
 } from "../../shared/settings";
+import { SETTINGS_CREDENTIAL_PROVIDERS } from "../../shared/settings";
 import { readJsonValue } from "../config/files";
 import { validateApplicationSettings, readApplicationSettings } from "../config";
 import { modelsSchema } from "../config/model-schema";
@@ -123,10 +124,15 @@ function readCredentialFile(path: string): StoredCredentials {
   return parseStoredCredentials(value);
 }
 function credentialStates(models: ModelDirectory, credentials: StoredCredentials) {
+  const editableProviderIds = new Set<string>(SETTINGS_CREDENTIAL_PROVIDERS.map(provider => provider.id));
   const ids = new Set([...Object.keys(models.providers), ...Object.keys(credentials)]);
   return [...ids].sort().map(providerId => {
     const auth = credentials[providerId];
     const inline = typeof models.providers[providerId]?.apiKey === "string" && String(models.providers[providerId]?.apiKey).length > 0;
+    const apiKey = !editableProviderIds.has(providerId) ? undefined : auth?.type === "api_key" ? auth.key
+      : auth?.type === "oauth" ? undefined
+        : typeof models.providers[providerId]?.apiKey === "string" ? models.providers[providerId].apiKey
+          : undefined;
     const sources: SettingsConfigurationSnapshot["credentials"][number]["sources"] = [];
     if (auth) sources.push("auth.json");
     if (inline) sources.push("models.json");
@@ -135,6 +141,7 @@ function credentialStates(models: ModelDirectory, credentials: StoredCredentials
       configured: !!auth || inline,
       type: auth?.type ?? (inline ? "api_key" as const : null),
       sources,
+      ...(apiKey ? { apiKey } : {}),
     };
   });
 }
@@ -253,9 +260,7 @@ export class SettingsConfigurationStore {
     return {
       revision,
       mainModel: selection(application.agent.profiles.main),
-      backgroundModel: application.agent.profiles.background
-        ? { mode: "model", selection: selection(application.agent.profiles.background)! }
-        : { mode: "follow-main" },
+      backgroundModel: selection(application.agent.profiles.background ?? application.agent.profiles.main),
       modelDirectory: JSON.stringify(safe, null, 2),
       credentials: credentialStates(models, credentials),
     };
@@ -296,7 +301,8 @@ export class SettingsConfigurationStore {
 
     const application = structuredClone(raw.application);
     const main = profile(draft.mainModel);
-    const background = draft.backgroundModel.mode === "model" ? profile(draft.backgroundModel.selection) : undefined;
+    // An omitted background selection is initialized from the main profile when saved.
+    const background = profile(draft.backgroundModel ?? draft.mainModel);
     application.agent.profiles.main = main;
     application.agent.profiles.background = background;
     validateApplicationSettings(application);
@@ -324,9 +330,7 @@ export class SettingsConfigurationStore {
     }
     if (!credentialsValidator.Check(auth)) throw new SettingsValidationError("凭据变更无效。");
     const sanitizedCandidate = sanitizeDirectory(nextModels);
-    const candidateBackground: SettingsBackgroundModel = draft.backgroundModel.mode === "model"
-      ? { mode: "model", selection: draft.backgroundModel.selection }
-      : { mode: "follow-main" };
+    const candidateBackground: SettingsBackgroundModel = draft.backgroundModel ?? draft.mainModel;
     await validate?.({
       mainModel: draft.mainModel,
       backgroundModel: candidateBackground,
@@ -337,8 +341,10 @@ export class SettingsConfigurationStore {
 
     const modelChanged = normalized(sanitizeDirectory(raw.models)) !== normalized(sanitizeDirectory(nextModels));
     const credentialsChanged = draft.credentialOperations.length > 0;
-    const pikoChanged = normalized({ main: selection(raw.application.agent.profiles.main), background: raw.application.agent.profiles.background ? selection(raw.application.agent.profiles.background) : { mode: "follow-main" } }) !==
-      normalized({ main: selection(main), background: background ? selection(background) : { mode: "follow-main" } });
+    const pikoChanged = normalized({
+      main: selection(raw.application.agent.profiles.main),
+      background: selection(raw.application.agent.profiles.background ?? raw.application.agent.profiles.main),
+    }) !== normalized({ main: selection(main), background: selection(background) });
     if (currentRevision !== this.revision()) throw new SettingsRevisionConflictError();
     const updates = new Map<string, string>();
     if (pikoChanged) updates.set("piko.json", `${JSON.stringify(application, null, 2)}\n`);

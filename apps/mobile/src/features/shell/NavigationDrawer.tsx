@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     gap: 14,
     paddingHorizontal: 14,
-    borderRadius: radii.card,
+    borderRadius: radii.control,
   },
   tabLabel: {
     fontSize: 17,

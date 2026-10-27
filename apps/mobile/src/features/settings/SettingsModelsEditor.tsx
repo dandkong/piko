@@ -1,47 +1,164 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react-native";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
-import type { SettingsConfigurationSnapshot, SettingsOverview } from "../../../../../shared/settings";
+import { SETTINGS_CREDENTIAL_PROVIDERS, type SettingsConfigurationSnapshot, type SettingsOverview } from "../../../../../shared/settings";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
-import { colors, radii } from "../../theme";
+import { colors, radii, stateColors } from "../../theme";
 import type { SettingsEditorDraft } from "./editor-state";
+
+type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
+
+const webTextInputStyle = { outlineStyle: "none" } as unknown as TextStyle;
+
+export type SettingsPage = "home" | "main-model" | "background-model" | "credentials";
 
 function sameModel(a: ModelSelection | null, b: ModelSelection | null) {
   return a?.provider === b?.provider && a?.model === b?.model;
 }
-function Label({ children }: { children: ReactNode }) { return <Text style={styles.label}>{children}</Text>; }
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+
+function Label({ children }: { children: ReactNode }) {
+  return <Text style={styles.label}>{children}</Text>;
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return <View style={styles.section}>
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>{children}</View>
-    {note ? <Text style={styles.note}>{note}</Text> : null}
-  </View>;
-}
-function SelectModel({ title, selection, models, onSelect }: {
-  title: string; selection: ModelSelection | null;
-  models: SettingsOverview["availableModels"];
-  onSelect: (model: { provider: string; id: string; thinkingLevels: ThinkingLevel[] }) => void;
-}) {
-  return <View style={styles.group}>
-    <Label>{title}</Label>
-    {models.length ? models.map(model => {
-      const selected = selection?.provider === model.provider && selection.model === model.id;
-      return <TactilePressable key={`${model.provider}/${model.id}`} accessibilityRole="button"
-        accessibilityLabel={`${title} ${model.name}${selected ? "，已选" : ""}`} onPress={() => onSelect(model)}
-        variant="plain" scaleTo={1} faceStyle={[styles.modelRow, selected && styles.selected]}>
-        <View style={styles.modelText}>
-          <Text style={styles.modelName}>{model.name}</Text>
-          <Text style={styles.note}>{model.provider} / {model.id}</Text>
-        </View>
-        <Text style={[styles.selection, selected && styles.selectedText]}>{selected ? "已选择" : "选择"}</Text>
-      </TactilePressable>;
-    }) : <Text style={styles.note}>还没有已配置凭据的可选模型。</Text>}
   </View>;
 }
 
-export function SettingsModelsEditor({ overview, snapshot, draft, loading, saving, error, status,
-  onDraftChange, onRefresh, onSave }: {
+function MenuSection({ title, children }: { title: string; children: ReactNode }) {
+  return <View style={styles.section}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.menuCard}>{children}</View>
+  </View>;
+}
+
+function MenuRow({ title, value, onPress }: { title: string; value: string; onPress: () => void }) {
+  return <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}，${value}`} onPress={onPress}
+    variant="plain" scaleTo={1} faceStyle={styles.menuRow}>
+    <View style={styles.menuText}>
+      <Text style={styles.menuTitle}>{title}</Text>
+      <Text numberOfLines={1} style={styles.menuValue}>{value}</Text>
+    </View>
+    <ChevronRight size={18} strokeWidth={1.8} color={colors.muted} />
+  </TactilePressable>;
+}
+
+function modelSummary(selection: ModelSelection | null, models: SettingsOverview["availableModels"]) {
+  if (!selection) return "尚未选择";
+  const model = models.find(item => item.provider === selection.provider && item.id === selection.model);
+  return model ? `${model.name} · ${model.provider}` : `${selection.provider} / ${selection.model}`;
+}
+
+const thinkingLevelOptions: Record<ThinkingLevel, string> = {
+  off: "关闭",
+  minimal: "最少",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "很高",
+  max: "最高",
+};
+
+function ModelSelectionPage({ kind, overview, selection, onSelect, onThinkingChange, saving }: {
+  kind: "main-model" | "background-model";
+  overview: SettingsOverview;
+  selection: ModelSelection | null;
+  onSelect: (model: SettingsOverview["availableModels"][number]) => void;
+  onThinkingChange: (thinking: ThinkingLevel) => void;
+  saving: boolean;
+}) {
+  const providers = useMemo(() => [...new Set(overview.availableModels.map(model => model.provider))].sort(), [overview.availableModels]);
+  const [providerFilter, setProviderFilter] = useState("全部");
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const models = providerFilter === "全部" ? overview.availableModels
+    : overview.availableModels.filter(model => model.provider === providerFilter);
+  const selected = overview.availableModels.find(model => model.provider === selection?.provider && model.id === selection.model);
+  const selectedThinking = selected
+    ? selected.thinkingLevels.includes(selection?.thinking ?? "off") ? selection?.thinking ?? "off"
+      : selected.thinkingLevels.includes("off") ? "off" : selected.thinkingLevels[0]
+    : undefined;
+  const title = kind === "main-model" ? "主模型" : "后台模型";
+
+  return <View style={styles.modelPage}>
+    {providers.length > 1 ? <View style={styles.group}>
+      <Label>供应商</Label>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.providerFilters}>
+        {["全部", ...providers].map(provider => <TactilePressable key={provider} accessibilityRole="button" hitSlop={{ top: 5, bottom: 5 }}
+          accessibilityLabel={`筛选供应商 ${provider}`} selected={providerFilter === provider}
+          onPress={() => setProviderFilter(provider)} variant="plain" scaleTo={1} faceStyle={styles.providerChip}>
+          <Text style={styles.providerText}>{provider}</Text>
+        </TactilePressable>)}
+      </ScrollView>
+    </View> : null}
+
+    <View style={styles.group}>
+      <Label>模型</Label>
+      {models.length ? <View style={styles.modelList}>
+        {models.map((model, index) => {
+          const active = selection?.provider === model.provider && selection.model === model.id;
+          return <View key={`${model.provider}/${model.id}`}>
+            <TactilePressable accessibilityRole="button"
+              accessibilityLabel={`${title} ${model.name}${active ? "，已选" : ""}`} selected={active} disabled={saving} onPress={() => {
+                setThinkingExpanded(false);
+                onSelect(model);
+              }}
+              variant="plain" scaleTo={1} faceStyle={styles.modelRow}>
+              <View style={styles.modelText}>
+                <Text style={styles.modelName}>{model.name}</Text>
+                <Text numberOfLines={1} style={styles.note}>{model.provider} / {model.id}</Text>
+              </View>
+              {active ? <Check size={19} strokeWidth={2} color={colors.text} /> : <View style={styles.emptyCheck} />}
+            </TactilePressable>
+            {index < models.length - 1 ? <View style={styles.modelSeparator} /> : null}
+          </View>;
+        })}
+      </View> : <Text style={styles.note}>暂无可用模型。</Text>}
+    </View>
+
+    <View style={styles.group}>
+      <Label>思考强度</Label>
+      {!selected ? <Text style={styles.note}>请先选择模型。</Text>
+        : !selectedThinking ? <Text style={styles.note}>该模型没有提供思考强度选项。</Text>
+          : <>
+            {selected.thinkingLevels.length > 1
+              ? <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}思考强度，当前${thinkingLevelOptions[selectedThinking]}`}
+                accessibilityHint={thinkingExpanded ? "收起思考强度选项" : "展开思考强度选项"}
+                accessibilityState={{ expanded: thinkingExpanded }} disabled={saving}
+                onPress={() => setThinkingExpanded(value => !value)} variant="card" scaleTo={1} faceStyle={styles.thinkingSelect}>
+                <Text style={styles.thinkingOptionTitle}>{thinkingLevelOptions[selectedThinking]}</Text>
+                <ChevronDown size={18} strokeWidth={1.8} color={colors.muted}
+                  style={{ transform: [{ rotate: thinkingExpanded ? "180deg" : "0deg" }] }} />
+              </TactilePressable>
+              : <View style={styles.thinkingSelect}>
+                <Text style={styles.thinkingOptionTitle}>{thinkingLevelOptions[selectedThinking]}</Text>
+              </View>}
+            {thinkingExpanded && selected.thinkingLevels.length > 1 ? <View style={styles.thinkingOptions}>
+              {selected.thinkingLevels.map((level, index, levels) => {
+                const active = selectedThinking === level;
+                return <View key={level}>
+                  <TactilePressable accessibilityRole="radio" accessibilityLabel={`${title}思考强度：${thinkingLevelOptions[level]}`}
+                    accessibilityState={{ selected: active }} disabled={saving}
+                    onPress={() => { onThinkingChange(level); setThinkingExpanded(false); }}
+                    variant="plain" selected={active} scaleTo={1} faceStyle={styles.thinkingOption}>
+                    <Text style={[styles.thinkingOptionTitle, active && styles.thinkingOptionTitleSelected]}>{thinkingLevelOptions[level]}</Text>
+                    {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : <View style={styles.emptyCheck} />}
+                  </TactilePressable>
+                  {index < levels.length - 1 ? <View style={styles.modelSeparator} /> : null}
+                </View>;
+              })}
+            </View> : null}
+          </>}
+    </View>
+  </View>;
+}
+
+export function SettingsModelsEditor({ page, overview, snapshot, draft, loading, saving, error, status,
+  onModelChange, onCredentialChange, onNavigate, onRetry }: {
+    page: SettingsPage;
     overview: SettingsOverview;
     snapshot?: SettingsConfigurationSnapshot;
     draft?: SettingsEditorDraft;
@@ -49,202 +166,186 @@ export function SettingsModelsEditor({ overview, snapshot, draft, loading, savin
     saving: boolean;
     error: string;
     status: string;
-    onDraftChange: (draft: SettingsEditorDraft) => void;
-    onRefresh: () => void;
-    onSave: (draft: SettingsEditorDraft) => void;
+    onModelChange: (draft: SettingsEditorDraft) => void;
+    onCredentialChange: (draft: SettingsEditorDraft) => void;
+    onNavigate: (page: SettingsPage) => void;
+    onRetry: () => void;
   }) {
-  const [confirmRestart, setConfirmRestart] = useState(false);
-  const [newCredentialProvider, setNewCredentialProvider] = useState("");
-  const allProviders = useMemo(() => {
-    const ids = new Set([...(snapshot?.credentials.map(item => item.providerId) ?? []), ...Object.keys(draft?.keyInputs ?? {})].filter(Boolean));
-    try {
-      const parsed = JSON.parse(draft?.modelDirectory ?? "") as { providers?: Record<string, unknown> };
-      for (const id of Object.keys(parsed.providers ?? {})) ids.add(id);
-    } catch { /* keep the known provider list while invalid JSON is being edited */ }
-    return [...ids].sort();
-  }, [draft?.modelDirectory, snapshot?.credentials]);
+  const [expandedProviders, setExpandedProviders] = useState<string[]>([]);
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+  const [focusedProvider, setFocusedProvider] = useState<string>();
+  const [focusVisibleProvider, setFocusVisibleProvider] = useState<string>();
+  useLayoutEffect(() => {
+    if (saving || page !== "credentials") setVisibleKeys({});
+  }, [page, saving]);
 
   if (loading && !snapshot) return <View style={styles.content}><Text style={styles.note}>正在读取可编辑配置…</Text></View>;
   if (!snapshot || !draft) return <View style={styles.content}>
     <Text accessibilityRole="alert" style={styles.error}>{error || "无法读取配置。"}</Text>
-    <TextButton label="重新读取配置" disabled={loading} onPress={onRefresh}><Text style={styles.actionText}>重试</Text></TextButton>
+    <TextButton label="重试读取模型配置" disabled={loading} onPress={onRetry}><Text style={styles.actionText}>重试</Text></TextButton>
   </View>;
 
-  const dirty = !sameModel(draft.mainModel, snapshot.mainModel) ||
-    (draft.mainModel?.thinking ?? "off") !== (snapshot.mainModel?.thinking ?? "off") ||
-    JSON.stringify(draft.backgroundModel) !== JSON.stringify(snapshot.backgroundModel) ||
-    draft.modelDirectory !== snapshot.modelDirectory ||
-    Object.values(draft.keyInputs).some(value => !!value.trim()) || draft.deleteProviders.length > 0;
-  const restart = draft.modelDirectory !== snapshot.modelDirectory ||
-    Object.values(draft.keyInputs).some(value => !!value.trim()) || draft.deleteProviders.length > 0;
-  const update = (patch: Partial<SettingsEditorDraft>) => onDraftChange({ ...draft, ...patch });
-  const mainModelInfo = draft.mainModel && overview.availableModels.find(model => model.provider === draft.mainModel!.provider && model.id === draft.mainModel!.model);
-  const backgroundSelection = draft.backgroundModel.mode === "model" ? draft.backgroundModel.selection : null;
-  const backgroundModelInfo = backgroundSelection && overview.availableModels.find(model => model.provider === backgroundSelection.provider && model.id === backgroundSelection.model);
-  const chooseMain = (model: { provider: string; id: string; thinkingLevels: ThinkingLevel[] }) => {
+  const updateModel = (patch: Partial<SettingsEditorDraft>) => onModelChange({ ...draft, ...patch });
+  const updateCredentials = (patch: Partial<SettingsEditorDraft>) => onCredentialChange({ ...draft, ...patch });
+  const chooseMain = (model: SettingsOverview["availableModels"][number]) => {
     const old = draft.mainModel;
     const thinking = sameModel(old, { provider: model.provider, model: model.id }) && old?.thinking && model.thinkingLevels.includes(old.thinking)
       ? old.thinking : model.thinkingLevels.includes("off") ? "off" : model.thinkingLevels[0] ?? "off";
-    update({ mainModel: { provider: model.provider, model: model.id, thinking } });
+    const selection = { provider: model.provider, model: model.id, thinking };
+    updateModel({ mainModel: selection, ...(draft.backgroundModel ? {} : { backgroundModel: selection }) });
   };
-  const chooseBackground = (model: { provider: string; id: string; thinkingLevels: ThinkingLevel[] }) => {
-    const current = draft.backgroundModel.mode === "model" ? draft.backgroundModel.selection : draft.mainModel;
+  const chooseBackground = (model: SettingsOverview["availableModels"][number]) => {
+    const current = draft.backgroundModel ?? draft.mainModel;
     const thinking = sameModel(current, { provider: model.provider, model: model.id }) && current?.thinking && model.thinkingLevels.includes(current.thinking)
       ? current.thinking : model.thinkingLevels.includes("off") ? "off" : model.thinkingLevels[0] ?? "off";
-    update({ backgroundModel: { mode: "model", selection: { provider: model.provider, model: model.id, thinking } } });
+    updateModel({ backgroundModel: { provider: model.provider, model: model.id, thinking } });
   };
-  const invalidCredential = Object.entries(draft.keyInputs).some(([id, key]) => !!key.trim() && !/^[a-z0-9][a-z0-9-]*$/.test(id));
-  const invalidBackground = draft.backgroundModel.mode === "model" && !draft.backgroundModel.selection.provider;
-  const valid = !invalidCredential && !invalidBackground && (() => { try { JSON.parse(draft.modelDirectory); return true; } catch { return false; } })();
 
-  return <View style={styles.content} testID="settings-detail-models">
-    <Section title="主模型" note="全局主模型统一用于主聊天和所有旁聊。正在进行的一轮完成后，下一轮会对齐新选择。">
-      <SelectModel title="可用模型" selection={draft.mainModel} models={overview.availableModels} onSelect={chooseMain} />
-      {draft.mainModel && overview.currentModel && !sameModel(overview.currentModel, draft.mainModel) ? <Text style={styles.note}>当前主会话实际模型仍为 {overview.currentModel.provider}/{overview.currentModel.model}；保存后空闲会话立即对齐，忙碌会话下一轮生效。</Text> : null}
-      {draft.mainModel ? <View style={styles.group}>
-        <Label>思考强度 · {draft.mainModel.provider}/{draft.mainModel.model}</Label>
-        <View style={styles.levels}>{(mainModelInfo?.thinkingLevels ?? ["off"]).map(level => <TactilePressable key={level} accessibilityRole="button"
-          accessibilityLabel={`主模型思考强度 ${level}`} onPress={() => update({ mainModel: { ...draft.mainModel!, thinking: level } })}
-          variant="plain" scaleTo={1} faceStyle={[styles.level, draft.mainModel?.thinking === level && styles.levelSelected]}>
-          <Text style={[styles.levelText, draft.mainModel?.thinking === level && styles.selectedText]}>{level}</Text>
-        </TactilePressable>)}</View>
-      </View> : <Text style={styles.note}>尚未选择主模型；选择并保存前，聊天不能开始新的模型执行。</Text>}
-    </Section>
+  const configuredCount = SETTINGS_CREDENTIAL_PROVIDERS.filter(provider =>
+    snapshot.credentials.find(credential => credential.providerId === provider.id)?.configured).length;
 
-    <Section title="后台模型" note="跟随主模型适用于之后新建的委派、任务执行和记忆整理；已启动的后台工作保持原模型。">
-      <View style={styles.levels}>
-        {(["follow-main", "model"] as const).map(mode => <TactilePressable key={mode} accessibilityRole="button"
-          accessibilityLabel={mode === "follow-main" ? "后台模型跟随主模型" : "指定后台模型"}
-          onPress={() => update({ backgroundModel: mode === "follow-main" ? { mode } : { mode, selection: draft.mainModel ?? { provider: "", model: "", thinking: "off" } } })}
-          variant="plain" scaleTo={1} faceStyle={[styles.mode, draft.backgroundModel.mode === mode && styles.levelSelected]}>
-          <Text style={[styles.levelText, draft.backgroundModel.mode === mode && styles.selectedText]}>{mode === "follow-main" ? "跟随主模型" : "指定模型"}</Text>
-        </TactilePressable>)}
-      </View>
-      {draft.backgroundModel.mode === "model" ? <>
-        <SelectModel title="后台模型" selection={draft.backgroundModel.selection} models={overview.availableModels} onSelect={chooseBackground} />
-        <View style={styles.group}>
-          <Label>后台思考强度</Label>
-          <View style={styles.levels}>{(backgroundModelInfo?.thinkingLevels ?? ["off"]).map(level => <TactilePressable key={level} accessibilityRole="button"
-            accessibilityLabel={`后台模型思考强度 ${level}`} onPress={() => {
-              const current = draft.backgroundModel;
-              if (current.mode === "model") update({ backgroundModel: { mode: "model", selection: { ...current.selection, thinking: level } } });
-            }}
-            variant="plain" scaleTo={1} faceStyle={[styles.level, draft.backgroundModel.mode === "model" && draft.backgroundModel.selection.thinking === level && styles.levelSelected]}>
-            <Text style={[styles.levelText, draft.backgroundModel.mode === "model" && draft.backgroundModel.selection.thinking === level && styles.selectedText]}>{level}</Text>
-          </TactilePressable>)}</View>
-        </View>
-      </> : null}
-    </Section>
-
-    <Section title="供应商凭据" note="只显示是否配置。Key 只在本次提交中传输并写入 auth.json；输入留空表示保留。OAuth 凭据当前不通过此表单编辑。">
-      {allProviders.map(providerId => {
-        const state = snapshot.credentials.find(item => item.providerId === providerId);
-        const isOAuth = state?.type === "oauth";
-        const deleting = draft.deleteProviders.includes(providerId);
-        return <View key={providerId} style={styles.credential}>
-          <View style={styles.credentialHeading}><Text style={styles.modelName}>{providerId}</Text>
-            <Text style={styles.note}>{isOAuth ? "OAuth 已配置" : state?.configured ? "API Key 已配置" : "未配置"}</Text>
-          </View>
-          {!isOAuth ? <>
-            <TextInput accessibilityLabel={`${providerId} API Key`} value={draft.keyInputs[providerId] ?? ""}
-              onChangeText={value => {
-                const keyInputs = { ...draft.keyInputs, [providerId]: value };
-                if (value) update({ keyInputs, deleteProviders: draft.deleteProviders.filter(id => id !== providerId) });
-                else update({ keyInputs });
-              }} secureTextEntry autoCapitalize="none" autoCorrect={false} editable={!saving}
-              placeholder={state?.configured ? "输入新 Key 以替换；留空保留" : "输入 API Key"} style={styles.input} />
-            {state?.configured ? <TextButton label={`${deleting ? "取消删除" : "删除"}${providerId} 凭据`}
-              onPress={() => {
-                const deleteProviders = deleting ? draft.deleteProviders.filter(id => id !== providerId) : [...draft.deleteProviders, providerId];
-                update({ deleteProviders, keyInputs: { ...draft.keyInputs, [providerId]: "" } });
-              }} variant="plain" faceStyle={styles.inlineAction}>
-              <Text style={styles.deleteText}>{deleting ? "取消删除" : "明确删除 Key"}</Text>
-            </TextButton> : null}
-            {deleting ? <Text style={styles.error}>保存后将从 auth.json 和 models.json 移除该供应商 Key。</Text> : null}
-          </> : <Text style={styles.note}>OAuth 由独立授权流程管理，不会被 API Key 表单覆盖。</Text>}
-        </View>;
-      })}
-      <View style={styles.group}>
-        <Label>为新供应商添加 API Key</Label>
-        <TextInput accessibilityLabel="新凭据供应商 ID" value={newCredentialProvider} onChangeText={value => {
-          const previous = newCredentialProvider;
-          setNewCredentialProvider(value);
-          if (previous && draft.keyInputs[previous]) {
-            const keyInputs = { ...draft.keyInputs };
-            const key = keyInputs[previous]!;
-            delete keyInputs[previous];
-            if (value) keyInputs[value] = key;
-            update({ keyInputs });
-          }
-        }}
-          autoCapitalize="none" autoCorrect={false} editable={!saving} placeholder="例如 custom-provider" style={styles.input} />
-        <TextInput accessibilityLabel="新供应商 API Key" value={draft.keyInputs[newCredentialProvider] ?? ""}
-          onChangeText={value => update({ keyInputs: { ...draft.keyInputs, [newCredentialProvider]: value } })}
-          secureTextEntry autoCapitalize="none" autoCorrect={false} editable={!saving && !!newCredentialProvider} placeholder={newCredentialProvider ? "API Key" : "先填写供应商 ID"} style={styles.input} />
-      </View>
-    </Section>
-
-    <Section title="供应商与模型目录" note="高级目录编辑（models.json 的非敏感字段）。API Key 不会显示或包含在此 JSON 中；修改目录需要重启服务。">
-      <TextInput accessibilityLabel="非敏感模型目录 JSON" testID="settings-model-directory" value={draft.modelDirectory}
-        onChangeText={value => update({ modelDirectory: value })} editable={!saving} multiline autoCapitalize="none" autoCorrect={false}
-        spellCheck={false} textAlignVertical="top" style={styles.jsonInput} />
-      <TextButton label={dirty ? "放弃草稿并重新读取模型配置" : "重新读取模型配置"} disabled={loading || saving} onPress={onRefresh}>
-        <Text style={styles.actionText}>{loading ? "读取中…" : dirty ? "放弃草稿并重新读取" : "重新读取配置"}</Text>
-      </TextButton>
-    </Section>
-
+  if (page === "home") return <View style={styles.content} testID="settings-home">
+    <MenuSection title="模型">
+      <MenuRow title="主模型" value={modelSummary(draft.mainModel, overview.availableModels)} onPress={() => onNavigate("main-model")} />
+      <View style={styles.separator} />
+      <MenuRow title="后台模型" value={modelSummary(draft.backgroundModel, overview.availableModels)} onPress={() => onNavigate("background-model")} />
+      <View style={styles.separator} />
+      <MenuRow title="供应商凭据" value={`${configuredCount} 个已配置`} onPress={() => onNavigate("credentials")} />
+    </MenuSection>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
-    {invalidCredential ? <Text style={styles.error}>凭据供应商 ID 只能使用小写字母、数字和连字符。</Text> : null}
-    {!valid ? <Text style={styles.error}>请检查模型目录 JSON 与后台模型选择。</Text> : null}
-    {confirmRestart ? <View style={styles.confirm}>
-      <Text style={styles.confirmTitle}>这次保存需要重启 Piko</Text>
-      <Text style={styles.note}>当前正在运行的工作可能被中断，Durable 不会自动重放不确定执行。继续保存并重启？</Text>
-      <View style={styles.actions}>
-        <TextButton label="取消重启确认" disabled={saving} onPress={() => setConfirmRestart(false)}><Text style={styles.actionText}>取消</Text></TextButton>
-        <TextButton label="确认保存并重启" disabled={saving} onPress={() => { setConfirmRestart(false); onSave(draft); }} variant="primary">
-          <Text style={styles.actionText}>{saving ? "保存中…" : "保存并重启"}</Text>
-        </TextButton>
-      </View>
-    </View> : <TextButton label="保存并应用模型配置" disabled={!dirty || !valid || saving || loading}
-      onPress={() => restart ? setConfirmRestart(true) : onSave(draft)} variant="primary" faceStyle={styles.saveButton}>
-      <Text style={styles.saveText}>{saving ? "保存中…" : "保存并应用"}</Text>
-    </TextButton>}
-    {restart ? <Text style={styles.note}>模型目录或凭据有修改，确认后会重启服务。</Text> : null}
+  </View>;
+
+  return <View style={styles.content} testID={`settings-${page}`}>
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
+    {(page === "main-model" || page === "background-model") ? <ModelSelectionPage
+      key={page}
+      kind={page}
+      overview={overview}
+      selection={page === "main-model" ? draft.mainModel : draft.backgroundModel}
+      saving={saving}
+      onSelect={page === "main-model" ? chooseMain : chooseBackground}
+      onThinkingChange={thinking => {
+        if (page === "main-model" && draft.mainModel) updateModel({ mainModel: { ...draft.mainModel, thinking } });
+        if (page === "background-model" && draft.backgroundModel) updateModel({ backgroundModel: { ...draft.backgroundModel, thinking } });
+      }}
+    /> : null}
+
+    {page === "credentials" ? <Section title="供应商凭据">
+      {SETTINGS_CREDENTIAL_PROVIDERS.map((provider, index) => {
+        const providerId = provider.id;
+        const state = snapshot.credentials.find(item => item.providerId === providerId);
+        const isOAuth = state?.type === "oauth";
+        const expanded = expandedProviders.includes(providerId);
+        const originalKey = state?.apiKey ?? "";
+        const currentKey = draft.keyInputs[providerId] ?? originalKey;
+        const keyVisible = !!visibleKeys[providerId] && !saving;
+        const hasDraftKey = !!currentKey.trim();
+        const status = isOAuth ? "OAuth 已配置"
+          : originalKey && !hasDraftKey ? "待删除"
+            : !hasDraftKey ? "未配置" : currentKey.trim() === originalKey.trim() ? "已配置" : "待保存";
+        const statusStyle = status === "待保存" ? styles.statusPending
+          : status === "待删除" ? styles.statusDanger : styles.note;
+        return <View key={providerId} style={[styles.credential, index === SETTINGS_CREDENTIAL_PROVIDERS.length - 1 && styles.lastCredential]}>
+          <TactilePressable accessibilityRole="button" accessibilityLabel={`${provider.label}，${status}`}
+            accessibilityState={{ expanded }} onPress={() => {
+              setExpandedProviders(current => expanded ? current.filter(id => id !== providerId) : [...current, providerId]);
+              if (expanded) setVisibleKeys(current => ({ ...current, [providerId]: false }));
+            }}
+            variant="plain" scaleTo={1} faceStyle={styles.providerHeader}>
+            <View style={styles.credentialHeading}>
+              <Text style={styles.modelName}>{provider.label}</Text>
+              <Text style={statusStyle}>{status}</Text>
+            </View>
+            <ChevronDown size={18} strokeWidth={1.8} color={colors.muted}
+              style={{ transform: [{ rotate: expanded ? "180deg" : "0deg" }] }} />
+          </TactilePressable>
+          {expanded ? <View style={styles.providerBody}>
+            {isOAuth ? <Text style={styles.note}>OAuth 凭据</Text> : <>
+              <Label>API Key</Label>
+              <View style={[styles.passwordField, focusedProvider === providerId && styles.passwordFieldFocused,
+                focusVisibleProvider === providerId && styles.passwordFieldFocusVisible]}>
+                <TextInput accessibilityLabel={`${provider.label} API Key`} value={currentKey} maxLength={8192}
+                  selectTextOnFocus
+                  onFocus={(event: InputFocusEvent) => {
+                    setFocusedProvider(providerId);
+                    const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
+                    const focusVisible = target?.matches ? target.matches(":focus-visible") : true;
+                    setFocusVisibleProvider(Platform.OS === "web" && focusVisible ? providerId : undefined);
+                  }}
+                  onBlur={() => {
+                    setFocusedProvider(current => current === providerId ? undefined : current);
+                    setFocusVisibleProvider(current => current === providerId ? undefined : current);
+                  }}
+                  onChangeText={value => {
+                    const keyInputs = { ...draft.keyInputs, [providerId]: value };
+                    updateCredentials({ keyInputs });
+                    if (!value) setVisibleKeys(current => ({ ...current, [providerId]: false }));
+                  }} secureTextEntry={!keyVisible} autoCapitalize="none" autoCorrect={false} editable={!saving}
+                  placeholder="API Key" placeholderTextColor={colors.muted} returnKeyType="done"
+                  style={[styles.passwordInput, Platform.OS === "web" && webTextInputStyle]} />
+                <TactilePressable accessibilityRole="button"
+                  accessibilityLabel={`${keyVisible ? "隐藏" : "预览"}${provider.label} API Key`}
+                  accessibilityState={{ selected: keyVisible }}
+                  disabled={saving || !hasDraftKey}
+                  onPress={() => setVisibleKeys(current => ({ ...current, [providerId]: !current[providerId] }))}
+                  variant="plain" scaleTo={1} faceStyle={styles.revealButton}>
+                  {keyVisible
+                    ? <EyeOff size={18} strokeWidth={1.8} color={colors.muted} />
+                    : <Eye size={18} strokeWidth={1.8} color={colors.muted} />}
+                </TactilePressable>
+              </View>
+            </>}
+          </View> : null}
+        </View>;
+      })}
+    </Section> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 4, paddingBottom: 28, gap: 18 },
+  content: { paddingTop: 4, paddingBottom: 20, gap: 18 },
   section: { marginHorizontal: 20, gap: 8 },
   sectionTitle: { fontSize: 13, fontWeight: "500", color: colors.muted },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 16, gap: 16 },
+  menuCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
+  menuRow: { minHeight: 66, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 15, paddingVertical: 10 },
+  menuText: { flex: 1, minWidth: 0, gap: 3 },
+  menuTitle: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
+  menuValue: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
   group: { gap: 8 },
   label: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
-  modelRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 10, borderRadius: radii.control, borderWidth: 1, borderColor: colors.line },
-  selected: { borderColor: colors.blueDark, backgroundColor: colors.card },
-  modelText: { flex: 1, gap: 2 },
+  modelPage: { marginHorizontal: 20, gap: 18 },
+  providerFilters: { gap: 7, paddingVertical: 1 },
+  providerChip: { minHeight: 34, minWidth: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, justifyContent: "center" },
+  providerText: { color: colors.text, fontSize: 12 },
+  modelList: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
+  modelRow: { minHeight: 62, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 17 },
+  modelSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
+  emptyCheck: { width: 19, height: 19 },
+  modelText: { flex: 1, minWidth: 0, gap: 2 },
   modelName: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  selection: { color: colors.muted, fontSize: 12 },
-  selectedText: { color: colors.blueDark, fontWeight: "600" },
-  levels: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  level: { minHeight: 34, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.line, borderRadius: radii.chip, justifyContent: "center" },
-  levelSelected: { borderColor: colors.blueDark, backgroundColor: `${colors.blueDark}12` },
-  mode: { minHeight: 40, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, justifyContent: "center" },
-  levelText: { color: colors.text, fontSize: 12 },
-  credential: { gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderColor: colors.line },
-  credentialHeading: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, paddingHorizontal: 12, color: colors.text, fontSize: 14, backgroundColor: colors.canvas },
-  jsonInput: { minHeight: 240, maxHeight: 480, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, padding: 12, color: colors.text, fontSize: 12, lineHeight: 18, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", backgroundColor: colors.canvas },
-  inlineAction: { alignSelf: "flex-start", minHeight: 34, paddingHorizontal: 0 },
-  deleteText: { color: colors.danger, fontSize: 12 },
+  thinkingSelect: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.control },
+  thinkingOptionTitle: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
+  thinkingOptionTitleSelected: { fontWeight: "600" },
+  thinkingOptions: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
+  thinkingOption: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 6 },
+  credential: { paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
+  lastCredential: { paddingBottom: 0, borderBottomWidth: 0 },
+  providerHeader: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 4, borderRadius: radii.control },
+  credentialHeading: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  providerBody: { gap: 8, paddingHorizontal: 4, paddingBottom: 8 },
+  passwordField: { minHeight: 48, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, backgroundColor: colors.canvas },
+  passwordFieldFocused: { borderColor: stateColors.focus },
+  passwordFieldFocusVisible: { boxShadow: `0 0 0 1px ${stateColors.focus}` } as unknown as ViewStyle,
+  passwordInput: { flex: 1, minWidth: 0, minHeight: 46, paddingHorizontal: 12, color: colors.text, fontSize: 14 },
+  revealButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radii.control },
   error: { marginHorizontal: 20, color: colors.danger, fontSize: 13, lineHeight: 20 },
+  statusPending: { color: colors.blueDark, fontSize: 12, lineHeight: 19 },
+  statusDanger: { color: colors.danger, fontSize: 12, lineHeight: 19 },
   status: { marginHorizontal: 20, color: colors.blueDark, fontSize: 13, lineHeight: 20 },
-  confirm: { marginHorizontal: 20, padding: 16, gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, backgroundColor: colors.card },
-  confirmTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
-  saveButton: { marginHorizontal: 20, minHeight: 48, borderRadius: radii.control },
-  saveText: { color: colors.text, fontSize: 14, fontWeight: "600" },
   actionText: { color: colors.text, fontSize: 13, fontWeight: "500" },
 });

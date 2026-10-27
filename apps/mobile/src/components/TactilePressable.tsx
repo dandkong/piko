@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import {
   Platform,
   Pressable,
@@ -16,6 +16,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { colors, motion, stateColors } from "../theme";
+import { TactileListRowContext } from "./TactileListRow";
 
 export type PressableVariant = "card" | "soft" | "plain" | "primary";
 
@@ -30,7 +31,7 @@ type Props = {
   scaleTo?: number;
   disabled?: boolean;
   selected?: boolean;
-  /** Opt out of hover/press/selected backgrounds when a sibling owns the fill. */
+  /** Opt out of hover/press/selected backgrounds when a parent or sibling owns the fill. */
   stateFill?: boolean;
   onPress?: () => void;
   accessibilityRole?: PressableProps["accessibilityRole"];
@@ -62,6 +63,7 @@ export function TactilePressable({
   faceStyle,
 }: Props) {
   const isDisabled = disabled || !onPress;
+  const setListRowPressed = useContext(TactileListRowContext);
   const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const [pressed, setPressed] = useState(false);
@@ -90,7 +92,8 @@ export function TactilePressable({
   };
 
   const variantStyle =
-    variant === "card" ? styles.card
+    isDisabled && variant === "primary" ? styles.soft
+      : variant === "card" ? styles.card
       : variant === "soft" ? styles.soft
         : variant === "primary" ? styles.primary
           : styles.plain;
@@ -128,10 +131,12 @@ export function TactilePressable({
       onPress={onPress}
       onPressIn={() => {
         setPressed(true);
+        setListRowPressed?.(true);
         animateScale(scaleTo, motion.pressIn);
       }}
       onPressOut={() => {
         setPressed(false);
+        setListRowPressed?.(false);
         animateScale(1, motion.pressOut);
       }}
       style={Platform.OS === "web" ? [style, webPressableStyle] : style}
@@ -185,10 +190,10 @@ const styles = StyleSheet.create({
     backgroundColor: stateColors.selected,
   },
   selectedHover: {
-    backgroundColor: "#E9EBEC",
+    backgroundColor: stateColors.selectedHover,
   },
   selectedPressed: {
-    backgroundColor: "#E4E7E8",
+    backgroundColor: stateColors.selectedPressed,
   },
   disabled: {
     opacity: stateColors.disabledOpacity,

@@ -1,7 +1,12 @@
-import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View,
+  type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
 import { useDismissOnBack } from "../hooks/useDismissOnBack";
-import { colors, radii } from "../theme";
+import { colors, radii, stateColors } from "../theme";
 import { TextButton } from "./TextButton";
+
+type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
+const webTextInputStyle = { outlineStyle: "none" } as unknown as TextStyle;
 
 export type TextInputDialogProps = {
   title: string;
@@ -30,15 +35,26 @@ export function TextInputDialog({ visible, ...props }: TextInputDialogProps & { 
 export function TextInputDialogContent({ title, inputLabel = title, value, onChangeText, onConfirm, onCancel,
   busy = false, disabled = false, error, maxLength, placeholder, confirmLabel = "确认", testID }: TextInputDialogProps) {
   const canConfirm = !busy && !disabled && !!value.trim();
+  const [focused, setFocused] = useState(false);
+  const [focusVisible, setFocusVisible] = useState(false);
   useDismissOnBack(true, () => { if (!busy) onCancel(); }, { capture: true });
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}>
     <Pressable accessibilityRole="button" accessibilityLabel={`关闭${title}弹窗`} disabled={busy}
       style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onCancel} />
     <View role="dialog" accessibilityLabel={title} accessibilityViewIsModal testID={testID} style={styles.dialog}>
       <Text style={styles.title}>{title}</Text>
-      <TextInput accessibilityLabel={inputLabel} autoFocus selectTextOnFocus value={value} onChangeText={onChangeText}
-        maxLength={maxLength} placeholder={placeholder} editable={!busy && !disabled} style={styles.input}
-        returnKeyType="done" onSubmitEditing={() => { if (canConfirm) onConfirm(); }} />
+      <View style={[styles.inputField, focused && styles.inputFieldFocused, focusVisible && styles.inputFieldFocusVisible]}>
+        <TextInput accessibilityLabel={inputLabel} autoFocus selectTextOnFocus value={value} onChangeText={onChangeText}
+          maxLength={maxLength} placeholder={placeholder} placeholderTextColor={colors.muted} editable={!busy && !disabled}
+          onFocus={(event: InputFocusEvent) => {
+            setFocused(true);
+            const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
+            setFocusVisible(Platform.OS === "web" && (target?.matches ? target.matches(":focus-visible") : true));
+          }}
+          onBlur={() => { setFocused(false); setFocusVisible(false); }}
+          style={[styles.input, Platform.OS === "web" && webTextInputStyle]}
+          returnKeyType="done" onSubmitEditing={() => { if (canConfirm) onConfirm(); }} />
+      </View>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
       <View style={styles.actions}>
         <TextButton label={`取消${title}`} disabled={busy} onPress={onCancel}><Text style={styles.muted}>取消</Text></TextButton>
@@ -51,10 +67,13 @@ export function TextInputDialogContent({ title, inputLabel = title, value, onCha
 }
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  scrim: { backgroundColor: `${colors.text}33` },
+  scrim: { backgroundColor: colors.scrim },
   dialog: { width: "100%", maxWidth: 360, padding: 22, gap: 18, borderRadius: radii.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   title: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, paddingHorizontal: 12, color: colors.text, fontSize: 15 },
+  inputField: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, backgroundColor: colors.canvas },
+  inputFieldFocused: { borderColor: stateColors.focus },
+  inputFieldFocusVisible: { boxShadow: `0 0 0 1px ${stateColors.focus}` } as unknown as ViewStyle,
+  input: { minHeight: 46, paddingHorizontal: 12, color: colors.text, fontSize: 15 },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
 });

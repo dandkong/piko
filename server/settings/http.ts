@@ -13,10 +13,7 @@ const modelSelection = Type.Object({
   ])),
 }, { additionalProperties: false });
 const profile = Type.Union([Type.Null(), modelSelection]);
-const background = Type.Union([
-  Type.Object({ mode: Type.Literal("follow-main") }, { additionalProperties: false }),
-  Type.Object({ mode: Type.Literal("model"), selection: modelSelection }, { additionalProperties: false }),
-]);
+const background = Type.Union([Type.Null(), modelSelection]);
 const credentialOperation = Type.Union([
   Type.Object({
     providerId: Type.String({ pattern: "^[a-z0-9][a-z0-9-]*$", maxLength: 120 }),

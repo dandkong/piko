@@ -6,9 +6,10 @@ import { TextButton } from "../../components/TextButton";
 import { TextInputDialogContent } from "../../components/TextInputDialog";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
+import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors, radii } from "../../theme";
+import { colors, controlSizes, radii } from "../../theme";
 
 export type SideChatActions = {
   sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatError?: string;
@@ -66,22 +67,23 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
       <TextButton label="重新加载旁聊" disabled={sideChatBusy} onPress={onRefreshSideChats}><Text style={styles.muted}>重试</Text></TextButton>
     </View> : null}
     {!visible.length && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
-    {visible.map(chat => <View key={chat.id}>
-      <View style={styles.row}>
-        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: activeSideChatId === chat.id }}
-          onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={activeSideChatId === chat.id} scaleTo={1}
+    {visible.map(chat => {
+      const active = activeSideChatId === chat.id;
+      return <TactileListRow key={chat.id} surfaceVariant="compact" selected={active} style={styles.row}>
+        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: active }}
+          onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={active} stateFill={false} scaleTo={1}
           style={styles.titleHit} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
           <Text numberOfLines={1} style={styles.text}>{chat.title}</Text>
         </TactilePressable>
         <View collapsable={false} style={styles.menuSlot} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
           <TactilePressable accessibilityRole="button" accessibilityLabel={`旁聊菜单：${chat.title}`} accessibilityHint="重命名或删除"
             accessibilityState={{ expanded: menu?.chat.id === chat.id }} disabled={!!sideChatBusy}
-            onPress={() => openMenu(chat)} scaleTo={0.94} style={styles.menuHit} faceStyle={styles.menuFace} variant="plain">
+            onPress={() => openMenu(chat)} scaleTo={0.94} stateFill={false} style={styles.menuHit} faceStyle={styles.menuFace} variant="plain">
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
           </TactilePressable>
         </View>
-      </View>
-    </View>)}
+      </TactileListRow>;
+    })}
     <Modal transparent visible={!!menu || !!editing || !!deleting} animationType="fade" onRequestClose={() => { if (!deleting) dismiss(); }}>
       {editing ? <TextInputDialogContent title="重命名旁聊" inputLabel="新的旁聊名称" value={renamed} onChangeText={setRenamed}
         maxLength={SIDE_CHAT_TITLE_LIMIT} busy={saving} disabled={sideChatBusy} error={renameError}
@@ -130,6 +132,6 @@ const styles = StyleSheet.create({
   titleRow: { flex: 1, alignSelf: "stretch", minHeight: 52, paddingHorizontal: 12, paddingVertical: 10, alignItems: "flex-start", justifyContent: "center", borderRadius: radii.control },
   menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
   menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
-  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  menuFace: { width: controlSizes.md, height: controlSizes.md, alignSelf: "center", borderRadius: controlSizes.md / 2, alignItems: "center", justifyContent: "center" },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
 });

@@ -67,7 +67,7 @@ export function ArtifactPreviewPanel({
               <Text style={styles.messageTitle}>暂不支持预览此文件</Text>
             </View>
           ) : loading ? (
-            <ActivityIndicator accessibilityLabel="正在加载预览" color={colors.blueDark} />
+            <ActivityIndicator accessibilityLabel="正在加载预览" color={colors.muted} />
           ) : error ? (
             <View style={styles.unsupported} testID="artifact-preview-error">
               <FileText size={28} strokeWidth={1.6} color={colors.muted} />

@@ -13,8 +13,9 @@ import type { TaskExecution, AssistantTask } from "../../../../../shared/tasks";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors } from "../../theme";
+import { colors, controlSizes, radii } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
+import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { AssistantMessage } from "../chat/AssistantMessage";
@@ -104,7 +105,7 @@ export function TasksScreen({
   const records = detail?.executions.filter(isFinished) ?? [];
   const renderTask = (value: AssistantTask) => {
     return (
-      <ScreenCard key={value.id} style={styles.row}>
+      <TactileListRow key={value.id} surfaceVariant="card" disabled={busy} style={styles.row}>
         <TactilePressable
           accessibilityRole="button"
           disabled={busy}
@@ -112,6 +113,7 @@ export function TasksScreen({
           scaleTo={1}
           style={styles.cardBodyHit}
           faceStyle={styles.cardBody}
+          stateFill={false}
           variant="plain"
         >
           <Text style={styles.name}>{value.title}</Text>
@@ -135,13 +137,14 @@ export function TasksScreen({
             scaleTo={0.94}
             style={styles.menuHit}
             faceStyle={styles.menuFace}
+            stateFill={false}
             variant="plain"
             testID="task-item-menu-button"
           >
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
           </TactilePressable>
         </View>
-      </ScreenCard>
+      </TactileListRow>
     );
   };
   const renderSection = (
@@ -197,7 +200,7 @@ export function TasksScreen({
       {loading && (
         <ActivityIndicator
           accessibilityLabel="正在加载"
-          color={colors.blueDark}
+          color={colors.muted}
         />
       )}
 
@@ -372,14 +375,14 @@ export function TasksScreen({
 
 const styles = StyleSheet.create({
   backText: { fontSize: 14, color: colors.text },
-  row: { flexDirection: "row", alignItems: "stretch", gap: 0, padding: 0 },
+  row: { flexDirection: "row", alignItems: "stretch", gap: 0 },
   entryHit: { width: "100%" },
   entry: {
     alignItems: "stretch",
     justifyContent: "flex-start",
     gap: 10,
     padding: 4,
-    borderRadius: 12,
+    borderRadius: radii.control,
   },
   timeline: { marginTop: 2 },
   timelineRow: { flexDirection: "row", gap: 12 },
@@ -387,9 +390,9 @@ const styles = StyleSheet.create({
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: radii.pill,
     marginTop: 10,
-    backgroundColor: "#C4C9CC",
+    backgroundColor: colors.lineStrong,
   },
   railLine: { flex: 1, width: 1, marginTop: 4, backgroundColor: colors.line },
   timelineBody: { flex: 1, paddingBottom: 18 },
@@ -405,12 +408,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderTopLeftRadius: 17,
-    borderBottomLeftRadius: 17,
+    borderTopLeftRadius: radii.card,
+    borderBottomLeftRadius: radii.card,
   },
   menuSlot: { width: 52, alignItems: "center", justifyContent: "center" },
   menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
-  menuFace: { width: 44, height: 44, alignSelf: "center", borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  menuFace: { width: controlSizes.md, height: controlSizes.md, alignSelf: "center", borderRadius: controlSizes.md / 2, alignItems: "center", justifyContent: "center" },
   sectionGroup: { gap: 12 },
   sectionTasks: { gap: 12 },
   sectionHit: { width: "100%" },
@@ -420,7 +423,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    borderRadius: 12,
+    borderRadius: radii.control,
   },
   section: { fontSize: 13, fontWeight: "500", color: colors.muted },
   name: { fontSize: 16, fontWeight: "600", color: colors.text },

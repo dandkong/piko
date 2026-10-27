@@ -1,20 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Platform, Text, TextInput, type TextStyle, View } from "react-native";
+import { Platform, Text, TextInput, type TextInputProps, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
 import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
-import { colors } from "../../theme";
+import { colors, stateColors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { styles } from "./styles";
 import { handleComposerKeyDown } from "./composerKeyboard";
 import type { PendingAttachment } from "./useChatAttachments";
 
-// The pill supplies the focus indicator; hide the browser's inner textarea outline.
+// The composer surface supplies the focus indicator; hide the browser's inner textarea outline.
 // React Native's types omit "none", which react-native-web supports.
 const webInputStyle =
   Platform.OS === "web"
     ? ({ outlineStyle: "none" } as unknown as TextStyle)
     : undefined;
+type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
 
 type Props = {
   draft: string;
@@ -44,6 +45,7 @@ export function ChatComposer({
   onStop,
 }: Props) {
   const [focused, setFocused] = useState(false);
+  const [focusVisible, setFocusVisible] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<TextInput>(null);
@@ -73,7 +75,7 @@ export function ChatComposer({
   }, [draft]);
   const sendDisabled = !showStop && !canSend;
   return (
-    <View style={[styles.composer, focused && styles.composerFocused]}>
+    <View style={[styles.composer, focused && styles.composerFocused, focusVisible && styles.composerFocusVisible]}>
       {attachments.length > 0 && (
         <View style={styles.composerAttachments}>
           {attachments.map((item) => (
@@ -129,10 +131,14 @@ export function ChatComposer({
                 }
           }
           placeholder={loading ? "正在连接…" : "发消息…"}
-          placeholderTextColor="#949B9F"
+          placeholderTextColor={colors.muted}
           selectionColor={colors.blueDark}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={(event: InputFocusEvent) => {
+            setFocused(true);
+            const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
+            setFocusVisible(Platform.OS === "web" && (target?.matches ? target.matches(":focus-visible") : true));
+          }}
+          onBlur={() => { setFocused(false); setFocusVisible(false); }}
           style={[styles.input, webInputStyle, { height: inputHeight }]}
           multiline
           maxLength={MAX_MESSAGE_LENGTH}

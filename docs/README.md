@@ -24,7 +24,7 @@
 | [网页工具](features/web-tools.md) | 网页搜索、正文提取和凭据配置 |
 | [附件](features/attachments.md) | 服务端附件存储、Telegram 图片和当前限制 |
 | [产物浏览](features/artifacts.md) | 工作区文件夹、文本预览、下载与路径边界 |
-| [设置概览](features/settings.md) | 只读分类详情、模型默认值与当前选择、配置/凭据展示边界 |
+| [设置与模型配置](features/settings.md) | 全局模型、供应商凭据和模型目录编辑 |
 
 ## 配置与运维
 

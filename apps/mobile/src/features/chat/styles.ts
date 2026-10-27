@@ -1,5 +1,5 @@
-import { StyleSheet } from "react-native";
-import { colors } from "../../theme";
+import { StyleSheet, type ViewStyle } from "react-native";
+import { colors, radii, stateColors } from "../../theme";
 
 export const styles = StyleSheet.create({
   main: {
@@ -24,6 +24,12 @@ export const styles = StyleSheet.create({
     gap: 18,
     paddingVertical: 34,
   },
+  loadOlderButton: {
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderRadius: radii.control,
+  },
   muted: {
     color: colors.muted,
     fontSize: 14,
@@ -45,24 +51,24 @@ export const styles = StyleSheet.create({
   bubble: {
     paddingHorizontal: 16,
     paddingVertical: 13,
-    borderRadius: 22,
+    borderRadius: radii.card,
   },
   userBubble: {
     alignSelf: "flex-end",
     maxWidth: "85%",
-    backgroundColor: colors.blue,
-    borderBottomRightRadius: 7,
+    backgroundColor: stateColors.selected,
+    borderBottomRightRadius: radii.control,
   },
   assistantBubble: {
     alignSelf: "flex-start",
     maxWidth: "95%",
-    backgroundColor: "#EEEEF0",
-    borderBottomLeftRadius: 7,
+    backgroundColor: stateColors.soft,
+    borderBottomLeftRadius: radii.control,
   },
   errorNotice: {
     padding: 16,
-    borderRadius: 14,
-    backgroundColor: "#FBEFED",
+    borderRadius: radii.control,
+    backgroundColor: colors.dangerSurface,
     marginVertical: 10,
     gap: 12,
   },
@@ -83,8 +89,8 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
   latestButtonShadow: {
-    borderRadius: 22,
-    shadowColor: "#18384B",
+    borderRadius: radii.pill,
+    shadowColor: colors.text,
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
@@ -92,19 +98,31 @@ export const styles = StyleSheet.create({
   },
   composer: {
     backgroundColor: colors.card,
-    borderRadius: 32,
+    borderRadius: radii.panel,
     borderWidth: 1,
-    borderColor: "#EEF0F2",
+    borderColor: colors.line,
     padding: 8,
-    shadowColor: "#18384B",
+    shadowColor: colors.text,
     shadowOpacity: 0.06,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
   composerFocused: {
-    borderColor: "#C7E4F9",
-    shadowOpacity: 0.1,
+    borderColor: stateColors.focus,
+  },
+  composerFocusVisible: {
+    boxShadow: `0 0 0 1px ${stateColors.focus}`,
+  } as unknown as ViewStyle,
+  composerAttachment: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    maxWidth: 220,
+    backgroundColor: stateColors.soft,
+    borderRadius: radii.control,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
   composerRow: {
     flexDirection: "row",
@@ -118,16 +136,6 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingTop: 4,
     paddingBottom: 6,
-  },
-  composerAttachment: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    maxWidth: 220,
-    backgroundColor: "#F3F5F6",
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
   },
   composerAttachmentName: {
     flexShrink: 1,
@@ -143,7 +151,7 @@ export const styles = StyleSheet.create({
   attachmentRemove: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: radii.pill,
   },
   attachmentRow: {
     flexDirection: "row",
@@ -156,7 +164,7 @@ export const styles = StyleSheet.create({
     gap: 5,
     maxWidth: 220,
     minHeight: 32,
-    borderRadius: 12,
+    borderRadius: radii.control,
     paddingHorizontal: 9,
     paddingVertical: 5,
   },

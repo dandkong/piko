@@ -23,10 +23,8 @@ export type WorkspaceModelConfig = {
   models: Models;
   /** Global front-chat model, synchronized into main and side-chat AgentDocs. */
   main?: ModelProfile;
-  /** Model for delegation, scheduled runs and memory review. */
+  /** Explicit model for delegation, scheduled runs and memory review. */
   background?: ModelProfile;
-  /** Omitted background profile means follow the current main model. */
-  backgroundFollowsMain: boolean;
   harnessSettings: Pick<HarnessSettings, "stream">;
 };
 
@@ -79,7 +77,8 @@ export async function loadWorkspaceModels({
       );
   }
   const main = agent.profiles.main;
-  const background = agent.profiles.background;
+  // A missing background profile is initialized from main once; later main changes do not follow it.
+  const background = agent.profiles.background ?? agent.profiles.main;
   for (const [role, profile] of [
     ["main", main],
     ["background", background],
@@ -100,7 +99,6 @@ export async function loadWorkspaceModels({
     models,
     main,
     background,
-    backgroundFollowsMain: !background,
     harnessSettings: {
       stream: agent.stream as HarnessSettings["stream"],
     },

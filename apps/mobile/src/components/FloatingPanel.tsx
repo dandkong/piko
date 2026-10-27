@@ -25,9 +25,11 @@ export function FloatingPanel({
   title,
   onClose,
   closeLabel,
+  closeDisabled = false,
   children,
   headerActions,
-  headerLeading,
+  footer,
+  overlay,
   contentKey,
   testID,
   showScrollbar = false,
@@ -37,9 +39,12 @@ export function FloatingPanel({
   title: string;
   onClose: () => void;
   closeLabel: string;
+  closeDisabled?: boolean;
   children?: ReactNode;
   headerActions?: ReactNode;
-  headerLeading?: ReactNode;
+  footer?: ReactNode;
+  /** A same-size layer that covers the panel content without replacing it. */
+  overlay?: ReactNode;
   /** Reset only the scrolling content when navigating inside the same panel. */
   contentKey?: string;
   testID?: string;
@@ -93,26 +98,29 @@ export function FloatingPanel({
           panelStyle,
         ]}
       >
-        <View style={styles.header}>
-          {headerLeading}
-          <Text numberOfLines={1} style={styles.title}>{title}</Text>
-          <View style={styles.headerActions}>
-            {headerActions}
-            <IconButton label={closeLabel} onPress={onClose}>
-              <X size={20} strokeWidth={1.8} color={colors.text} />
-            </IconButton>
+        {overlay ? <View style={styles.panelOverlay}>{overlay}</View> : <>
+          <View style={styles.header}>
+            <Text numberOfLines={1} style={styles.title}>{title}</Text>
+            <View style={styles.headerActions}>
+              {headerActions}
+              <IconButton label={closeLabel} onPress={onClose} disabled={closeDisabled}>
+                <X size={20} strokeWidth={1.8} color={colors.text} />
+              </IconButton>
+            </View>
           </View>
-        </View>
-        <ScrollView
-          key={contentKey}
-          testID={scrollTestID}
-          contentContainerStyle={styles.body}
-          showsVerticalScrollIndicator={showScrollbar}
-          indicatorStyle="default"
-          persistentScrollbar={showScrollbar}
-        >
-          {children}
-        </ScrollView>
+          <ScrollView
+            style={styles.scroll}
+            key={contentKey}
+            testID={scrollTestID}
+            contentContainerStyle={styles.body}
+            showsVerticalScrollIndicator={showScrollbar}
+            indicatorStyle="default"
+            persistentScrollbar={showScrollbar}
+          >
+            {children}
+          </ScrollView>
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
+        </>}
       </Animated.View>
     </View>
   );
@@ -169,4 +177,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 24,
   },
+  scroll: { flex: 1 },
+  footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.canvas },
+  panelOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, elevation: 20 },
 });
