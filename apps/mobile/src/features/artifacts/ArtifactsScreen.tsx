@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   crumbSegment: { flexDirection: "row", alignItems: "center", gap: 1 },
   crumbHit: { flexShrink: 0 },
   crumbFace: { minHeight: 32, paddingHorizontal: 4, paddingVertical: 4, gap: 4 },
-  crumbText: { maxWidth: 140, color: colors.muted, fontSize: 12 },
+  crumbText: { maxWidth: 140, color: colors.muted, fontSize: 14 },
   crumbCurrent: { color: colors.muted, fontWeight: "500" },
   rowCard: { padding: 0, flexDirection: "row", alignItems: "stretch", gap: 0 },
   rowHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
