@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { Type } from "typebox";
+import { Compile } from "typebox/compile";
 import type { AuthOperationOptions, Credential, CredentialStore } from "@earendil-works/pi-ai";
 import { readJson } from "../config/files";
 
@@ -21,8 +22,15 @@ const credential = Type.Union([
     expires: Type.Number({ minimum: 0 }),
   }, { additionalProperties: true }),
 ]);
-const storedSchema = Type.Record(Type.String({ pattern: "^[a-z0-9][a-z0-9-]*$" }), credential);
-type StoredCredentials = Record<string, Credential>;
+export const storedCredentialsSchema = Type.Record(Type.String({ pattern: "^[a-z0-9][a-z0-9-]*$" }), credential);
+export type StoredCredentials = Record<string, Credential>;
+
+export function parseStoredCredentials(value: unknown): StoredCredentials {
+  const validator = Compile(storedCredentialsSchema);
+  if (!validator.Check(value))
+    throw new Error("Invalid credential configuration in auth.json.");
+  return value as StoredCredentials;
+}
 
 /**
  * Model credentials come only from config/auth.json; the process environment is never consulted.
@@ -31,7 +39,7 @@ type StoredCredentials = Record<string, Credential>;
 export class StoredCredentialStore implements CredentialStore {
   private readonly values: StoredCredentials;
   constructor(readonly path: string) {
-    this.values = existsSync(path) ? readJson(path, storedSchema, {}) : {};
+    this.values = existsSync(path) ? readJson(path, storedCredentialsSchema, {}) : {};
   }
   apiKey(providerId: string) {
     const stored = this.values[providerId];

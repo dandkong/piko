@@ -66,9 +66,7 @@ export async function openRuntime(
     if (persisted && !existing)
       throw new Error("Durable root conversation is missing.");
     const preferred = config.main;
-    const selected = preferred
-      ? await requireAvailableModel(config.models, preferred)
-      : (await config.models.getAvailable())[0];
+    const selected = preferred ? await requireAvailableModel(config.models, preferred) : undefined;
     const root =
       existing ??
       (await harness.root(ctx, {
@@ -88,14 +86,17 @@ export async function openRuntime(
       throw new Error(
         "The configured workspace differs from the saved conversation.",
       );
-    if (selected && !(await root.agent(ctx)).model)
-      await root.configure(
-        {
-          model: { provider: selected.provider, modelId: selected.id },
-          thinkingLevel: preferred?.thinking ?? "off",
-        },
-        ctx,
-      );
+    if (selected) {
+      const agent = await root.agent(ctx);
+      if (agent.model?.provider !== selected.provider || agent.model.modelId !== selected.id || agent.thinkingLevel !== (preferred?.thinking ?? "off"))
+        await root.configure(
+          {
+            model: { provider: selected.provider, modelId: selected.id },
+            thinkingLevel: preferred?.thinking ?? "off",
+          },
+          ctx,
+        );
+    }
     const chats = await harness.commit((tx) => sideChats(tx), ctx);
     const chatIds = [
       ROOT_CONVERSATION_ID,
@@ -122,11 +123,15 @@ export async function openRuntime(
         }
       }
       for (const id of recovery.interruptedChildren) await markTaskInterrupted(tx, id);
-      // AgentDoc is already durable. Do not replace per-worker model/cwd/capability choices on restart.
-      // Refresh side tools without resetting a side chat's selected model or history.
+      // Backend AgentDocs remain worker-owned. Main/side chat models above are global-policy projections.
+      // Refresh side tools and metadata without changing chat history.
       for (const chat of chats)
         await configure(tx, Number(chat.id) as ConversationId, {
           cwd: paths.workspace,
+          ...(preferred && selected && {
+            model: { provider: selected.provider, modelId: selected.id },
+            thinkingLevel: preferred.thinking ?? "off",
+          }),
           ...sideChatScope(rootAgent),
           instructions: SIDE_CHAT_INSTRUCTIONS,
         });

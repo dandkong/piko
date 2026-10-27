@@ -1,5 +1,5 @@
 import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
-import type { SettingsOverview } from "../../shared/settings";
+import type { SaveSettingsConfiguration, SaveSettingsResult, SettingsConfigurationSnapshot, SettingsOverview } from "../../shared/settings";
 import type { ConversationResponse, ConversationActivity, HistoryPage, MessageEvent, SubmissionReceipt } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
@@ -59,6 +59,8 @@ export interface ChatRuntime {
   skill(name: string): Promise<WorkspaceSkillDetail | undefined>;
   isModelReady(): Promise<boolean>;
   settings(): Promise<SettingsOverview>;
+  settingsConfiguration(): Promise<SettingsConfigurationSnapshot>;
+  saveSettingsConfiguration(draft: SaveSettingsConfiguration): Promise<SaveSettingsResult>;
   sideChats: {
     list(): Promise<SideChat[]>;
     create(requestId: string, title: string): Promise<SideChat>;
@@ -67,7 +69,7 @@ export interface ChatRuntime {
   };
   createSession(conversationId?: string): Promise<ChatSession>;
   describe(conversationId?: string): Promise<RuntimeDescription>;
-  configure(selection: RuntimeSelection, conversationId?: string): Promise<void>;
+  configure(selection: RuntimeSelection): Promise<void>;
   compact(conversationId?: string): Promise<CompactionResult>;
   stop(commandId?: string, conversationId?: string): Promise<boolean>;
   dispose(): Promise<void>;

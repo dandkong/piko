@@ -1,7 +1,7 @@
 import type { Agent } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 
-/** The model a background child starts with; Piko resolves it from agent.profiles.background, not from the main selection. */
+/** The model a background child starts with; Piko resolves an explicit background profile or follows the global main model. */
 export type BackgroundSelection = { provider: string; modelId: string; thinkingLevel: ModelThinkingLevel };
 
 /** Without a background profile a child keeps inheriting the main conversation's selection. */

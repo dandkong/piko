@@ -9,11 +9,14 @@ import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
 import { AttachmentStore } from "./attachments";
 import { ArtifactStore } from "./artifacts";
+import { homedir } from "node:os";
+import { recoverSettingsTransactions } from "./settings/configuration";
 
 // A production entry serves the prebuilt website; API development remains independent of Expo exports.
 const web = process.argv.includes("--web")
   ? await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web"))
   : undefined;
+recoverSettingsTransactions(process.env.PIKO_HOME ?? join(homedir(), ".piko"));
 const piko = loadPikoConfig();
 const config = piko.http;
 const paths = initializeWorkspace(piko.paths);
@@ -39,7 +42,7 @@ const server = Bun.serve({
   port: config.port,
   // Leave room for large durable task deletions to compact SQLite before replying.
   idleTimeout: 120,
-  fetch: createApp({ config, runtime, conversations, chats, attachments, artifacts, web }),
+  fetch: createApp({ config, runtime, conversations, chats, attachments, artifacts, web, restart: () => void shutdown(true) }),
 });
 
 let telegram: TelegramBot | undefined;

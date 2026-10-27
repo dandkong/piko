@@ -72,20 +72,24 @@ function merge(base: unknown, override: unknown): unknown {
 }
 
 /** JSON owns application behavior exclusively. Deployment and credentials are not accepted here. */
-export function readApplicationSettings(home: string): ApplicationSettings {
-  const path = join(home, "config", "piko.json");
-  const file = readJsonValue(path, {});
-  if (!record(file)) invalid("configuration", "a JSON object");
-  const candidate = merge(defaultPikoFile, file);
-  if (!applicationValidator.Check(candidate)) {
-    const error = [...applicationValidator.Errors(candidate)][0];
+export function validateApplicationSettings(value: unknown): ApplicationSettings {
+  if (!record(value)) invalid("configuration", "a JSON object");
+  if (!applicationValidator.Check(value)) {
+    const error = [...applicationValidator.Errors(value)][0];
     const field =
       error?.instancePath?.slice(1).replaceAll("/", ".") || "configuration";
     throw new Error(
       `Invalid configuration in piko.json at ${field}: JSON accepts only application behavior, not deployment parameters or credentials.`,
     );
   }
-  return candidate;
+  return value;
+}
+
+export function readApplicationSettings(home: string): ApplicationSettings {
+  const path = join(home, "config", "piko.json");
+  const file = readJsonValue(path, {});
+  if (!record(file)) invalid("configuration", "a JSON object");
+  return validateApplicationSettings(merge(defaultPikoFile, file));
 }
 
 function telegramConfig(

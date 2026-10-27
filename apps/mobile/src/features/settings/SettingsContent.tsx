@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import type { ModelSelection } from "../../../../../shared/runtime";
 import type { SettingsOverview } from "../../../../../shared/settings";
 import { TactilePressable } from "../../components/TactilePressable";
 import { colors, radii, stateColors } from "../../theme";
@@ -25,13 +24,6 @@ function Info({ label, value }: { label: string; value: string }) {
     <Text selectable style={styles.infoValue}>{value}</Text>
   </View>;
 }
-function ModelInfo({ label, selection, fallback }: { label: string; selection: ModelSelection | null; fallback: string }) {
-  return <View style={styles.modelInfo}>
-    <Text style={styles.infoLabel}>{label}</Text>
-    <Text selectable style={styles.modelName}>{selection?.model ?? fallback}</Text>
-    {selection ? <Text selectable style={styles.note}>{selection.provider} · 思考强度 {selection.thinking ?? "off"}</Text> : null}
-  </View>;
-}
 function NavigationRow({ page, value, onNavigate }: { page: Exclude<SettingsPage, "overview">; value: string; onNavigate: (page: SettingsPage) => void }) {
   return <TactilePressable
     accessibilityRole="button"
@@ -48,19 +40,20 @@ function NavigationRow({ page, value, onNavigate }: { page: Exclude<SettingsPage
   </TactilePressable>;
 }
 
-export function SettingsContent({ page, data, onNavigate }: {
+export function SettingsContent({ page, data, onNavigate, modelsEditor }: {
   page: SettingsPage;
   data: SettingsOverview;
   onNavigate: (page: SettingsPage) => void;
+  modelsEditor?: ReactNode;
 }) {
   if (page === "overview") return <View style={styles.content} testID="settings-overview">
     <View style={styles.summary}>
       <View style={styles.summaryHeading}>
         <Text style={styles.summaryTitle}>配置概览</Text>
-        <Text style={styles.readOnly}>只读</Text>
+        <Text style={styles.readOnly}>管理测试版</Text>
       </View>
-      <Text numberOfLines={2} style={styles.summaryModel}>{data.currentModel?.model ?? "尚未选择主会话模型"}</Text>
-      <Text style={styles.note}>当前加载的配置与主会话选择。不包含密钥原文。</Text>
+      <Text numberOfLines={2} style={styles.summaryModel}>{data.mainModel?.model ?? "尚未选择主模型"}</Text>
+      <Text style={styles.note}>一个主模型统一用于主聊天和所有旁聊。凭据只显示配置状态。</Text>
     </View>
     <View style={styles.group}>
       <Text style={styles.groupTitle}>模型与能力</Text>
@@ -76,28 +69,11 @@ export function SettingsContent({ page, data, onNavigate }: {
       <NavigationRow page="workspace" value="目录与记忆" onNavigate={onNavigate} />
       <NavigationRow page="about" value={`Piko ${data.app.version}`} onNavigate={onNavigate} />
     </View>
-    <Text style={styles.footer}>配置编辑、密钥管理与保存应用尚未接入。当前页面不会修改配置或切换模型。</Text>
+    <Text style={styles.footer}>配置管理为功能验证阶段，尚未接入鉴权；请仅在受信任的网络环境中使用。</Text>
   </View>;
 
-  if (page === "models") return <View style={styles.content} testID="settings-detail-models">
-    <Section title="当前主会话" note="这是主聊天正在使用的选择，不代表新会话或后台默认值；旁聊和已有后台 Agent 保留自己的选择。">
-      <ModelInfo label="当前模型" selection={data.currentModel} fallback="尚未选择" />
-    </Section>
-    <Section title="默认模型" note="默认值来自当前进程加载的配置。主会话默认值不会覆盖已有选择；后台默认值仅用于新建的委派、任务执行和记忆整理。">
-      <ModelInfo label="新主会话默认值" selection={data.defaults.main} fallback="自动选择首个可用模型" />
-      <ModelInfo label="后台默认值" selection={data.defaults.background} fallback="创建时继承发起会话的模型" />
-    </Section>
-    <Section title={`可选模型 · ${data.availableModels.length}`} note="由服务端目录与凭据筛选，未进行连通性测试。供应商编辑与密钥写入尚未开放。">
-      {data.availableModels.length ? data.availableModels.map(model => <View key={`${model.provider}/${model.id}`} style={styles.modelInfo}>
-        <Text selectable style={styles.modelName}>{model.name}</Text>
-        <Text selectable style={styles.note}>{model.provider} / {model.id}</Text>
-        <Text style={styles.note}>{[
-          model.contextWindow ? `${model.contextWindow.toLocaleString()} tokens 上下文` : "",
-          model.imageInput ? "支持图片输入" : "文本输入",
-        ].filter(Boolean).join(" · ")}</Text>
-        <Text style={styles.note}>思考强度：{model.thinkingLevels.join(" / ")}</Text>
-      </View>) : <Text style={styles.empty}>尚无可选模型，请先在服务端配置模型目录和凭据。</Text>}
-    </Section>
+  if (page === "models") return modelsEditor ?? <View style={styles.content} testID="settings-detail-models">
+    <Text style={styles.empty}>正在读取模型配置…</Text>
   </View>;
 
   if (page === "tools") return <View style={styles.content} testID="settings-detail-tools">

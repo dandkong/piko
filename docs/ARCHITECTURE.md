@@ -71,13 +71,13 @@ Telegram 私聊 → Bot API 适配器 ────┘
 
 ## 模型、资源与内建扩展
 
-模型凭据通过 StoredCredentialStore 从 config/auth.json 只读加载，其次使用 models.json 的 provider apiKey；不回退进程环境变量。通道、工具和显式 headersEnv 仍从后端环境读取。model-config.ts 负责加载和角色校验，model-provider.ts 负责供应商目录、请求选项和 stream 适配。自定义 JSON 可指定 API、地址、模型能力、请求参数及兼容项。当前模型选择保存到 durable Agent 文档，重启保留。agent.profiles 只有 main 和 background 两个固定角色位：main 用于初始选择且不覆盖会话已有选择，background 单独决定后台子 Agent 的模型，未配置时继承发起会话的选择。
+模型凭据由 StoredCredentialStore 从 config/auth.json 加载，其次读取 models.json 的 provider apiKey；不回退进程环境变量。设置配置服务能在校验后更新 API Key 和目录；OAuth 条目仍只由 Pi 管理。通道、工具和显式 headersEnv 仍从后端环境读取。model-config.ts 负责加载和角色校验，model-provider.ts 负责供应商目录、请求选项和 stream 适配。自定义 JSON 可指定 API、地址、模型能力、请求参数及兼容项。agent.profiles 只有 main 和 background 两个固定角色位：main 是统一主聊天及旁聊的全局选择，Durable AgentDoc 是当前执行模型的投影，启动和新一轮接纳时对齐；background 可显式指定，省略表示跟随 main 供之后新建后台工作使用。
 
 Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；retry/compaction 不作为 Piko 配置或默认文件字段，直接使用 Durable 默认策略。可选 agent.stream 保留模型连接选项，不是 Harness 重试策略。
 
 Agent 构建与后台驱动是两个独立能力：调用者显式提供历史起点、模型、cwd、角色、工具和资源选择，公共 Anchor/Reporter 只驱动执行与回传；记忆整理保留自己的 Durable task 流程。已有子会话的 AgentDoc 和资源选择在重启后保留，不重新套用父会话模板；后台默认模型仅在创建新子会话时选择。内部支持原生 fork、无自动资源及技能白名单，不扩大模型工具或 HTTP 能力，详见[Agent 构建与后台执行](features/agent-composition.md)。
 
-模型配置在创建原生 Harness 时加载，修改后重启后端生效；不提供运行时重载接口。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。
+主/后台模型选择通过配置服务写入 JSON 并在安全接纳边界热应用；模型目录和凭据修改使用原子事务保存后请求受控服务重启。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。设置写入接口尚未鉴权，是明确的功能验证临时状态，不可视为安全的远程管理面。
 
 - 技能来源：工作区 `.agents/skills/<目录>/SKILL.md` 与应用 `server/resources/skills/<目录>/SKILL.md`，只读单层，不递归或跟随链接目录/文件；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。`memory/YYYY-MM-DD.md` 每日记忆不自动注入，相关时由助手按需 read/search。注入时标注来源和角色，文件职责见 [资源与工具](features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core、AGENTS、全局和任务 MEMORY 均完整读取，不设应用层文本上限，不静默截断；实际请求仍受模型上下文窗口限制；过大的静态指导可能导致请求在自动压缩聊天历史后仍被模型拒绝，不静默截断文件。技能只注入索引，正文按需 read。

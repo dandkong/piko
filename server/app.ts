@@ -24,6 +24,7 @@ export function createApp({
   attachments,
   artifacts,
   web,
+  restart,
 }: {
   config: ServerConfig;
   runtime: ChatRuntime;
@@ -32,6 +33,7 @@ export function createApp({
   attachments: AttachmentStore;
   artifacts: ArtifactStore;
   web?: WebHandler;
+  restart?: () => void;
 }) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -41,14 +43,14 @@ export function createApp({
         new Response(null, {
           status: 204,
           headers: {
-            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Accept, Content-Type",
           },
         }),
       );
     try {
       const response =
-        (await settingsRequest(request, runtime)) ??
+        (await settingsRequest(request, runtime, restart)) ??
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
         (await artifactRequest(request, artifacts)) ??

@@ -15,7 +15,7 @@ const profileSchema = object({
 
 /** Piko owns model presets, not Durable's retry or compaction policies. */
 export const agentSchema = object({
-  /** Fixed role slots: main seeds conversations, background runs all delegated work. */
+  /** Fixed role slots: main is the global front-chat model, background runs delegated work. */
   profiles: object({
     main: Type.Optional(profileSchema),
     background: Type.Optional(profileSchema),

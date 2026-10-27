@@ -3,7 +3,7 @@ import type { Agent } from "@earendil-works/pi-durable";
 import type { ApplicationSettings } from "../config";
 import type { WorkspacePaths } from "../workspace";
 import type { ModelSelection } from "../../shared/runtime";
-import type { SettingsOverview } from "../../shared/settings";
+import type { SettingsBackgroundModel, SettingsOverview } from "../../shared/settings";
 import { version } from "../../package.json";
 import { MEMORY_CURATION_IDLE_MS, MEMORY_CURATION_MIN_USER_MESSAGES } from "./memory-curation";
 import { NO_AGENT_RESOURCES } from "./agents/resources";
@@ -11,16 +11,22 @@ import { loadWorkspaceResources } from "./resources";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { WorkspaceModelConfig } from "./model-config";
 
+function profile(value: ModelSelection | undefined): ModelSelection | null {
+  return value ? { provider: value.provider, model: value.model, thinking: value.thinking ?? "off" } : null;
+}
+
 /** Captures only an allowlist of safe startup facts, not a credential-bearing config snapshot. */
 export function settingsDefaults(paths: WorkspacePaths, settings: ApplicationSettings,
   env: Record<string, string | undefined>, tools: SettingsOverview["tools"]) {
   const configured = (key: string) => !!env[key]?.trim();
-  const profile = (value: ModelSelection | undefined): ModelSelection | null => value
-    ? { provider: value.provider, model: value.model, thinking: value.thinking ?? "off" } : null;
+  const backgroundModel: SettingsBackgroundModel = settings.agent.profiles.background
+    ? { mode: "model", selection: profile(settings.agent.profiles.background)! }
+    : { mode: "follow-main" };
   return {
-    mode: "read-only" as const,
+    mode: "configuration" as const,
     app: { name: "Piko" as const, version, runtime: "pi-durable" as const },
-    defaults: { main: profile(settings.agent.profiles.main), background: profile(settings.agent.profiles.background) },
+    mainModel: profile(settings.agent.profiles.main),
+    backgroundModel,
     tools,
     telegram: { enabled: settings.channels.telegram.enabled, credentialConfigured: configured("PIKO_TELEGRAM_BOT_TOKEN") },
     workspace: { path: paths.workspace, artifactsPath: join(paths.workspace, "artifacts") },
@@ -28,7 +34,7 @@ export function settingsDefaults(paths: WorkspacePaths, settings: ApplicationSet
   };
 }
 
-/** Current selection and catalog are native/runtime facts; skill bodies and paths never enter this DTO. */
+/** Current AgentDoc is reported separately from the single configured main model. */
 export async function settingsOverview(base: ReturnType<typeof settingsDefaults>, agent: Agent,
   config: WorkspaceModelConfig, paths: WorkspacePaths): Promise<SettingsOverview> {
   const models = await config.models.getAvailable();
@@ -41,6 +47,6 @@ export async function settingsOverview(base: ReturnType<typeof settingsDefaults>
       contextWindow: model.contextWindow, thinkingLevels: getSupportedThinkingLevels(model),
     })),
     skills: resources.skills.map(skill => ({ name: skill.name, description: skill.description, modelInvocable: !skill.disableModelInvocation })),
-    modelReady: models.length > 0,
+    modelReady: !!config.main && models.some(model => model.provider === config.main!.provider && model.id === config.main!.model),
   };
 }

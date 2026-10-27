@@ -1,6 +1,6 @@
 # Durable 配置与运行时
 
-状态：服务端使用 pi-durable / pi-ai / chord 1.4.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 已提供只读设置概览，配置写入界面尚未实现；配置文件可在后端编辑。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
+状态：服务端使用 pi-durable / pi-ai / chord 1.4.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 设置支持全局主模型、后台模型、模型目录与 API Key 功能验证。配置 API 尚未鉴权，仅可在受控环境使用。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
 原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。当前使用 Durable 原生 SQLite 存储；普通不确定执行在重启时不自动重跑，已完成子任务的报告与可恢复重试阶段会继续执行。存储位置和升级影响见[SQLite 存储](storage.md)。
 
@@ -56,11 +56,11 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 }
 ```
 
-`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 决定新会话及尚未保存模型选择的会话的初始模型；`background` 供后台子 Agent 使用，普通后台工作、任务执行和记忆整理子会话在 spawn 时读取它。省略 `background` 时后台子会话继承主会话选择；省略 `main` 时新会话选第一个可用模型。`main` 的凭据在启动时校验，`background` 的凭据在 spawn 时校验，因此后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。已有后台子会话保留创建时或后来显式配置的选择，重启不会按当前 `background` 覆盖；新的委派、任务执行和记忆整理才使用最新默认值。主会话的选择保存在 Durable Agent 文档中，重启后保持不变，修改 JSON 不会覆盖它。
+`agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 是统一主聊与所有旁聊的全局模型，不是新会话默认值；`background` 供之后新建的委派、任务执行和记忆整理子会话使用。省略 `background` 表示跟随主模型，省略 `main` 时不会自动选目录首个模型，执行前要求明确配置。后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。主聊和旁聊的 Durable AgentDoc 在服务启动及下一轮接纳时对齐全局主模型；正在运行的一轮保持原模型。后台 AgentDoc 及专门构建的子 Agent 仍保持各自选择。
 
 上述 ID 来自锁定的 pi-ai 1.4.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 TG `/models` 列表为准：目录中存在模型也须有可用凭据。
 
-新建原生会话使用 agent.profiles.main；未设置时选第一个可用模型。当前会话的模型选择保存在原生 Agent 文档，重启后保持不变；修改 main 不会自动切换当前会话，需要时通过 TG `/models` 选择模型。尚未保存模型选择的会话可以使用新配置。
+主模型由设置页或 TG `/models` 统一修改，并写回 `agent.profiles.main`。App 与 Telegram 共用同一选择；新一轮执行前主聊和旁聊会对齐该配置，重启也会重新对齐。AgentDoc 保存实际执行模型，不再提供前台会话级粘性选择。首次未配置时不会自动挑目录首个模型。
 
 通用思考值为 off/minimal/low/medium/high/xhigh/max；只接受所选模型实际支持的值，能力列表见 thinkingLevels。例如本版本 deepseek-flash 支持 off/low/high/max。Piko 不把所有思考值强行映射到每个供应商。
 
@@ -112,11 +112,11 @@ Piko 不提供 compaction/retry 配置，Harness 使用 Durable 默认策略。�
 
 ## 会话控制
 
-主会话的模型/思考选择、手动压缩由 TG `/models`、`/thinking`、`/compact` 直接调用运行时能力；选择与压缩要求会话空闲。App 与 TG 的停止仍共用会话控制器，App 使用 `POST /api/chat/stop`，TG 使用 `/stop`。
+主模型/思考修改由 TG `/models`、`/thinking` 和 App 设置页共用配置服务；忙碌会话在当前轮结束后对齐。手动压缩仍要求会话空闲并占用维护边界。App 与 TG 的停止仍共用会话控制器，App 使用 `POST /api/chat/stop`，TG 使用 `/stop`。
 
 HTTP 不提供独立 runtime 管理入口或聊天提交回执查询路由。模型目录、描述、配置、压缩和原生 submission 查询能力供内部运行时、TG、接纳去重和后台报告使用。客户端通过 POST 回执、最新快照和相同 requestId 重试确认接纳。
 
-piko/models/auth JSON 与后端环境修改后重启后端生效。指导和技能在每次模型请求自动刷新。
+主/后台模型角色选择热应用；piko.json 中其他应用行为、models.json 模型目录、auth.json 模型 Key 和后端环境修改后重启生效。设置页对模型目录和 API Key 提供保存后受控重启；工具、通道及部署环境仍需后端管理。指导和技能在每次模型请求自动刷新。
 
 ## 更新的生效时机
 
@@ -124,9 +124,9 @@ piko/models/auth JSON 与后端环境修改后重启后端生效。指导和技�
 
 运行时内部返回 `status: compacted | cancelled`，任务失败报告错误。`compacted` 表示原生压缩任务完成，不额外断言摘要是否新增或已经应用；摘要和 submission 由 Durable 管理。TG 的 `/compact` 负责接纳，开始和完成通过原生生命周期观察呈现，并提供取消/失败提示；主会话的阈值/溢出自动压缩也通知本进程已验证的 TG 私聊。通知不阻塞事件观察；各会话快照附带活动压缩状态。旁聊和后台子会话不向主聊天 TG 通知；生命周期只用于呈现，不写聊天正文或可靠 outbox。
 
-普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式，模型/思考选择等管理操作仍要求空闲。
+普通 RN/TG 输入使用 `whenBusy: "steer"`，Harness 固定 `steeringMode: "all"`；原生 inbox 在工具轮结束或最终回复边界一次接纳所有待应用 steers。多条输入分别去重，助手输出独立监听并按原生消息分条；不提供 follow-up 输入模式。主模型变更不修改忙碌会话 AgentDoc，下一轮接纳时应用。
 
-目前不提供 `/reload` 命令或 HTTP 接口。模型配置与凭据修改后重启后端生效；Piko 内建 Durable Extension 随服务端代码部署。重启保留原生历史与当前模型/思考选择，不会因为 agent.profiles.main 改变而覆盖已有选择。
+主/后台模型选择无需重启，在安全接纳边界生效；模型目录和凭据由设置页保存后请求受控重启。Piko 内建 Durable Extension 随服务端代码部署。重启保留原生历史与当前模型/思考选择，不会因为 agent.profiles.main 改变而覆盖已有选择。
 
 | 修改内容 | 当前生效方式 |
 | --- | --- |
@@ -134,14 +134,14 @@ piko/models/auth JSON 与后端环境修改后重启后端生效。指导和技�
 | 应用内建 server/resources/prompts/core.md | 每次模型请求重新读取；loader 代码变化需重启 |
 | 工作区 .agents/skills、内建技能的新增/删除及 SKILL.md 索引字段 | 每次模型请求重新发现；查询技能也读取当前目录，无需重启 |
 | SKILL.md 正文、技能脚本及辅助文件 | read 或执行时读取；已进入旧消息的正文需重新读取，运行中的脚本不被替换 |
-| config/piko.json、models.json | 重启后端；profiles.main 不自动切换已有会话，profiles.background 作用于重启后新建的子会话，已有子会话保持原选择 |
-| config/auth.json 中的模型凭据 | 手工修改需重启；Piko 只读，不提供交互登录或凭据写回 |
+| 设置页修改 profiles.main / profiles.background | 主/后台策略立即发布；前台会话在空闲或下一轮边界对齐，后台新建工作采用最新选择，已有工作不切换 |
+| models.json 模型目录、auth.json API Key | 设置页写入并请求受控重启；OAuth 仍不由 API Key 表单编辑 |
 | config/.env、PIKO_HOME 及进程环境 | 重启后端；外部终端新设置不会注入已有进程 |
 | Piko 服务端代码、运行时适配器及依赖升级 | 重启或部署；开发模式 bun --watch 负责重启 |
 | 工作区其他 md、JSONL 和 Durable 原生文档 | 普通文件按需读取，重启保留存储和文档状态 |
 | 内建 templates/AGENTS.md、templates/MEMORY.md | 初始化只补齐缺失文件，已有工作区定制不覆盖 |
 
-通过 TG `/models`、`/thinking` 改变当前选择时，直接调用原生 `Conversation.configure`，不重读配置文件，无需重启；该切换只影响主会话，新建后台子 Agent 使用 `agent.profiles.background`，已有子会话保留自己的模型选择。编辑 piko/models/auth JSON 或通道/工具凭据 .env 后先重启，再选择；编辑工作区指导、记忆和技能后继续对话即可。
+TG `/models`、`/thinking` 与 App 设置页共用配置服务，修改全局主模型并在空闲/下一轮边界对齐主聊与旁聊；不会覆盖正在运行的回复。后台新建工作按显式 background 或“跟随主模型”解析，已启动工作不切换。模型目录或 API Key 的变更经确认后保存并请求受控重启；工作区指导、记忆和技能仍在下一次模型请求刷新。
 
 `AGENTS.md` 指助手工作区中的文件；源码仓库根目录的 AGENTS.md 只指导仓库开发，运行时不自动继承。其他任意 md 也不会自动变成系统提示。资源刷新在下一次模型请求生效，不会修改正在流式生成的那次请求。
 
@@ -170,7 +170,7 @@ Durable task、doc 与 extension API 仍由 Piko 内部实现使用；用户发�
 
 ## 边界
 
-read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 返回图片块，图片由 Photon 处理器缩放/转码；非视觉模型接收占位诊断，附件存储见[附件与图片读取](../features/attachments.md)。Tasks 任务展示、结果时间线、内部记忆整理和全局产物浏览/下载/确认删除已接入；RN 只读设置概览已接入，配置写入、工具轨迹及任务执行产物聚合尚未接入。
+read/write/edit/bash 使用本机权限，工作区是默认目录而非沙箱。原生 read 返回图片块，图片由 Photon 处理器缩放/转码；非视觉模型接收占位诊断，附件存储见[附件与图片读取](../features/attachments.md)。Tasks 任务展示、结果时间线、内部记忆整理和全局产物浏览/下载/确认删除已接入；RN 设置支持模型配置及 Key 管理，鉴权与工具/通道设置、任务执行产物聚合尚未接入。
 
 类型检查覆盖 API 与移动端；程序不提供文件回滚或哈希冲突保护，真机后台与真实长对话仍需使用验证。
 

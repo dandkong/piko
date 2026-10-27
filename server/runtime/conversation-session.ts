@@ -1,9 +1,5 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
-import {
-  clampThinkingLevel,
-  getSupportedThinkingLevels,
-  type ModelThinkingLevel,
-} from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
   type Conversation,
   type Storage,
@@ -14,7 +10,6 @@ import {
 import type {
   CompactionResult,
   RuntimeDescription,
-  RuntimeSelection,
 } from "../../shared/runtime";
 import type { WorkspacePaths } from "../workspace";
 import type {
@@ -128,7 +123,14 @@ export class DurableChatSession implements ChatSession {
     }
   }
   async ensureReady() {
-    await this.requireCurrentAgent();
+    if (this.control.isBusy) {
+      await this.requireCurrentAgent();
+      return;
+    }
+    await this.syncConfiguredMain();
+  }
+  syncConfiguredMain() {
+    return this.control.maintain(() => this.applyMainModel());
   }
   snapshot(options?: { limit: number }) {
     return this.view.snapshot(options);
@@ -258,37 +260,24 @@ export class DurableChatSession implements ChatSession {
     })());
   }
 
-  configure(selection: RuntimeSelection) {
-    return this.control.maintain(async () => {
-      const agent = await this.conversation.agent(ctx);
-      const profile =
-        "provider" in selection
-          ? selection
-          : agent.model && {
-              provider: agent.model.provider,
-              model: agent.model.modelId,
-              thinking: selection.thinking,
-            };
-      if (!profile)
-        throw new Error("No current model to change the thinking level.");
-      const model = await requireAvailableModel(this.config.models, profile);
-      const thinking =
-        profile.thinking ??
-        ("provider" in selection
-          ? clampThinkingLevel(model, agent.thinkingLevel)
-          : "off");
-      if (!getSupportedThinkingLevels(model).includes(thinking))
-        throw new Error("This model does not support that thinking level.");
+  private async applyMainModel() {
+    const profile = this.config.main;
+    if (!profile)
+      throw new Error("尚未选择主模型，请先在设置中选择一个可用模型。");
+    const model = await requireAvailableModel(this.config.models, profile);
+    const current = await this.conversation.agent(ctx);
+    const thinking = profile.thinking ?? "off";
+    if (current.model?.provider !== model.provider || current.model.modelId !== model.id || current.thinkingLevel !== thinking) {
       await this.harness.commit(
-        (tx) =>
-          configureAgent(tx, this.conversation.id, {
-            model: { provider: model.provider, modelId: model.id },
-            thinkingLevel: thinking,
-          }),
+        (tx) => configureAgent(tx, this.conversation.id, {
+          model: { provider: model.provider, modelId: model.id },
+          thinkingLevel: thinking,
+        }),
         ctx,
       );
       this.view.selected = { provider: model.provider, modelId: model.id };
-    });
+    }
+    return this.conversation.agent(ctx);
   }
   async describe(): Promise<RuntimeDescription> {
     const agent = await this.conversation.agent(ctx);
@@ -324,15 +313,18 @@ export class DurableChatSession implements ChatSession {
     };
   }
   async modelReady() {
-    return (await this.config.models.getAvailable()).length > 0;
+    if (!this.config.main) return false;
+    return (await this.config.models.getAvailable(this.config.main.provider))
+      .some(model => model.id === this.config.main!.model);
   }
 
   private async requireCurrentAgent() {
+    if (!this.config.main)
+      throw new Error("尚未选择主模型，请先在设置中选择一个可用模型。");
+    if (!this.control.isBusy) return this.applyMainModel();
     const agent = await this.conversation.agent(ctx);
     if (!agent.model)
-      throw new Error(
-        "No model is configured. Add its credentials, then choose a model in PIKO_HOME/config/piko.json under agent.profiles.",
-      );
+      throw new Error("当前会话尚未配置模型；本轮结束后将应用主模型设置。");
     await requireAvailableModel(this.config.models, {
       provider: agent.model.provider,
       model: agent.model.modelId,

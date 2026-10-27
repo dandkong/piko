@@ -21,10 +21,12 @@ import type { BackgroundSelection } from "./background";
 
 export type WorkspaceModelConfig = {
   models: Models;
-  /** Initial selection for a new main conversation, or one that never stored a model. */
+  /** Global front-chat model, synchronized into main and side-chat AgentDocs. */
   main?: ModelProfile;
   /** Model for delegation, scheduled runs and memory review. */
   background?: ModelProfile;
+  /** Omitted background profile means follow the current main model. */
+  backgroundFollowsMain: boolean;
   harnessSettings: Pick<HarnessSettings, "stream">;
 };
 
@@ -98,6 +100,7 @@ export async function loadWorkspaceModels({
     models,
     main,
     background,
+    backgroundFollowsMain: !background,
     harnessSettings: {
       stream: agent.stream as HarnessSettings["stream"],
     },

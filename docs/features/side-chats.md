@@ -30,7 +30,7 @@ PikoRuntime（唯一 Harness、Durable SQLite、共享资源）
 
 所有聊天读取及来源标记显式按 conversation ID 隔离。只有确实带旁聊标记的 Conversation 可经旁聊 API 访问，root/后台子会话不能凭 ID 被冒充为旁聊。原生 ID 对外视为不透明字符串。
 
-普通后台子 Agent 使用受限 scope，不能继续委派或管理任务。旁聊保留 `subagent_*` 工具但移除 `task_*`；发起委派时创建由该旁聊拥有的 Anchor/Reporter，状态查询和停止按 owner conversation 隔离。后台模型角色仍按 `agent.profiles.background` 选择，未配置时继承发起旁聊当前模型。报告只以隐藏 follow-up 提交回发起旁聊，不触发主会话回传或 Telegram 投递。启动刷新旁聊工具和提示词，不覆盖已保存模型或聊天历史。删除在同一会话接纳线内预留，但等待后台退出时不占住串行线，避免等待该线的 Reporter 死锁；内部报告同样通过该线重新检查可写与取消 epoch，避免检查后再直接原生 submit 的竞争。
+普通后台子 Agent 使用受限 scope，不能继续委派或管理任务。旁聊保留 `subagent_*` 工具但移除 `task_*`；发起委派时创建由该旁聊拥有的 Anchor/Reporter，状态查询和停止按 owner conversation 隔离。后台模型使用显式 `agent.profiles.background`，省略时跟随全局主模型，不按旁聊当时的 AgentDoc 选择。报告只以隐藏 follow-up 提交回发起旁聊，不触发主会话回传或 Telegram 投递。启动刷新旁聊工具和提示词，并将前台模型对齐全局主模型，不修改聊天历史。删除在同一会话接纳线内预留，但等待后台退出时不占住串行线，避免等待该线的 Reporter 死锁；内部报告同样通过该线重新检查可写与取消 epoch，避免检查后再直接原生 submit 的竞争。
 
 ## HTTP
 

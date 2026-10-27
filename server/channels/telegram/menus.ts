@@ -111,6 +111,7 @@ export class TelegramMenus {
     if (menu.working) { await this.api.answerCallback(callback.callbackId, "One moment…"); return; }
     menu.working = true;
     let applied = false;
+    let deferred = false;
     const action = match![2];
     const setting = action.startsWith("think:") ? "thinking" : "model";
     try {
@@ -156,19 +157,28 @@ export class TelegramMenus {
           await this.runtime.configure({ thinking });
         }
         applied = true;
-        return this.runtime.describe();
+        const active = await this.runtime.describe();
+        const settings = await this.runtime.settings();
+        const selected = settings.mainModel;
+        deferred = !!selected && (active.selection?.provider !== selected.provider || active.selection.model !== selected.model ||
+          (active.selection.thinking ?? "off") !== (selected.thinking ?? "off"));
+        return { ...active, selection: selected ?? active.selection };
       });
       menu.description = { ...menu.description, selection: description.selection };
       if (menu.kind === "thinking") {
         await this.edit(menu, this.view(menu));
-        await this.api.answerCallback(callback.callbackId, `Thinking set to ${description.selection?.thinking ?? "off"}`);
+        await this.api.answerCallback(callback.callbackId, deferred
+          ? "Saved. It will apply after the current reply."
+          : `Thinking set to ${description.selection?.thinking ?? "off"}`);
       } else {
         const selected = description.selection!;
         const model = description.models.find(model => sameModel({ provider: model.provider, model: model.id }, selected));
         const adjustable = (model?.thinkingLevels.length ?? 0) > 1;
-        await this.edit(menu, { text: `Selected model:\n${selectionText(description)}${adjustable ? "\n\nUse /thinking to adjust its thinking level." : ""}`,
+        await this.edit(menu, { text: `${deferred ? "Main model saved; it will apply after the current reply:" : "Selected model:"}\n${selectionText(description)}${adjustable ? "\n\nUse /thinking to adjust its thinking level." : ""}`,
           buttons: [[{ text: "Back to providers", callbackData: `p:${menu.token}:providers:${providersPage.toString(36)}` }]] });
-        await this.api.answerCallback(callback.callbackId, `Model set to ${model?.name ?? selected.model}`);
+        await this.api.answerCallback(callback.callbackId, deferred
+          ? "Main model saved. It will apply after the current reply."
+          : `Main model set to ${model?.name ?? selected.model}`);
         // Keep model navigation available while offering the actual supported, clamped thinking level.
         if (adjustable) await this.open(callback, "thinking", description);
       }
