@@ -28,6 +28,8 @@ export function FloatingPanel({
   children,
   headerActions,
   testID,
+  showScrollbar = false,
+  scrollTestID,
 }: {
   open: boolean;
   title: string;
@@ -36,6 +38,9 @@ export function FloatingPanel({
   children?: ReactNode;
   headerActions?: ReactNode;
   testID?: string;
+  /** Show the platform scrollbar for long panel content. */
+  showScrollbar?: boolean;
+  scrollTestID?: string;
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -93,8 +98,11 @@ export function FloatingPanel({
           </View>
         </View>
         <ScrollView
+          testID={scrollTestID}
           contentContainerStyle={styles.body}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={showScrollbar}
+          indicatorStyle="default"
+          persistentScrollbar={showScrollbar}
         >
           {children}
         </ScrollView>

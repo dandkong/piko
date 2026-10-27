@@ -7,12 +7,6 @@ import { colors } from "../../theme";
 import { AssistantMessage } from "../chat/AssistantMessage";
 import { loadArtifactPreview } from "./api";
 
-const fileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
 /** In-app reader for supported Markdown/text files and a clear fallback for other types. */
 export function ArtifactPreviewPanel({
   file,
@@ -62,10 +56,11 @@ export function ArtifactPreviewPanel({
       onClose={onClose}
       closeLabel="关闭产物预览"
       testID="artifact-preview-panel"
+      scrollTestID="artifact-preview-scroll"
+      showScrollbar
     >
       {file && (
         <View style={styles.content}>
-          <Text style={styles.meta}>{fileSize(file.size ?? 0)}</Text>
           {!preview ? (
             <View style={styles.unsupported} testID="artifact-preview-unsupported">
               <FileText size={28} strokeWidth={1.6} color={colors.muted} />
@@ -94,7 +89,6 @@ export function ArtifactPreviewPanel({
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
-  meta: { color: colors.muted, fontSize: 12 },
   text: {
     color: colors.text,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
