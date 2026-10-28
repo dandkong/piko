@@ -24,6 +24,7 @@ export class ConversationStore {
     string,
     Extract<StreamEvent, { type: "message" }>
   >();
+  private runEnds: Extract<StreamEvent, { type: "run-end" }>[] = [];
   private timer?: ReturnType<typeof setTimeout>;
   constructor(
     readonly runtime: ChatRuntime,
@@ -63,8 +64,11 @@ export class ConversationStore {
         if (event.previousId) this.messages.delete(event.previousId);
         this.messages.set(event.message.id, event);
         break;
-      case "run-start":
       case "run-end":
+        this.runEnds.push(event);
+        this.dirty = true;
+        break;
+      case "run-start":
       case "invalidated": this.dirty = true; break;
       default: { const exhaustive: never = event; return exhaustive; }
     }
@@ -81,7 +85,7 @@ export class ConversationStore {
   async flush() {
     if (this.pump) return this.pump;
     this.pump = (async () => {
-      while ((this.dirty || this.messages.size) && !this.closing) {
+      while ((this.dirty || this.messages.size || this.runEnds.length) && !this.closing) {
         const messages = [...this.messages.values()];
         this.messages.clear();
         for (const message of messages) this.publish(message);
@@ -92,6 +96,8 @@ export class ConversationStore {
           ).snapshot({ limit: CHAT_PAGE_SIZE });
           this.publish({ type: "snapshot", conversation });
         }
+        const runEnds = this.runEnds.splice(0);
+        for (const event of runEnds) this.publish(event);
       }
     })()
       .catch((error) =>

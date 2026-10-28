@@ -1,4 +1,4 @@
-import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
+import type { SideChat } from "../../shared/side-chats";
 import type { ModelSettingsSnapshot, SaveModelSettings, SaveModelSettingsResult } from "../../shared/settings";
 import type { ConversationResponse, ConversationActivity, HistoryPage, MessageEvent, SubmissionReceipt } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
@@ -74,8 +74,8 @@ export interface ChatRuntime {
   saveModelSettings(draft: SaveModelSettings): Promise<SaveModelSettingsResult>;
   sideChats: {
     list(): Promise<SideChat[]>;
-    create(requestId: string, title: string): Promise<SideChat>;
-    update(id: string, change: UpdateSideChat): Promise<SideChat>;
+    create(requestId: string): Promise<SideChat>;
+    generateTitle(id: string, requestIds?: readonly string[], signal?: AbortSignal): Promise<SideChat>;
     remove(id: string): Promise<void>;
   };
   createSession(conversationId?: string): Promise<ChatSession>;

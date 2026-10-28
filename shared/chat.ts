@@ -17,6 +17,7 @@ export type ConversationResponse = { messages: Message[]; history?: { nextBefore
 export function isHistoryCursor(value: string): boolean { return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)); }
 export type StreamEvent =
   | MessageEvent
+  | { type: "run-end"; submissions: readonly SubmissionReceipt[] }
   | { type: "activity"; activity: ConversationActivity }
   | { type: "deleted" }
   | { type: "snapshot"; conversation: ConversationResponse }

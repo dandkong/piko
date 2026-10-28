@@ -4,7 +4,7 @@
 
 ## 产品范围
 
-- 抽屉右下一键新建旁聊，使用默认名“新旁聊”并直接进入，不先填写名称。每行标题左对齐，右侧“⋯”菜单提供重命名和删除；重命名使用通用输入弹窗，预填当前名，确认后保存，取消不修改，不在列表原地编辑，限制 1–100 字。顶部头像旁始终显示 Piko，不随聊天名称变化。
+- 抽屉右下一键新建旁聊并直接进入，不先填写名称；新旁聊的存储标题初始为空，界面以“新旁聊”兜底显示。每行标题左对齐，右侧“⋯”菜单提供“生成标题”和删除。每次成功回答结束后，客户端异步请求生成标题并直接更新；用户也可在话题变化时从菜单手动刷新。标题根据最近一轮用户/助手文本生成，不含工具内容，每条输入最多取前 500 个 Unicode 字符，生成标题最多 100 个字符；标题请求不阻塞聊天。
 - Chat 一级导航始终回到主会话。应用重开默认主会话，不把旁聊提升为新的一级模块。
 - 每个旁聊有自己的历史、上下文、模型选择、输入去重、停止与压缩状态。新建时复制主会话当前模型/思考选择，之后独立，不增加新的配置角色位。
 - 不 fork 主会话，不继承其聊天记录，不自动回传、合并或推送主会话；Telegram 仍只接主会话。
@@ -16,7 +16,7 @@
 
 ## 运行时
 
-`server/runtime/pi.ts` 持有唯一 Storage/Harness 和服务生命周期，`bootstrap.ts` 在 resume 前完成恢复和策略刷新；`side-chat-service.ts` 管旁聊创建、改名和删除规则。Reporter 按原生 task 的 conversationId 回到发起会话的接纳线。`conversation-session.ts` 是单会话 facade，`conversation-control.ts` 管输入、停止、维护、删除及内部报告，`conversation-view.ts` 管历史投影和事件观察；控制器不关闭 Harness，观察 Store 不停止或销毁控制器。
+`server/runtime/pi.ts` 持有唯一 Storage/Harness 和服务生命周期，`bootstrap.ts` 在 resume 前完成恢复和策略刷新；`side-chat-service.ts` 管旁聊创建、标题生成和删除规则。Reporter 按原生 task 的 conversationId 回到发起会话的接纳线。`conversation-session.ts` 是单会话 facade，`conversation-control.ts` 管输入、停止、维护、删除及内部报告，`conversation-view.ts` 管历史投影和事件观察；控制器不关闭 Harness，观察 Store 不停止或销毁控制器。
 
 ```text
 PikoRuntime（唯一 Harness、Durable SQLite、共享资源）
@@ -37,8 +37,8 @@ PikoRuntime（唯一 Harness、Durable SQLite、共享资源）
 | 接口 | 行为 |
 | --- | --- |
 | GET /api/side-chats | 返回可用旁聊的 id/title/createdAt，不含旧归档项 |
-| POST /api/side-chats | `{requestId,title}`，幂等创建；返回旁聊元数据 |
-| POST /api/side-chats/:id | `{title}`，仅改名；archived 字段拒绝 |
+| POST /api/side-chats | `{requestId}`，幂等创建空标题旁聊；返回旁聊元数据 |
+| POST /api/side-chats/:id/title/generate | `{requestIds?}`，根据指定的最近一轮或最新已完成的一轮生成并覆盖标题；返回更新后的旁聊元数据 |
 | DELETE /api/side-chats/:id | 不可恢复删除；成功 204；已删除 ID 重试安全；root/后台子会话拒绝 |
 | GET /api/side-chats/:id/chat | 最近聊天快照 |
 | GET /api/side-chats/:id/chat/history?before=… | 向前分页 |

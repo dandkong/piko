@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type {
   SideChat,
-  UpdateSideChat,
+  GenerateSideChatTitle,
 } from "../../../../../shared/side-chats";
 import { apiFetch, readJson } from "../../api/client";
 import { createUuidV4 } from "../../utils/uuid";
 
-async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST"): Promise<T> {
+async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST", timeoutMs = 10000): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await apiFetch(path, {
         method,
@@ -32,9 +32,7 @@ export function useSideChats(open: boolean) {
   const locked = useRef(false);
   const version = useRef(0);
   const mounted = useRef(true);
-  const creation = useRef<{ title: string; requestId: string } | undefined>(
-    undefined,
-  );
+  const creation = useRef<string | undefined>(undefined);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -95,19 +93,31 @@ export function useSideChats(open: boolean) {
       if (mounted.current) setBusy(false);
     }
   };
+  const generateTitle = useCallback(async (id: string, requestIds?: readonly string[]) => {
+    const input: GenerateSideChatTitle = requestIds?.length ? { requestIds: [...requestIds] } : {};
+    const result = await request<SideChat>(
+      `/api/side-chats/${encodeURIComponent(id)}/title/generate`,
+      input,
+      "POST",
+      60000,
+    );
+    if (mounted.current) {
+      // Invalidate older list reads so a stale refresh cannot revert the generated title.
+      version.current++;
+      setItems(current => current.map(item => item.id === result.id ? result : item));
+    }
+    return result;
+  }, []);
   return {
     items,
     busy,
     error,
     refresh,
-    create: (title: string) =>
+    create: () =>
       mutate(async () => {
-        const command =
-          creation.current?.title === title
-            ? creation.current
-            : { title, requestId: createUuidV4() };
-        creation.current = command;
-        const result = await request<SideChat>("/api/side-chats", command);
+        const requestId = creation.current ?? createUuidV4();
+        creation.current = requestId;
+        const result = await request<SideChat>("/api/side-chats", { requestId });
         creation.current = undefined;
         return result;
       }),
@@ -115,9 +125,6 @@ export function useSideChats(open: boolean) {
       await request<void>(`/api/side-chats/${encodeURIComponent(id)}`, undefined, "DELETE");
       return { deletedId: id };
     }),
-    update: (id: string, change: UpdateSideChat) =>
-      mutate(() =>
-        request<SideChat>(`/api/side-chats/${encodeURIComponent(id)}`, change),
-      ),
+    generateTitle,
   };
 }

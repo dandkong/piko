@@ -145,6 +145,7 @@ class PikoRuntime {
       harness,
       this.paths.workspace,
       opened.maintenance,
+      config.models,
       (id) => this.session(id),
       async id => {
         const opening = this.sessions.get(id);
@@ -383,9 +384,9 @@ export function createPiRuntime(
     skill: async name => (await get()).skill(name),
     sideChats: {
       list: async () => (await get()).sideChats.list(),
-      create: async (requestId, title) =>
-        (await get()).sideChats.create(requestId, title),
-      update: async (id, change) => (await get()).sideChats.update(id, change),
+      create: async requestId => (await get()).sideChats.create(requestId),
+      generateTitle: async (id, requestIds, signal) =>
+        (await get()).sideChats.generateTitle(id, requestIds, signal),
       remove: async id => (await get()).sideChats.remove(id),
     },
     isModelReady: async () => (await session()).modelReady(),

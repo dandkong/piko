@@ -1,9 +1,8 @@
-import { Trash2, MoreVertical, Pencil } from "lucide-react-native";
+import { Trash2, MoreVertical, RefreshCw } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { SIDE_CHAT_TITLE_LIMIT, type SideChat, type UpdateSideChat } from "../../../../../shared/side-chats";
+import { DEFAULT_SIDE_CHAT_TITLE, type SideChat } from "../../../../../shared/side-chats";
 import { TextButton } from "../../components/TextButton";
-import { TextInputDialogContent } from "../../components/TextInputDialog";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { TactileListRow } from "../../components/TactileListRow";
@@ -15,16 +14,13 @@ export type SideChatActions = {
   sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatError?: string;
   onRefreshSideChats?: () => void; onSelectSideChat?: (id: string) => void;
   onCreateSideChat?: () => Promise<void>;
-  onUpdateSideChat?: (id: string, change: UpdateSideChat) => Promise<boolean>;
+  onGenerateSideChatTitle?: (id: string) => Promise<boolean>;
   onDeleteSideChat?: (id: string) => Promise<boolean>;
 };
 export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatError,
-  onRefreshSideChats, onSelectSideChat, onUpdateSideChat, onDeleteSideChat }: SideChatActions) {
+  onRefreshSideChats, onSelectSideChat, onGenerateSideChatTitle, onDeleteSideChat }: SideChatActions) {
   const [menu, setMenu] = useState<{ chat: SideChat; left: number; top: number }>();
-  const [editing, setEditing] = useState<string>();
   const [deleting, setDeleting] = useState<SideChat>();
-  const [renamed, setRenamed] = useState("");
-  const [renameError, setRenameError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -39,16 +35,7 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     { capture: true },
   );
   useEffect(() => { setMenu(undefined); }, [width, height]);
-  const save = async (id: string) => {
-    if (!renamed.trim() || savingRef.current || sideChatBusy) return;
-    savingRef.current = true; setSaving(true); setRenameError("");
-    try {
-      if (await onUpdateSideChat?.(id, { title: renamed.trim() })) setEditing(undefined);
-      else setRenameError("保存失败，请重试。");
-    } catch { setRenameError("保存失败，请重试。"); }
-    finally { savingRef.current = false; setSaving(false); }
-  };
-  const dismiss = () => { if (!savingRef.current) { setMenu(undefined); setEditing(undefined); setDeleting(undefined); } };
+  const dismiss = () => { if (!savingRef.current) { setMenu(undefined); setDeleting(undefined); } };
   const remove = async () => {
     if (!deleting || savingRef.current || sideChatBusy) return;
     savingRef.current = true; setSaving(true); setDeleteError("");
@@ -68,15 +55,16 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     </View> : null}
     {!visible.length && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
     {visible.map(chat => {
+      const title = chat.title.trim() || DEFAULT_SIDE_CHAT_TITLE;
       const active = activeSideChatId === chat.id;
       return <TactileListRow key={chat.id} surfaceVariant="compact" selected={active} style={styles.row}>
-        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${chat.title}`} accessibilityState={{ selected: active }}
+        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${title}`} accessibilityState={{ selected: active }}
           onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={active} stateFill={false} scaleTo={1}
           style={styles.titleHit} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
-          <Text numberOfLines={1} style={styles.text}>{chat.title}</Text>
+          <Text numberOfLines={1} style={styles.text}>{title}</Text>
         </TactilePressable>
         <View collapsable={false} style={styles.menuSlot} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
-          <TactilePressable accessibilityRole="button" accessibilityLabel={`旁聊菜单：${chat.title}`} accessibilityHint="重命名或删除"
+          <TactilePressable accessibilityRole="button" accessibilityLabel={`旁聊菜单：${title}`} accessibilityHint="生成标题或删除"
             accessibilityState={{ expanded: menu?.chat.id === chat.id }} disabled={!!sideChatBusy}
             onPress={() => openMenu(chat)} scaleTo={0.94} stateFill={false} style={styles.menuHit} faceStyle={styles.menuFace} variant="plain">
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
@@ -84,11 +72,9 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         </View>
       </TactileListRow>;
     })}
-    <Modal transparent visible={!!menu || !!editing || !!deleting} animationType="fade" onRequestClose={() => { if (!deleting) dismiss(); }}>
-      {editing ? <TextInputDialogContent title="重命名旁聊" inputLabel="新的旁聊名称" value={renamed} onChangeText={setRenamed}
-        maxLength={SIDE_CHAT_TITLE_LIMIT} busy={saving} disabled={sideChatBusy} error={renameError}
-        onCancel={dismiss} onConfirm={() => void save(editing)} testID="side-chat-rename-dialog" /> : deleting ? <ConfirmationDialogContent
-        title={`删除「${deleting.title}」？`}
+    <Modal transparent visible={!!menu || !!deleting} animationType="fade" onRequestClose={() => { if (!deleting) dismiss(); }}>
+      {deleting ? <ConfirmationDialogContent
+        title={`删除「${deleting.title.trim() || DEFAULT_SIDE_CHAT_TITLE}」？`}
         message="将永久删除聊天内容和所属后台执行，无法恢复。附件、工作区文件和历史备份不会删除。"
         onCancel={dismiss}
         onConfirm={() => void remove()}
@@ -107,11 +93,11 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         testID="side-chat-menu"
         actions={[
           {
-            id: "rename",
-            label: "重命名",
-            accessibilityLabel: "重命名旁聊",
-            icon: <Pencil size={18} strokeWidth={1.8} color={colors.text} />,
-            onPress: () => { setEditing(menu.chat.id); setRenamed(menu.chat.title); setRenameError(""); setMenu(undefined); },
+            id: "generate-title",
+            label: "生成标题",
+            accessibilityLabel: "生成旁聊标题",
+            icon: <RefreshCw size={18} strokeWidth={1.8} color={colors.text} />,
+            onPress: () => { const id = menu.chat.id; setMenu(undefined); void onGenerateSideChatTitle?.(id); },
           },
           {
             id: "delete",

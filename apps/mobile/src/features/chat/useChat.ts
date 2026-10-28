@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createUuidV4 } from "../../utils/uuid";
+import { isRequestId } from "../../../../../shared/chat";
 import type {
   ConversationResponse,
   ConversationActivity,
   HistoryPage,
   Message,
+  SubmissionReceipt,
   StreamEvent,
 } from "../../../../../shared/chat";
 import {
@@ -28,7 +30,12 @@ import {
 } from "./useChatAttachments";
 
 /** The owner is keyed by conversation ID and stays mounted across switches; network observation is active-only. */
-export function useChat(conversationId?: string, observing = true, onToast?: (message: string) => void) {
+export function useChat(
+  conversationId?: string,
+  observing = true,
+  onToast?: (message: string) => void,
+  onSideChatRunEnd?: (id: string, requestIds: readonly string[]) => void,
+) {
   const [history, setHistory] = useState<HistoryPage>({ messages: [] });
   const [draft, setDraft] = useState("");
   const [deleted, setDeleted] = useState(false);
@@ -114,6 +121,13 @@ export function useChat(conversationId?: string, observing = true, onToast?: (me
     },
     [],
   );
+  const onRunEnd = useCallback((submissions: readonly SubmissionReceipt[]) => {
+    if (!conversationId || deletedRef.current) return;
+    const requestIds = submissions
+      .filter(item => item.status === "done" && isRequestId(item.requestId))
+      .map(item => item.requestId!);
+    if (requestIds.length) onSideChatRunEnd?.(conversationId, requestIds);
+  }, [conversationId, onSideChatRunEnd]);
   const { attachments, setAttachments, attaching, attach, removeAttachment } =
     useChatAttachments(loading, sending, mounted, setError);
   const onDeleted = useCallback(() => {
@@ -139,6 +153,7 @@ export function useChat(conversationId?: string, observing = true, onToast?: (me
     apply,
     onMessage,
     setActivity,
+    onRunEnd,
     setError,
     onDeleted,
   );

@@ -17,6 +17,11 @@ const validators = {
     (value.message.role === "user" || value.message.role === "assistant") &&
     typeof value.message.content === "string" && typeof value.final === "boolean" &&
     (value.previousId === undefined || typeof value.previousId === "string"),
+  "run-end": value => Array.isArray(value.submissions) && value.submissions.every(item =>
+    record(item) && typeof item.id === "string" &&
+    (item.requestId === undefined || typeof item.requestId === "string") &&
+    (item.status === "queued" || item.status === "placed" || item.status === "done" || item.status === "unanswered") &&
+    (item.error === undefined || typeof item.error === "string")),
   activity: value => isConversationActivity(value.activity),
   error: value => typeof value.message === "string",
   deleted: () => true,

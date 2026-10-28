@@ -3,6 +3,7 @@ import { AppState } from "react-native";
 import type {
   ConversationResponse,
   ConversationActivity,
+  SubmissionReceipt,
   StreamEvent,
 } from "../../../../../shared/chat";
 import { checkHealth, observe } from "./api";
@@ -16,6 +17,7 @@ export function useConversationObservation(
   onSnapshot: (snapshot: ConversationResponse) => void,
   onMessage: (event: MessageEvent) => void,
   onActivity: (activity: ConversationActivity) => void,
+  onRunEnd: (submissions: readonly SubmissionReceipt[]) => void,
   onError: (error: string) => void,
   onDeleted: () => void,
 ) {
@@ -84,6 +86,7 @@ export function useConversationObservation(
                 break;
               case "snapshot": onSnapshot(event.conversation); break;
               case "message": onMessage(event); break;
+              case "run-end": onRunEnd(event.submissions); break;
               case "activity": onActivity(event.activity); break;
               case "error": onError(event.message); break;
               default: { const exhaustive: never = event; return exhaustive; }
@@ -98,6 +101,6 @@ export function useConversationObservation(
       controller.abort();
       onActivity({ kind: "idle" });
     };
-  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onActivity, onError, onDeleted]);
+  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onActivity, onRunEnd, onError, onDeleted]);
   return { connected, reconnecting, modelReady, version };
 }

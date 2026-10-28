@@ -16,10 +16,6 @@ import { TaskExecutionPreviewPanel, type TaskExecutionPreviewTarget } from "../t
 import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
 import type { FeedbackTone, FeedbackToastMessage } from "../../components/FeedbackToast";
-import {
-  DEFAULT_SIDE_CHAT_TITLE,
-  type UpdateSideChat,
-} from "../../../../../shared/side-chats";
 
 /** One app shell; keyed chat owners retain data and drafts, not hidden lists. */
 export function MainScreen() {
@@ -77,10 +73,18 @@ export function MainScreen() {
     setTab("Chat");
     setMenuOpen(false);
   };
-  const updateChat = async (id: string, change: UpdateSideChat) => {
-    if (!(await sides.update(id, change))) return false;
-    return true;
-  };
+  const generateSideChatTitle = useCallback(async (id: string) => {
+    try {
+      await sides.generateTitle(id);
+      return true;
+    } catch {
+      showToast("标题生成失败，请重试。");
+      return false;
+    }
+  }, [sides.generateTitle, showToast]);
+  const onSideChatRunEnd = useCallback((id: string, requestIds: readonly string[]) => {
+    void sides.generateTitle(id, requestIds).catch(() => {});
+  }, [sides.generateTitle]);
   const removeChat = async (id: string) => {
     if (!(await sides.remove(id))) return false;
     setSelectedId(current => current === id ? undefined : current);
@@ -119,10 +123,10 @@ export function MainScreen() {
           onRefreshSideChats={() => void sides.refresh()}
           onSelectSideChat={selectChat}
           onCreateSideChat={async () => {
-            const value = await sides.create(DEFAULT_SIDE_CHAT_TITLE);
+            const value = await sides.create();
             if (value) selectChat(value.id);
           }}
-          onUpdateSideChat={updateChat}
+          onGenerateSideChatTitle={generateSideChatTitle}
           onDeleteSideChat={removeChat}
           onOpenSettings={() => setSettingsOpen(true)}
           covered={settingsOpen}
@@ -188,6 +192,7 @@ export function MainScreen() {
           active={id === activeId}
           visible={tab === "Chat" && id === selectedId}
           onActiveChat={onActiveChat}
+          onSideChatRunEnd={onSideChatRunEnd}
           headerHeight={headerHeight}
           footerHeight={footerHeight}
         />
@@ -204,6 +209,7 @@ const ChatConversation = memo(function ChatConversation({
   visible,
   onActiveChat,
   onToast,
+  onSideChatRunEnd,
   ...layout
 }: {
   conversationId?: string;
@@ -211,6 +217,7 @@ const ChatConversation = memo(function ChatConversation({
   visible: boolean;
   onActiveChat: (id: string | undefined, chat: ChatStore) => void;
   onToast: (message: string) => void;
+  onSideChatRunEnd: (id: string, requestIds: readonly string[]) => void;
 } & Parameters<typeof ChatTab>[0]) {
   return (
     <ChatProvider
@@ -218,6 +225,7 @@ const ChatConversation = memo(function ChatConversation({
       active={active}
       onActiveChat={onActiveChat}
       onToast={onToast}
+      onSideChatRunEnd={onSideChatRunEnd}
     >
       {visible ? <ChatTab {...layout} /> : null}
     </ChatProvider>
