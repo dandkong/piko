@@ -1,5 +1,6 @@
 import type { ConversationResponse, Message } from "../../../shared/chat";
 import type { CompactionEvent, ModelSelection, RuntimeDescription } from "../../../shared/runtime";
+import type { ModelSettingsSnapshot } from "../../../shared/settings";
 import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 
 // One order for both setMyCommands and /help. Frequent controls first, onboarding last.
@@ -25,24 +26,31 @@ export function sameModel(a?: ModelSelection, b?: ModelSelection): boolean {
   return !!a && !!b && a.provider === b.provider && a.model === b.model;
 }
 export function currentModel(description: RuntimeDescription): string {
-  const selected = description.selection;
+  return modelText(description.selection, description.models);
+}
+function modelText(selected: ModelSelection | null | undefined, models: RuntimeDescription["models"]): string {
   if (!selected) return "No model selected";
-  const model = description.models.find(item => item.provider === selected.provider && item.id === selected.model);
+  const model = models.find(item => item.provider === selected.provider && item.id === selected.model);
   return singleLine(`${selected.provider}/${model?.name ?? selected.model} • ${selected.thinking ?? "off"}`, DETAIL_TEXT_LIMIT)
     ?? "No model selected";
+}
+export function backgroundModel(settings: ModelSettingsSnapshot): string {
+  return settings.backgroundModel
+    ? modelText(settings.backgroundModel, settings.availableModels)
+    : "Follows main";
 }
 export function selectionText(description: RuntimeDescription): string { return `Current: ${currentModel(description)}`; }
 export function busyMessage(action: "model" | "thinking" | "compact"): string {
   const operation = action === "compact" ? "compact context" : action === "model" ? "change model" : "change thinking level";
   return `Cannot ${operation} while a reply or maintenance is in progress. Use /stop or wait for completion.`;
 }
-export function formatStatus(snapshot: ConversationResponse, description: RuntimeDescription): string {
+export function formatStatus(snapshot: ConversationResponse, description: RuntimeDescription, settings: ModelSettingsSnapshot): string {
   const usage = snapshot.usage;
   const used = usage && usage.input + usage.cacheRead + usage.cacheWrite;
   const number = (value: number) => Math.round(value).toLocaleString("en-US");
   const context = used === undefined ? "unknown" : number(used) + (usage?.contextWindow
     ? ` / ${number(usage.contextWindow)} (${((usage.ratio ?? used / usage.contextWindow) * 100).toFixed(1)}%)` : "");
-  return ["Status", `Model: ${currentModel(description)}`, `Context: ${context}`,
+  return ["Status", `Model: ${currentModel(description)}`, `Background: ${backgroundModel(settings)}`, `Context: ${context}`,
     `State: ${snapshot.compactions?.length ? "Compacting" : snapshot.busy ? "Working" : "Ready"}`, `Skills: ${description.skills.length}`,
     ...(snapshot.interruption ? [snapshot.interruption] : []),
     ...(snapshot.latest?.status === "unanswered" ? [`Last input: ${snapshot.latest.error === "aborted" ? "Stopped" : "Failed"}`] : []),

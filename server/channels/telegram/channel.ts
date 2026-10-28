@@ -158,7 +158,10 @@ export class TelegramChannel {
     if (command === "start") text = WELCOME;
     else if (command === "help") text = formatHelp();
     else if (command === "status") {
-      text = formatStatus(await this.conversations.snapshot(), await this.runtime.describe());
+      const [snapshot, description, settings] = await Promise.all([
+        this.conversations.snapshot(), this.runtime.describe(), this.runtime.settings(),
+      ]);
+      text = formatStatus(snapshot, description, settings);
     } else if (command === "models" || command === "thinking") {
       await this.menus.open(message, command); return;
     } else if (command === "subagent") {
