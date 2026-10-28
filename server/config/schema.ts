@@ -19,6 +19,7 @@ export const agentSchema = object({
   profiles: object({
     main: Type.Optional(profileSchema),
     background: Type.Optional(profileSchema),
+    backgroundThinking: Type.Optional(thinkingSchema),
   }),
   stream: Type.Optional(object({
     transport: Type.Optional(Type.Union([

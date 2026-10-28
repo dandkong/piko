@@ -19,7 +19,7 @@ import type {
   SessionEvent,
 } from "./types";
 import { attachmentPrompt } from "../chat/input";
-import { CompactionExecutionError } from "./types";
+import { CompactionExecutionError, ModelConfigurationError } from "./types";
 import { compactionResult } from "./compactions";
 import { registerInput } from "./input-origin";
 import { loadWorkspaceResources } from "./resources";
@@ -263,8 +263,10 @@ export class DurableChatSession implements ChatSession {
   private async applyMainModel() {
     const profile = this.config.main;
     if (!profile)
-      throw new Error("尚未选择主模型，请先在设置中选择一个可用模型。");
-    const model = await requireAvailableModel(this.config.models, profile);
+      throw new ModelConfigurationError("尚未选择主模型，请先在设置中选择一个模型。");
+    const model = await requireAvailableModel(this.config.models, profile).catch(() => {
+      throw new ModelConfigurationError("主模型当前不可用，请检查部署中的模型目录和凭据。");
+    });
     const current = await this.conversation.agent(ctx);
     const thinking = profile.thinking ?? "off";
     if (current.model?.provider !== model.provider || current.model.modelId !== model.id || current.thinkingLevel !== thinking) {
@@ -320,7 +322,7 @@ export class DurableChatSession implements ChatSession {
 
   private async requireCurrentAgent() {
     if (!this.config.main)
-      throw new Error("尚未选择主模型，请先在设置中选择一个可用模型。");
+      throw new ModelConfigurationError("尚未选择主模型，请先在设置中选择一个模型。");
     if (!this.control.isBusy) return this.applyMainModel();
     const agent = await this.conversation.agent(ctx);
     if (!agent.model)

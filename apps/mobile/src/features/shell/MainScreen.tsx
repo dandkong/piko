@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, useWindowDimensions } from "react-native";
 import { AppShell, type AppTab } from "./AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
@@ -25,6 +25,8 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [headerHeight, setHeaderHeight] = useState(0);
   // The footer is shared by all conversations; an unchanged layout need not emit onLayout on a switch.
   const [footerHeight, setFooterHeight] = useState(0);
@@ -42,6 +44,12 @@ export function MainScreen() {
     },
     [],
   );
+  const showToast = useCallback((message: string) => {
+    clearTimeout(toastTimer.current);
+    setToastMessage(message);
+    toastTimer.current = setTimeout(() => setToastMessage(""), 2800);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
   const selectTab = (value: AppTab) => {
     Keyboard.dismiss();
     setArtifactPreview(undefined);
@@ -82,6 +90,7 @@ export function MainScreen() {
       activeTab={tab}
       onTabChange={selectTab}
       menuOpen={menuOpen}
+      toastMessage={toastMessage}
       onOpenMenu={() => {
         Keyboard.dismiss();
         setMenuOpen(true);
@@ -139,7 +148,7 @@ export function MainScreen() {
             onChange={chat.setDraft}
             loading={chat.loading}
             busy={chat.busy}
-            ready={chat.ready && !chat.submitting}
+            submitting={chat.submitting}
             onSend={(text) => void chat.send(text)}
             onStop={chat.stop}
             attachments={chat.attachments}
@@ -160,6 +169,7 @@ export function MainScreen() {
         <ChatConversation
           key={id ?? "main"}
           conversationId={id}
+          onToast={showToast}
           active={id === activeId}
           visible={tab === "Chat" && id === selectedId}
           onActiveChat={onActiveChat}
@@ -178,18 +188,21 @@ const ChatConversation = memo(function ChatConversation({
   active,
   visible,
   onActiveChat,
+  onToast,
   ...layout
 }: {
   conversationId?: string;
   active: boolean;
   visible: boolean;
   onActiveChat: (id: string | undefined, chat: ChatStore) => void;
+  onToast: (message: string) => void;
 } & Parameters<typeof ChatTab>[0]) {
   return (
     <ChatProvider
       conversationId={conversationId}
       active={active}
       onActiveChat={onActiveChat}
+      onToast={onToast}
     >
       {visible ? <ChatTab {...layout} /> : null}
     </ChatProvider>

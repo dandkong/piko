@@ -1,5 +1,5 @@
 import type { SideChat, UpdateSideChat } from "../../shared/side-chats";
-import type { SaveSettingsConfiguration, SaveSettingsResult, SettingsConfigurationSnapshot, SettingsOverview } from "../../shared/settings";
+import type { ModelSettingsSnapshot, SaveModelSettings, SaveModelSettingsResult } from "../../shared/settings";
 import type { ConversationResponse, ConversationActivity, HistoryPage, MessageEvent, SubmissionReceipt } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
@@ -22,6 +22,9 @@ export type BackgroundReply = { source: InputSource; knownMessageIds: string[]; 
   /** origin: answer where the work started; all: broadcast to every channel (scheduled work). */
   deliver: "origin" | "all" };
 export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
+export class ModelConfigurationError extends Error {
+  readonly status = 409;
+}
 /** Only this boundary crosses into the native adapter. */
 export interface ChatSession {
   readonly isStreaming: boolean;
@@ -58,9 +61,8 @@ export interface ChatRuntime {
   subagents(): Promise<AssistantSubagentsRuntime>;
   skill(name: string): Promise<WorkspaceSkillDetail | undefined>;
   isModelReady(): Promise<boolean>;
-  settings(): Promise<SettingsOverview>;
-  settingsConfiguration(): Promise<SettingsConfigurationSnapshot>;
-  saveSettingsConfiguration(draft: SaveSettingsConfiguration): Promise<SaveSettingsResult>;
+  settings(): Promise<ModelSettingsSnapshot>;
+  saveModelSettings(draft: SaveModelSettings): Promise<SaveModelSettingsResult>;
   sideChats: {
     list(): Promise<SideChat[]>;
     create(requestId: string, title: string): Promise<SideChat>;

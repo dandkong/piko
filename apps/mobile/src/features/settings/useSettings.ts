@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
-import type { SettingsOverview } from "../../../../../shared/settings";
+import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { loadSettings } from "./api";
 
 /** Fetch only while open, cancel superseded reads, and retain the last snapshot on refresh failure. */
 export function useSettings(open: boolean) {
-  const [data, setData] = useState<SettingsOverview>();
+  const [data, setData] = useState<ModelSettingsSnapshot>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const enabled = useRef(open);
@@ -46,5 +46,5 @@ export function useSettings(open: boolean) {
       pending.current = undefined;
     };
   }, [open, refresh]);
-  return { data, loading, error, refresh };
+  return { data, setData, loading, error, setError, refresh };
 }

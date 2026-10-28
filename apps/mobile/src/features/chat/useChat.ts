@@ -28,7 +28,7 @@ import {
 } from "./useChatAttachments";
 
 /** The owner is keyed by conversation ID and stays mounted across switches; network observation is active-only. */
-export function useChat(conversationId?: string, observing = true) {
+export function useChat(conversationId?: string, observing = true, onToast?: (message: string) => void) {
   const [history, setHistory] = useState<HistoryPage>({ messages: [] });
   const [draft, setDraft] = useState("");
   const [deleted, setDeleted] = useState(false);
@@ -132,7 +132,6 @@ export function useChat(conversationId?: string, observing = true) {
   const {
     connected,
     reconnecting,
-    modelReady,
     version: observedVersion,
   } = useConversationObservation(
     conversationId,
@@ -258,15 +257,20 @@ export function useChat(conversationId?: string, observing = true) {
             ),
           }));
         }
-        setError(
-          cause instanceof Error ? cause.message : "发送失败。",
-        );
+        const modelSetupError = cause instanceof HttpStreamError && cause.status === 409 &&
+          (cause.message.startsWith("尚未选择主模型") || cause.message.startsWith("主模型当前不可用"));
+        if (modelSetupError) {
+          onToast?.(cause.message);
+          setError("");
+        } else {
+          setError(cause instanceof Error ? cause.message : "发送失败。");
+        }
       } finally {
         sending.current = false;
         if (mounted.current) setSubmitting(false);
       }
     },
-    [draft, stopping, loading, refresh, attachments, attaching, conversationId],
+    [draft, stopping, loading, refresh, attachments, attaching, conversationId, onToast],
   );
   const stop = useCallback(async () => {
     if (stopping) return;
@@ -313,7 +317,6 @@ export function useChat(conversationId?: string, observing = true) {
               ? ""
               : "等待连接";
   return {
-    ready: !deleted && !loading && modelReady,
     deleted,
     messages,
     messageKey,

@@ -1,6 +1,6 @@
 import type { HealthResponse } from "../shared/chat";
 import type { ServerConfig } from "./config";
-import { RuntimeBusyError, type ChatRuntime } from "./runtime/types";
+import { ModelConfigurationError, RuntimeBusyError, type ChatRuntime } from "./runtime/types";
 import type { ConversationStore } from "./chat/conversations";
 import type { ConversationStores } from "./chat/stores";
 import { SideChatError } from "./runtime/side-chats";
@@ -24,7 +24,6 @@ export function createApp({
   attachments,
   artifacts,
   web,
-  restart,
 }: {
   config: ServerConfig;
   runtime: ChatRuntime;
@@ -33,7 +32,6 @@ export function createApp({
   attachments: AttachmentStore;
   artifacts: ArtifactStore;
   web?: WebHandler;
-  restart?: () => void;
 }) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -50,7 +48,7 @@ export function createApp({
       );
     try {
       const response =
-        (await settingsRequest(request, runtime, restart)) ??
+        (await settingsRequest(request, runtime)) ??
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
         (await artifactRequest(request, artifacts)) ??
@@ -83,7 +81,7 @@ export function createApp({
       const status =
         error instanceof HttpError ||
         error instanceof AssistantTaskError ||
-        error instanceof SideChatError
+        error instanceof SideChatError || error instanceof ModelConfigurationError
           ? error.status
           : error instanceof RuntimeBusyError
             ? 409

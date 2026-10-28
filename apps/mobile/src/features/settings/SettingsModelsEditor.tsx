@@ -1,351 +1,235 @@
-import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
-import { Check, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react-native";
+import { useMemo, useRef, useState } from "react";
+import {
+  Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions,
+} from "react-native";
+import { Check, ChevronDown } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
-import { SETTINGS_CREDENTIAL_PROVIDERS, type SettingsConfigurationSnapshot, type SettingsOverview } from "../../../../../shared/settings";
+import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { TactilePressable } from "../../components/TactilePressable";
-import { TextButton } from "../../components/TextButton";
 import { colors, radii, stateColors } from "../../theme";
-import type { SettingsEditorDraft } from "./editor-state";
 
-type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
+const thinkingLabels: Record<ThinkingLevel, string> = {
+  off: "关闭", minimal: "最少", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高",
+};
 
-const webTextInputStyle = { outlineStyle: "none" } as unknown as TextStyle;
-
-export type SettingsPage = "home" | "main-model" | "background-model" | "credentials";
+type ModelInfo = ModelSettingsSnapshot["availableModels"][number];
+type Role = "main" | "background";
 
 function sameModel(a: ModelSelection | null, b: ModelSelection | null) {
-  return a?.provider === b?.provider && a?.model === b?.model;
+  return !!a && !!b && a.provider === b.provider && a.model === b.model;
 }
 
-function Label({ children }: { children: ReactNode }) {
-  return <Text style={styles.label}>{children}</Text>;
+function selectedInfo(selection: ModelSelection | null, models: ModelSettingsSnapshot["availableModels"]) {
+  if (!selection) return undefined;
+  return models.find(model => model.provider === selection.provider && model.id === selection.model);
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <View style={styles.section}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    <View style={styles.card}>{children}</View>
-  </View>;
-}
-
-function MenuSection({ title, children }: { title: string; children: ReactNode }) {
-  return <View style={styles.section}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    <View style={styles.menuCard}>{children}</View>
-  </View>;
-}
-
-function MenuRow({ title, value, onPress }: { title: string; value: string; onPress: () => void }) {
-  return <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}，${value}`} onPress={onPress}
-    variant="plain" scaleTo={1} faceStyle={styles.menuRow}>
-    <View style={styles.menuText}>
-      <Text style={styles.menuTitle}>{title}</Text>
-      <Text numberOfLines={1} style={styles.menuValue}>{value}</Text>
-    </View>
-    <ChevronRight size={18} strokeWidth={1.8} color={colors.muted} />
-  </TactilePressable>;
-}
-
-function modelSummary(selection: ModelSelection | null, models: SettingsOverview["availableModels"]) {
+function modelLabel(selection: ModelSelection | null, models: ModelSettingsSnapshot["availableModels"]) {
   if (!selection) return "尚未选择";
-  const model = models.find(item => item.provider === selection.provider && item.id === selection.model);
+  const model = selectedInfo(selection, models);
   return model ? `${model.name} · ${model.provider}` : `${selection.provider} / ${selection.model}`;
 }
 
-const thinkingLevelOptions: Record<ThinkingLevel, string> = {
-  off: "关闭",
-  minimal: "最少",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "很高",
-  max: "最高",
-};
+function defaultThinking(model: ModelInfo, preferred?: ThinkingLevel) {
+  return preferred && model.thinkingLevels.includes(preferred)
+    ? preferred
+    : model.thinkingLevels.includes("off") ? "off" : model.thinkingLevels[0] ?? "off";
+}
 
-function ModelSelectionPage({ kind, overview, selection, onSelect, onThinkingChange, saving }: {
-  kind: "main-model" | "background-model";
-  overview: SettingsOverview;
+function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect }: {
+  role: Role;
   selection: ModelSelection | null;
-  onSelect: (model: SettingsOverview["availableModels"][number]) => void;
-  onThinkingChange: (thinking: ThinkingLevel) => void;
-  saving: boolean;
+  mainModel: ModelSelection | null;
+  models: ModelSettingsSnapshot["availableModels"];
+  disabled: boolean;
+  onSelect: (selection: ModelSelection | null) => void;
 }) {
-  const providers = useMemo(() => [...new Set(overview.availableModels.map(model => model.provider))].sort(), [overview.availableModels]);
-  const [providerFilter, setProviderFilter] = useState("全部");
-  const [thinkingExpanded, setThinkingExpanded] = useState(false);
-  const models = providerFilter === "全部" ? overview.availableModels
-    : overview.availableModels.filter(model => model.provider === providerFilter);
-  const selected = overview.availableModels.find(model => model.provider === selection?.provider && model.id === selection.model);
-  const selectedThinking = selected
-    ? selected.thinkingLevels.includes(selection?.thinking ?? "off") ? selection?.thinking ?? "off"
-      : selected.thinkingLevels.includes("off") ? "off" : selected.thinkingLevels[0]
+  const anchor = useRef<View>(null);
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [menu, setMenu] = useState<{ left: number; top: number; width: number; height: number }>();
+  const followsMain = role === "background" && selection === null;
+  const title = role === "main" ? "主模型" : "后台模型";
+  const value = followsMain
+    ? mainModel ? `跟随主模型 · ${modelLabel(mainModel, models)}` : "跟随主模型（主模型尚未选择）"
+    : modelLabel(selection, models);
+  const menuOptions = useMemo(() => [
+    ...(role === "background" ? [{ id: "follow-main", label: "跟随主模型", selection: null as ModelSelection | null }] : []),
+    ...models.map(model => ({
+      id: `${model.provider}/${model.id}`,
+      label: `${model.name} · ${model.provider}`,
+      selection: { provider: model.provider, model: model.id } as ModelSelection,
+    })),
+  ], [models, role]);
+
+  const openMenu = () => {
+    anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
+      const menuWidth = Math.min(Math.max(anchorWidth, 260), width - 32);
+      const menuHeight = Math.min(360, menuOptions.length * 52 + 8, height - insets.top - insets.bottom - 32);
+      const left = Math.max(16, Math.min(x, width - menuWidth - 16));
+      const below = y + anchorHeight + 6;
+      const top = below + menuHeight <= height - insets.bottom - 8
+        ? below : Math.max(insets.top + 8, y - menuHeight - 6);
+      setMenu({ left, top, width: menuWidth, height: menuHeight });
+    });
+  };
+
+  return <>
+    <View ref={anchor} collapsable={false}>
+      <TactilePressable testID={`${role}-model-dropdown`} accessibilityRole="button"
+        accessibilityLabel={`${title}：${value}`} accessibilityState={{ expanded: !!menu }}
+        disabled={disabled} onPress={openMenu} variant="card" scaleTo={1} faceStyle={styles.dropdown}>
+        <Text numberOfLines={1} style={styles.dropdownValue}>{value}</Text>
+        <ChevronDown size={18} strokeWidth={1.8} color={colors.muted} />
+      </TactilePressable>
+    </View>
+    <Modal transparent visible={!!menu} animationType="fade" onRequestClose={() => setMenu(undefined)}>
+      {menu ? <View style={StyleSheet.absoluteFill}>
+        <Pressable accessibilityRole="button" accessibilityLabel="关闭模型列表"
+          onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
+        <View testID={`${role}-model-options`} style={[styles.dropdownMenu, menu]}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            {menuOptions.map((option, index) => {
+              const active = option.selection === null
+                ? followsMain
+                : sameModel(selection, option.selection);
+              return <View key={option.id}>
+                <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}：${option.label}${active ? "，已选" : ""}`}
+                  selected={active} onPress={() => { setMenu(undefined); onSelect(option.selection); }}
+                  variant="plain" scaleTo={1} faceStyle={styles.dropdownOption}>
+                  <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{option.label}</Text>
+                  {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : null}
+                </TactilePressable>
+                {index < menuOptions.length - 1 ? <View style={styles.separator} /> : null}
+              </View>;
+            })}
+          </ScrollView>
+        </View>
+      </View> : null}
+    </Modal>
+  </>;
+}
+
+function ThinkingTabs({ role, model, selected, disabled, onSelect }: {
+  role: Role;
+  model?: ModelInfo;
+  selected?: ThinkingLevel;
+  disabled: boolean;
+  onSelect: (level: ThinkingLevel) => void;
+}) {
+  if (!model) return <Text style={styles.note}>选择主模型后可设置思考强度。</Text>;
+  const levels = model.thinkingLevels;
+  if (!levels.length) return <Text style={styles.note}>该模型没有思考强度选项。</Text>;
+  return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thinkingTabs}
+    accessibilityRole="radiogroup" accessibilityLabel={`${role === "main" ? "主模型" : "后台模型"}思考强度`}
+    testID={`${role}-thinking-tabs`}>
+    {levels.map(level => {
+      const active = (selected ?? "off") === level;
+      return <TactilePressable key={level} testID={`${role}-thinking-${level}`} accessibilityRole="radio"
+        accessibilityLabel={thinkingLabels[level]} accessibilityState={{ selected: active }} selected={active}
+        disabled={disabled} onPress={() => onSelect(level)} variant="plain" scaleTo={1} faceStyle={styles.thinkingTab}>
+        <Text style={[styles.thinkingText, active && styles.thinkingTextSelected]}>{thinkingLabels[level]}</Text>
+      </TactilePressable>;
+    })}
+  </ScrollView>;
+}
+
+export function SettingsModelsEditor({ snapshot, saving, status, onChange }: {
+  snapshot: ModelSettingsSnapshot;
+  saving: boolean;
+  status: string;
+  onChange: (mainModel: ModelSelection | null, backgroundModel: ModelSelection | null, backgroundThinking: ThinkingLevel | null) => void;
+}) {
+  const mainInfo = selectedInfo(snapshot.mainModel, snapshot.availableModels);
+  const explicitBackground = snapshot.backgroundModel;
+  const effectiveBackground = explicitBackground ?? snapshot.mainModel;
+  const backgroundInfo = selectedInfo(effectiveBackground, snapshot.availableModels);
+  const mainThinking = mainInfo ? defaultThinking(mainInfo, snapshot.mainModel?.thinking) : undefined;
+  const backgroundThinking = backgroundInfo
+    ? defaultThinking(backgroundInfo, explicitBackground?.thinking ?? snapshot.backgroundThinking ?? snapshot.mainModel?.thinking)
     : undefined;
-  const title = kind === "main-model" ? "主模型" : "后台模型";
 
-  return <View style={styles.modelPage}>
-    {providers.length > 1 ? <View style={styles.group}>
-      <Label>供应商</Label>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.providerFilters}>
-        {["全部", ...providers].map(provider => <TactilePressable key={provider} accessibilityRole="button" hitSlop={{ top: 5, bottom: 5 }}
-          accessibilityLabel={`筛选供应商 ${provider}`} selected={providerFilter === provider}
-          onPress={() => setProviderFilter(provider)} variant="plain" scaleTo={1} faceStyle={styles.providerChip}>
-          <Text style={styles.providerText}>{provider}</Text>
-        </TactilePressable>)}
-      </ScrollView>
-    </View> : null}
+  const selectModel = (role: Role, model: ModelInfo | null) => {
+    if (role === "main") {
+      if (!model) return;
+      const mainModel = { provider: model.provider, model: model.id, thinking: defaultThinking(model, mainThinking) };
+      const nextBackgroundThinking = !snapshot.backgroundModel && snapshot.backgroundThinking &&
+        !model.thinkingLevels.includes(snapshot.backgroundThinking) ? null : snapshot.backgroundThinking;
+      onChange(mainModel, snapshot.backgroundModel, nextBackgroundThinking);
+      return;
+    }
+    if (!model) {
+      onChange(snapshot.mainModel, null, null);
+      return;
+    }
+    const thinking = defaultThinking(model, backgroundThinking);
+    onChange(snapshot.mainModel, { provider: model.provider, model: model.id, thinking }, null);
+  };
 
-    <View style={styles.group}>
-      <Label>模型</Label>
-      {models.length ? <View style={styles.modelList}>
-        {models.map((model, index) => {
-          const active = selection?.provider === model.provider && selection.model === model.id;
-          return <View key={`${model.provider}/${model.id}`}>
-            <TactilePressable accessibilityRole="button"
-              accessibilityLabel={`${title} ${model.name}${active ? "，已选" : ""}`} selected={active} disabled={saving} onPress={() => {
-                setThinkingExpanded(false);
-                onSelect(model);
-              }}
-              variant="plain" scaleTo={1} faceStyle={styles.modelRow}>
-              <View style={styles.modelText}>
-                <Text style={styles.modelName}>{model.name}</Text>
-                <Text numberOfLines={1} style={styles.note}>{model.provider} / {model.id}</Text>
-              </View>
-              {active ? <Check size={19} strokeWidth={2} color={colors.text} /> : <View style={styles.emptyCheck} />}
-            </TactilePressable>
-            {index < models.length - 1 ? <View style={styles.modelSeparator} /> : null}
-          </View>;
-        })}
-      </View> : <Text style={styles.note}>暂无可用模型。</Text>}
-    </View>
+  const selectThinking = (role: Role, thinking: ThinkingLevel) => {
+    if (role === "main" && snapshot.mainModel)
+      onChange({ ...snapshot.mainModel, thinking }, snapshot.backgroundModel, snapshot.backgroundThinking);
+    else if (role === "background") {
+      if (snapshot.backgroundModel)
+        onChange(snapshot.mainModel, { ...snapshot.backgroundModel, thinking }, null);
+      else onChange(snapshot.mainModel, null, thinking);
+    }
+  };
 
-    <View style={styles.group}>
-      <Label>思考强度</Label>
-      {!selected ? <Text style={styles.note}>请先选择模型。</Text>
-        : !selectedThinking ? <Text style={styles.note}>该模型没有提供思考强度选项。</Text>
-          : <>
-            {selected.thinkingLevels.length > 1
-              ? <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}思考强度，当前${thinkingLevelOptions[selectedThinking]}`}
-                accessibilityHint={thinkingExpanded ? "收起思考强度选项" : "展开思考强度选项"}
-                accessibilityState={{ expanded: thinkingExpanded }} disabled={saving}
-                onPress={() => setThinkingExpanded(value => !value)} variant="card" scaleTo={1} faceStyle={styles.thinkingSelect}>
-                <Text style={styles.thinkingOptionTitle}>{thinkingLevelOptions[selectedThinking]}</Text>
-                <ChevronDown size={18} strokeWidth={1.8} color={colors.muted}
-                  style={{ transform: [{ rotate: thinkingExpanded ? "180deg" : "0deg" }] }} />
-              </TactilePressable>
-              : <View style={styles.thinkingSelect}>
-                <Text style={styles.thinkingOptionTitle}>{thinkingLevelOptions[selectedThinking]}</Text>
-              </View>}
-            {thinkingExpanded && selected.thinkingLevels.length > 1 ? <View style={styles.thinkingOptions}>
-              {selected.thinkingLevels.map((level, index, levels) => {
-                const active = selectedThinking === level;
-                return <View key={level}>
-                  <TactilePressable accessibilityRole="radio" accessibilityLabel={`${title}思考强度：${thinkingLevelOptions[level]}`}
-                    accessibilityState={{ selected: active }} disabled={saving}
-                    onPress={() => { onThinkingChange(level); setThinkingExpanded(false); }}
-                    variant="plain" selected={active} scaleTo={1} faceStyle={styles.thinkingOption}>
-                    <Text style={[styles.thinkingOptionTitle, active && styles.thinkingOptionTitleSelected]}>{thinkingLevelOptions[level]}</Text>
-                    {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : <View style={styles.emptyCheck} />}
-                  </TactilePressable>
-                  {index < levels.length - 1 ? <View style={styles.modelSeparator} /> : null}
-                </View>;
-              })}
-            </View> : null}
-          </>}
-    </View>
+  return <View style={styles.content} testID="settings-home">
+    <ModelSection title="主模型" role="main" selection={snapshot.mainModel} mainModel={snapshot.mainModel}
+      models={snapshot.availableModels} model={mainInfo} thinking={mainThinking} saving={saving}
+      onModel={model => selectModel("main", model)} onThinking={thinking => selectThinking("main", thinking)} />
+    <ModelSection title="后台模型" role="background" selection={explicitBackground} mainModel={snapshot.mainModel}
+      models={snapshot.availableModels} model={backgroundInfo} thinking={backgroundThinking} saving={saving}
+      onModel={model => selectModel("background", model)} onThinking={thinking => selectThinking("background", thinking)} />
+    {!snapshot.availableModels.length ? <Text style={styles.notice}>
+      部署中尚未配置可用模型。请在部署配置中添加模型和凭据，然后重启 Piko。
+    </Text> : null}
+    {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
   </View>;
 }
 
-export function SettingsModelsEditor({ page, overview, snapshot, draft, loading, saving, error, status,
-  onModelChange, onCredentialChange, onNavigate, onRetry }: {
-    page: SettingsPage;
-    overview: SettingsOverview;
-    snapshot?: SettingsConfigurationSnapshot;
-    draft?: SettingsEditorDraft;
-    loading: boolean;
-    saving: boolean;
-    error: string;
-    status: string;
-    onModelChange: (draft: SettingsEditorDraft) => void;
-    onCredentialChange: (draft: SettingsEditorDraft) => void;
-    onNavigate: (page: SettingsPage) => void;
-    onRetry: () => void;
-  }) {
-  const [expandedProviders, setExpandedProviders] = useState<string[]>([]);
-  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
-  const [focusedProvider, setFocusedProvider] = useState<string>();
-  const [focusVisibleProvider, setFocusVisibleProvider] = useState<string>();
-  useLayoutEffect(() => {
-    if (saving || page !== "credentials") setVisibleKeys({});
-  }, [page, saving]);
-
-  if (loading && !snapshot) return <View style={styles.content}><Text style={styles.note}>正在读取可编辑配置…</Text></View>;
-  if (!snapshot || !draft) return <View style={styles.content}>
-    <Text accessibilityRole="alert" style={styles.error}>{error || "无法读取配置。"}</Text>
-    <TextButton label="重试读取模型配置" disabled={loading} onPress={onRetry}><Text style={styles.actionText}>重试</Text></TextButton>
-  </View>;
-
-  const updateModel = (patch: Partial<SettingsEditorDraft>) => onModelChange({ ...draft, ...patch });
-  const updateCredentials = (patch: Partial<SettingsEditorDraft>) => onCredentialChange({ ...draft, ...patch });
-  const chooseMain = (model: SettingsOverview["availableModels"][number]) => {
-    const old = draft.mainModel;
-    const thinking = sameModel(old, { provider: model.provider, model: model.id }) && old?.thinking && model.thinkingLevels.includes(old.thinking)
-      ? old.thinking : model.thinkingLevels.includes("off") ? "off" : model.thinkingLevels[0] ?? "off";
-    const selection = { provider: model.provider, model: model.id, thinking };
-    updateModel({ mainModel: selection, ...(draft.backgroundModel ? {} : { backgroundModel: selection }) });
-  };
-  const chooseBackground = (model: SettingsOverview["availableModels"][number]) => {
-    const current = draft.backgroundModel ?? draft.mainModel;
-    const thinking = sameModel(current, { provider: model.provider, model: model.id }) && current?.thinking && model.thinkingLevels.includes(current.thinking)
-      ? current.thinking : model.thinkingLevels.includes("off") ? "off" : model.thinkingLevels[0] ?? "off";
-    updateModel({ backgroundModel: { provider: model.provider, model: model.id, thinking } });
-  };
-
-  const configuredCount = SETTINGS_CREDENTIAL_PROVIDERS.filter(provider =>
-    snapshot.credentials.find(credential => credential.providerId === provider.id)?.configured).length;
-
-  if (page === "home") return <View style={styles.content} testID="settings-home">
-    <MenuSection title="模型">
-      <MenuRow title="主模型" value={modelSummary(draft.mainModel, overview.availableModels)} onPress={() => onNavigate("main-model")} />
-      <View style={styles.separator} />
-      <MenuRow title="后台模型" value={modelSummary(draft.backgroundModel, overview.availableModels)} onPress={() => onNavigate("background-model")} />
-      <View style={styles.separator} />
-      <MenuRow title="供应商凭据" value={`${configuredCount} 个已配置`} onPress={() => onNavigate("credentials")} />
-    </MenuSection>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
-  </View>;
-
-  return <View style={styles.content} testID={`settings-${page}`}>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
-    {(page === "main-model" || page === "background-model") ? <ModelSelectionPage
-      key={page}
-      kind={page}
-      overview={overview}
-      selection={page === "main-model" ? draft.mainModel : draft.backgroundModel}
-      saving={saving}
-      onSelect={page === "main-model" ? chooseMain : chooseBackground}
-      onThinkingChange={thinking => {
-        if (page === "main-model" && draft.mainModel) updateModel({ mainModel: { ...draft.mainModel, thinking } });
-        if (page === "background-model" && draft.backgroundModel) updateModel({ backgroundModel: { ...draft.backgroundModel, thinking } });
-      }}
-    /> : null}
-
-    {page === "credentials" ? <Section title="供应商凭据">
-      {SETTINGS_CREDENTIAL_PROVIDERS.map((provider, index) => {
-        const providerId = provider.id;
-        const state = snapshot.credentials.find(item => item.providerId === providerId);
-        const isOAuth = state?.type === "oauth";
-        const expanded = expandedProviders.includes(providerId);
-        const originalKey = state?.apiKey ?? "";
-        const currentKey = draft.keyInputs[providerId] ?? originalKey;
-        const keyVisible = !!visibleKeys[providerId] && !saving;
-        const hasDraftKey = !!currentKey.trim();
-        const status = isOAuth ? "OAuth 已配置"
-          : originalKey && !hasDraftKey ? "待删除"
-            : !hasDraftKey ? "未配置" : currentKey.trim() === originalKey.trim() ? "已配置" : "待保存";
-        const statusStyle = status === "待保存" ? styles.statusPending
-          : status === "待删除" ? styles.statusDanger : styles.note;
-        return <View key={providerId} style={[styles.credential, index === SETTINGS_CREDENTIAL_PROVIDERS.length - 1 && styles.lastCredential]}>
-          <TactilePressable accessibilityRole="button" accessibilityLabel={`${provider.label}，${status}`}
-            accessibilityState={{ expanded }} onPress={() => {
-              setExpandedProviders(current => expanded ? current.filter(id => id !== providerId) : [...current, providerId]);
-              if (expanded) setVisibleKeys(current => ({ ...current, [providerId]: false }));
-            }}
-            variant="plain" scaleTo={1} faceStyle={styles.providerHeader}>
-            <View style={styles.credentialHeading}>
-              <Text style={styles.modelName}>{provider.label}</Text>
-              <Text style={statusStyle}>{status}</Text>
-            </View>
-            <ChevronDown size={18} strokeWidth={1.8} color={colors.muted}
-              style={{ transform: [{ rotate: expanded ? "180deg" : "0deg" }] }} />
-          </TactilePressable>
-          {expanded ? <View style={styles.providerBody}>
-            {isOAuth ? <Text style={styles.note}>OAuth 凭据</Text> : <>
-              <Label>API Key</Label>
-              <View style={[styles.passwordField, focusedProvider === providerId && styles.passwordFieldFocused,
-                focusVisibleProvider === providerId && styles.passwordFieldFocusVisible]}>
-                <TextInput accessibilityLabel={`${provider.label} API Key`} value={currentKey} maxLength={8192}
-                  selectTextOnFocus
-                  onFocus={(event: InputFocusEvent) => {
-                    setFocusedProvider(providerId);
-                    const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
-                    const focusVisible = target?.matches ? target.matches(":focus-visible") : true;
-                    setFocusVisibleProvider(Platform.OS === "web" && focusVisible ? providerId : undefined);
-                  }}
-                  onBlur={() => {
-                    setFocusedProvider(current => current === providerId ? undefined : current);
-                    setFocusVisibleProvider(current => current === providerId ? undefined : current);
-                  }}
-                  onChangeText={value => {
-                    const keyInputs = { ...draft.keyInputs, [providerId]: value };
-                    updateCredentials({ keyInputs });
-                    if (!value) setVisibleKeys(current => ({ ...current, [providerId]: false }));
-                  }} secureTextEntry={!keyVisible} autoCapitalize="none" autoCorrect={false} editable={!saving}
-                  placeholder="API Key" placeholderTextColor={colors.muted} returnKeyType="done"
-                  style={[styles.passwordInput, Platform.OS === "web" && webTextInputStyle]} />
-                <TactilePressable accessibilityRole="button"
-                  accessibilityLabel={`${keyVisible ? "隐藏" : "预览"}${provider.label} API Key`}
-                  accessibilityState={{ selected: keyVisible }}
-                  disabled={saving || !hasDraftKey}
-                  onPress={() => setVisibleKeys(current => ({ ...current, [providerId]: !current[providerId] }))}
-                  variant="plain" scaleTo={1} faceStyle={styles.revealButton}>
-                  {keyVisible
-                    ? <EyeOff size={18} strokeWidth={1.8} color={colors.muted} />
-                    : <Eye size={18} strokeWidth={1.8} color={colors.muted} />}
-                </TactilePressable>
-              </View>
-            </>}
-          </View> : null}
-        </View>;
-      })}
-    </Section> : null}
+function ModelSection({ title, role, selection, mainModel, models, model, thinking, saving, onModel, onThinking }: {
+  title: string;
+  role: Role;
+  selection: ModelSelection | null;
+  mainModel: ModelSelection | null;
+  models: ModelSettingsSnapshot["availableModels"];
+  model?: ModelInfo;
+  thinking?: ThinkingLevel;
+  saving: boolean;
+  onModel: (model: ModelInfo | null) => void;
+  onThinking: (thinking: ThinkingLevel) => void;
+}) {
+  return <View style={styles.section} testID={`${role}-model-section`}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.card}>
+      <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={saving || (role === "main" && models.length === 0)}
+        onSelect={value => onModel(value ? models.find(model => model.provider === value.provider && model.id === value.model) ?? null : null)} />
+      <ThinkingTabs role={role} model={model} selected={thinking} disabled={saving} onSelect={onThinking} />
+    </View>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 4, paddingBottom: 20, gap: 18 },
+  content: { paddingTop: 4, paddingBottom: 20, gap: 20 },
   section: { marginHorizontal: 20, gap: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: "500", color: colors.muted },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 16, gap: 16 },
-  menuCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
-  menuRow: { minHeight: 66, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 15, paddingVertical: 10 },
-  menuText: { flex: 1, minWidth: 0, gap: 3 },
-  menuTitle: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  menuValue: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
-  group: { gap: 8 },
-  label: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  sectionTitle: { color: colors.muted, fontSize: 13, lineHeight: 19, fontWeight: "500" },
+  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 14, gap: 14 },
+  dropdown: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, borderRadius: radii.control },
+  dropdownValue: { flex: 1, minWidth: 0, color: colors.text, fontSize: 14, lineHeight: 20 },
+  dropdownMenu: { position: "absolute", overflow: "hidden", borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, backgroundColor: colors.card, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },
+  dropdownOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 14, borderRadius: 0 },
+  dropdownOptionText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
+  dropdownOptionSelected: { fontWeight: "600" },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 12 },
+  thinkingTabs: { flexDirection: "row", alignItems: "center", gap: 6, padding: 4, backgroundColor: stateColors.soft, borderRadius: radii.pill },
+  thinkingTab: { minWidth: 46, minHeight: 36, paddingHorizontal: 10, borderRadius: radii.pill },
+  thinkingText: { color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "500" },
+  thinkingTextSelected: { color: colors.text, fontWeight: "600" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
-  modelPage: { marginHorizontal: 20, gap: 18 },
-  providerFilters: { gap: 7, paddingVertical: 1 },
-  providerChip: { minHeight: 34, minWidth: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, justifyContent: "center" },
-  providerText: { color: colors.text, fontSize: 12 },
-  modelList: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
-  modelRow: { minHeight: 62, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 17 },
-  modelSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
-  emptyCheck: { width: 19, height: 19 },
-  modelText: { flex: 1, minWidth: 0, gap: 2 },
-  modelName: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  thinkingSelect: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.control },
-  thinkingOptionTitle: { color: colors.text, fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  thinkingOptionTitleSelected: { fontWeight: "600" },
-  thinkingOptions: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, overflow: "hidden" },
-  thinkingOption: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 6 },
-  credential: { paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
-  lastCredential: { paddingBottom: 0, borderBottomWidth: 0 },
-  providerHeader: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 4, borderRadius: radii.control },
-  credentialHeading: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  providerBody: { gap: 8, paddingHorizontal: 4, paddingBottom: 8 },
-  passwordField: { minHeight: 48, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, backgroundColor: colors.canvas },
-  passwordFieldFocused: { borderColor: stateColors.focus },
-  passwordFieldFocusVisible: { boxShadow: `0 0 0 1px ${stateColors.focus}` } as unknown as ViewStyle,
-  passwordInput: { flex: 1, minWidth: 0, minHeight: 46, paddingHorizontal: 12, color: colors.text, fontSize: 14 },
-  revealButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radii.control },
-  error: { marginHorizontal: 20, color: colors.danger, fontSize: 13, lineHeight: 20 },
-  statusPending: { color: colors.blueDark, fontSize: 12, lineHeight: 19 },
-  statusDanger: { color: colors.danger, fontSize: 12, lineHeight: 19 },
-  status: { marginHorizontal: 20, color: colors.blueDark, fontSize: 13, lineHeight: 20 },
-  actionText: { color: colors.text, fontSize: 13, fontWeight: "500" },
+  notice: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
+  status: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
 });

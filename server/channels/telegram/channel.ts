@@ -1,5 +1,5 @@
 import type { ConversationStore } from "../../chat/conversations";
-import { CompactionExecutionError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
+import { CompactionExecutionError, ModelConfigurationError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS } from "../../../shared/chat";
 import type { AttachmentStore } from "../../attachments";
@@ -96,6 +96,19 @@ export class TelegramChannel {
       } else this.track(this.command(message, match[1].toLowerCase()));
       return;
     }
+    try {
+      if (!(await this.runtime.isModelReady())) {
+        const settings = await this.runtime.settings();
+        if (!settings.mainModel)
+          this.feedback(message, "尚未选择主模型。请先发送 /models 选择模型，再重新发送消息。");
+        else
+          this.feedback(message, "当前主模型不可用，请检查部署中的模型目录和凭据后重试。");
+        return;
+      }
+    } catch {
+      this.feedback(message, "暂时无法确认主模型状态，请稍后重试。");
+      return;
+    }
     const paths: string[] = [];
     if (incoming.length) {
       try {
@@ -116,6 +129,12 @@ export class TelegramChannel {
       await this.conversations.submit(prompt, `telegram:${this.identity.botId}:${message.chatId}:${message.messageId}`, { channel: "telegram", botId: this.identity.botId, chatId: message.chatId }, paths);
     } catch (error) {
       if (error instanceof RuntimeBusyError) { this.feedback(message, "Piko is busy with maintenance. Wait for it to finish, then resend your message."); return; }
+      if (error instanceof ModelConfigurationError) {
+        this.feedback(message, error.message.startsWith("尚未选择主模型")
+          ? "尚未选择主模型。请先发送 /models 选择模型，再重新发送消息。"
+          : error.message);
+        return;
+      }
       throw error;
     }
   }

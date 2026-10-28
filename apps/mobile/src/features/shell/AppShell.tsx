@@ -42,6 +42,7 @@ export function AppShell({
   onCloseMenu,
   wide,
   status,
+  toastMessage,
   headerHeight,
   footerHeight,
   onHeaderHeightChange,
@@ -60,6 +61,7 @@ export function AppShell({
   onTabChange?: (tab: AppTab) => void;
   wide: boolean;
   status: string;
+  toastMessage?: string;
   headerHeight: number;
   footerHeight: number;
   onHeaderHeightChange: (height: number) => void;
@@ -140,6 +142,10 @@ export function AppShell({
             )}
           </Animated.View>
           {sheet}
+          {toastMessage ? <View pointerEvents="none" testID="app-toast" accessibilityRole="alert"
+            accessibilityLiveRegion="assertive" style={[styles.toast, { top: insets.top + 78 }]}>
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </View> : null}
         </View>
       </View>
     </SafeAreaView>
@@ -348,6 +354,24 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
   },
+  toast: {
+    position: "absolute",
+    alignSelf: "center",
+    maxWidth: "88%",
+    zIndex: 30,
+    elevation: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.card,
+    shadowColor: colors.text,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+  },
+  toastText: { color: colors.text, fontSize: 13, lineHeight: 19, textAlign: "center" },
   identity: {
     alignItems: "center",
     alignSelf: "center",

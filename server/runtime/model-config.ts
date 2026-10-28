@@ -23,7 +23,7 @@ export type WorkspaceModelConfig = {
   models: Models;
   /** Global front-chat model, synchronized into main and side-chat AgentDocs. */
   main?: ModelProfile;
-  /** Explicit model for delegation, scheduled runs and memory review. */
+  /** Effective model for background work; follows main when no explicit override is configured. */
   background?: ModelProfile;
   harnessSettings: Pick<HarnessSettings, "stream">;
 };
@@ -77,8 +77,11 @@ export async function loadWorkspaceModels({
       );
   }
   const main = agent.profiles.main;
-  // A missing background profile is initialized from main once; later main changes do not follow it.
-  const background = agent.profiles.background ?? agent.profiles.main;
+  const backgroundOverride = agent.profiles.background;
+  const background = backgroundOverride ?? (main ? {
+    ...main,
+    thinking: agent.profiles.backgroundThinking ?? main.thinking,
+  } : undefined);
   for (const [role, profile] of [
     ["main", main],
     ["background", background],

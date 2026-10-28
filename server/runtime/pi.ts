@@ -39,12 +39,11 @@ import { createSessionSearchTools } from "./session-search-tools";
 import { SideChatError, requireSideChat } from "./side-chats";
 import { SideChats } from "./side-chat-service";
 import { openRuntime } from "./bootstrap";
-import { settingsOverview } from "./settings";
-import { SettingsConfigurationStore, SettingsValidationError, type SettingsCandidate } from "../settings/configuration";
-import type { SaveSettingsConfiguration, SettingsBackgroundModel } from "../../shared/settings";
+import { settingsSnapshot } from "./settings";
+import { ModelSettingsStore, SettingsValidationError } from "../settings/configuration";
+import type { SaveModelSettings } from "../../shared/settings";
+import type { ModelSelection } from "../../shared/runtime";
 import type { ModelProfile } from "../config/schema";
-import { configureProvider } from "./model-provider";
-import type { ProviderConfig } from "../config/model-schema";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -54,8 +53,7 @@ class PikoRuntime {
   private config!: WorkspaceModelConfig;
   private applicationSettings!: ApplicationSettings;
   private env: Record<string, string | undefined> = {};
-  private configuredProviderIds = new Set<string>();
-  private readonly settingsStore: SettingsConfigurationStore;
+  private readonly settingsStore: ModelSettingsStore;
   private readonly replies = new BackgroundReplies();
   private searchConfigured = false;
   private tasks!: DurableAssistantTasks;
@@ -70,13 +68,11 @@ class PikoRuntime {
   constructor(
     private readonly paths: WorkspacePaths,
     private readonly models?: Models,
-  ) { this.settingsStore = new SettingsConfigurationStore(paths.home); }
+  ) { this.settingsStore = new ModelSettingsStore(paths.home); }
 
   async init() {
     const settings = (this.applicationSettings = readApplicationSettings(this.paths.home));
     const env = (this.env = readConfigEnvironment(this.paths.home));
-    const editor = await this.settingsStore.snapshot();
-    this.configuredProviderIds = new Set(Object.keys((JSON.parse(editor.modelDirectory) as { providers: Record<string, unknown> }).providers));
     const config = (this.config = await loadWorkspaceModels({
       home: this.paths.home,
       settings,
@@ -86,7 +82,7 @@ class PikoRuntime {
     const coding = await createPikoCodingTools();
     const background = async () => {
       const profile = config.background;
-      if (!profile) throw new Error("No background model is selected; choose a main or background model in Settings.");
+      if (!profile) throw new Error("No main model is selected; choose one in Settings before starting background work.");
       return availableBackground(config.models, profile);
     };
     const children = createSubagentRuntime({
@@ -238,78 +234,65 @@ class PikoRuntime {
     return loadWorkspaceSkill(this.paths, name);
   }
   async settings() {
-    return settingsOverview(await this.main.native.agent(ctx), this.config);
+    return settingsSnapshot(await this.main.native.agent(ctx), this.config, await this.settingsStore.snapshot());
   }
-  settingsConfiguration() { return this.settingsStore.snapshot(); }
-  private async validateSettingsSelection(selection: import("../../shared/runtime").ModelSelection | null, candidate: SettingsCandidate) {
+  private async validateSettingsSelection(selection: ModelSelection | null) {
     if (!selection) return;
     const model = this.config.models.getModel(selection.provider, selection.model);
     if (!model)
-      throw new SettingsValidationError("该模型尚未加载；先保存模型目录并重启，再选择它。");
-    const provider = candidate.modelDirectory.providers[selection.provider];
-    if (!provider && this.configuredProviderIds.has(selection.provider))
-      throw new SettingsValidationError(`所选模型供应商 ${selection.provider} 将被移除，请先选择其他模型。`);
-    const listed = provider?.models;
-    if (listed && !listed.some(item => item.id === selection.model) && !provider?.modelOverrides?.[selection.model])
-      throw new SettingsValidationError(`模型目录中不存在 ${selection.provider}/${selection.model}。`);
-    const credential = candidate.credentials.find(item => item.providerId === selection.provider);
-    const keyless = provider?.keyless === true || !!(model as { keyless?: boolean }).keyless;
-    const deleting = candidate.credentialChanges.some(item => item.providerId === selection.provider && item.action === "delete");
-    const currentlyAvailable = deleting ? false : (await this.config.models.getAvailable(selection.provider))
-      .some(item => item.id === selection.model);
-    if (!keyless && !credential?.configured && !currentlyAvailable)
-      throw new SettingsValidationError(`供应商 ${selection.provider} 没有可用凭据，不能将其设为前台或后台模型。`);
+      throw new SettingsValidationError("该模型不在部署配置的模型目录中，请检查 models.json。");
+    const available = (await this.config.models.getAvailable(selection.provider)).some(item => item.id === selection.model);
+    if (!available)
+      throw new SettingsValidationError(`模型 ${selection.provider}/${selection.model} 当前不可用，请检查部署配置中的模型凭据。`);
     const thinking = selection.thinking ?? "off";
     if (!getSupportedThinkingLevels(model).includes(thinking as ModelThinkingLevel))
       throw new SettingsValidationError(`模型 ${selection.provider}/${selection.model} 不支持思考强度 ${thinking}。`);
   }
-  async saveSettingsConfiguration(draft: SaveSettingsConfiguration) {
-    const saved = await this.settingsStore.save(draft, async candidate => {
-      for (const [providerId, raw] of Object.entries(candidate.modelDirectory.providers)) {
-        const credential = candidate.credentials.find(item => item.providerId === providerId);
-        try {
-          configureProvider(providerId, raw as ProviderConfig, this.config.models.getProvider(providerId), this.env,
-            credential?.type === "api_key" && credential.configured ? "configuration-validation" : undefined);
-        } catch (error) {
-          throw new SettingsValidationError(error instanceof Error ? error.message : `供应商 ${providerId} 配置无效。`);
-        }
-      }
-      await this.validateSettingsSelection(candidate.mainModel, candidate);
-      await this.validateSettingsSelection(candidate.backgroundModel, candidate);
+  async saveModelSettings(draft: SaveModelSettings) {
+    const previous = await this.settingsStore.snapshot();
+    const mainChanged = JSON.stringify(previous.mainModel) !== JSON.stringify(draft.mainModel);
+    await this.settingsStore.save(draft, async candidate => {
+      await this.validateSettingsSelection(candidate.mainModel);
+      await this.validateSettingsSelection(candidate.backgroundModel);
+      if (!candidate.backgroundModel && candidate.mainModel && candidate.backgroundThinking)
+        await this.validateSettingsSelection({ ...candidate.mainModel, thinking: candidate.backgroundThinking });
     });
+    const main = draft.mainModel ? {
+      provider: draft.mainModel.provider,
+      model: draft.mainModel.model,
+      thinking: draft.mainModel.thinking ?? "off",
+    } satisfies ModelProfile : undefined;
+    const backgroundOverride = draft.backgroundModel ? {
+      provider: draft.backgroundModel.provider,
+      model: draft.backgroundModel.model,
+      thinking: draft.backgroundModel.thinking ?? "off",
+    } satisfies ModelProfile : undefined;
+    this.applicationSettings.agent.profiles.main = main;
+    this.applicationSettings.agent.profiles.background = backgroundOverride;
+    this.applicationSettings.agent.profiles.backgroundThinking = backgroundOverride
+      ? undefined : draft.backgroundThinking ?? undefined;
+    this.config.main = main;
+    this.config.background = backgroundOverride ?? (main ? {
+      ...main,
+      thinking: draft.backgroundThinking ?? main.thinking,
+    } : undefined);
+
     let pendingConversations = 0;
-    if (!saved.restartRequired) {
-      const main = draft.mainModel ? {
-        provider: draft.mainModel.provider,
-        model: draft.mainModel.model,
-        thinking: draft.mainModel.thinking ?? "off",
-      } satisfies ModelProfile : undefined;
-      const background = draft.backgroundModel ? {
-        provider: draft.backgroundModel.provider,
-        model: draft.backgroundModel.model,
-        thinking: draft.backgroundModel.thinking ?? "off",
-      } satisfies ModelProfile : draft.mainModel ? {
-        provider: draft.mainModel.provider,
-        model: draft.mainModel.model,
-        thinking: draft.mainModel.thinking ?? "off",
-      } satisfies ModelProfile : undefined;
-      this.applicationSettings.agent.profiles.main = main;
-      this.applicationSettings.agent.profiles.background = background;
-      this.config.main = main;
-      this.config.background = background;
-      if (main) {
-        for (const opening of this.sessions.values()) {
-          try {
-            const session = await opening;
-            if (session.closed) continue;
-            await session.syncConfiguredMain();
-          } catch {
-            pendingConversations++;
-          }
+    if (mainChanged && main) {
+      for (const opening of this.sessions.values()) {
+        try {
+          const session = await opening;
+          if (session.closed) continue;
+          await session.syncConfiguredMain();
+        } catch {
+          pendingConversations++;
         }
       }
     }
-    return { snapshot: saved.snapshot, restartRequired: saved.restartRequired, pendingConversations };
+    return {
+      snapshot: await this.settings(),
+      pendingConversations: mainChanged ? pendingConversations : 0,
+    };
   }
   async configureMain(selection: RuntimeSelection) {
     const current = this.config.main;
@@ -320,16 +303,13 @@ class PikoRuntime {
     const model = await requireAvailableModel(this.config.models, requested);
     const thinking = requested.thinking ?? clampThinkingLevel(model, current?.thinking ?? "off");
     const snapshot = await this.settingsStore.snapshot();
-    const backgroundModel: SettingsBackgroundModel = this.config.background
-      ? { provider: this.config.background.provider, model: this.config.background.model,
-          thinking: this.config.background.thinking ?? "off" }
-      : null;
-    await this.saveSettingsConfiguration({
+    await this.saveModelSettings({
       baseRevision: snapshot.revision,
       mainModel: { provider: model.provider, model: model.id, thinking },
-      backgroundModel,
-      modelDirectory: snapshot.modelDirectory,
-      credentialOperations: [],
+      backgroundModel: snapshot.backgroundModel,
+      backgroundThinking: snapshot.backgroundThinking &&
+        getSupportedThinkingLevels(model).includes(snapshot.backgroundThinking as ModelThinkingLevel)
+        ? snapshot.backgroundThinking : null,
     });
   }
   close(): Promise<void> {
@@ -393,8 +373,7 @@ export function createPiRuntime(
     },
     isModelReady: async () => (await session()).modelReady(),
     settings: async () => (await get()).settings(),
-    settingsConfiguration: async () => (await get()).settingsConfiguration(),
-    saveSettingsConfiguration: async draft => (await get()).saveSettingsConfiguration(draft),
+    saveModelSettings: async draft => (await get()).saveModelSettings(draft),
     createSession: session,
     describe: async (id) => (await session(id)).describe(),
     configure: async selection => (await get()).configureMain(selection),

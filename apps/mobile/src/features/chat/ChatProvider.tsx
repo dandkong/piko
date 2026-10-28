@@ -15,13 +15,15 @@ export function ChatProvider({
   conversationId,
   active = true,
   onActiveChat,
+  onToast,
 }: {
   children: ReactNode;
   conversationId?: string;
   active?: boolean;
   onActiveChat?: (id: string | undefined, chat: ChatStore) => void;
+  onToast?: (message: string) => void;
 }) {
-  const chat = useChat(conversationId, active);
+  const chat = useChat(conversationId, active, onToast);
   useLayoutEffect(() => {
     if (active) onActiveChat?.(conversationId, chat);
   }, [active, conversationId, chat, onActiveChat]);

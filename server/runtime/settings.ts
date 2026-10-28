@@ -1,13 +1,18 @@
 import type { Agent } from "@earendil-works/pi-durable";
-import type { SettingsOverview } from "../../shared/settings";
+import type { ModelSettingsSnapshot } from "../../shared/settings";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type { ModelSettingsState } from "../settings/configuration";
 import type { WorkspaceModelConfig } from "./model-config";
 
-/** Only return the model data needed by the editable model configuration form. */
-export async function settingsOverview(agent: Agent, config: WorkspaceModelConfig): Promise<SettingsOverview> {
+/** Return only model choices and role selections; provider credentials/config stay deployment-managed. */
+export async function settingsSnapshot(
+  agent: Agent,
+  config: WorkspaceModelConfig,
+  state: ModelSettingsState,
+): Promise<ModelSettingsSnapshot> {
   const models = await config.models.getAvailable();
   return {
-    mainModel: config.main ? { provider: config.main.provider, model: config.main.model, thinking: config.main.thinking ?? "off" } : null,
+    ...state,
     currentModel: agent.model ? { provider: agent.model.provider, model: agent.model.modelId, thinking: agent.thinkingLevel } : null,
     availableModels: models.map(model => ({
       provider: model.provider, id: model.id, name: model.name, imageInput: model.input.includes("image"),

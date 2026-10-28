@@ -22,7 +22,7 @@ type Props = {
   onChange: (value: string) => void;
   loading: boolean;
   busy: boolean;
-  ready: boolean;
+  submitting: boolean;
   attachments: PendingAttachment[];
   attaching: boolean;
   onAttach: () => void;
@@ -36,7 +36,7 @@ export function ChatComposer({
   onChange,
   loading,
   busy,
-  ready,
+  submitting,
   attachments,
   attaching,
   onAttach,
@@ -50,7 +50,7 @@ export function ChatComposer({
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<TextInput>(null);
   const canSend =
-    !loading && ready && (!!draft.trim() || attachments.length > 0);
+    !loading && !submitting && (!!draft.trim() || attachments.length > 0);
   const showStop = busy && !draft.trim() && !attachments.length;
   useEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
@@ -149,7 +149,7 @@ export function ChatComposer({
             Platform.OS === "web"
               ? undefined
               : (event) => {
-                  if (!loading && ready && event.nativeEvent.text.trim()) {
+                  if (!loading && !submitting && event.nativeEvent.text.trim()) {
                     onSend(event.nativeEvent.text);
                   }
                 }
