@@ -1,58 +1,98 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { FloatingPanel } from "../../components/FloatingPanel";
 import { TextButton } from "../../components/TextButton";
 import { colors } from "../../theme";
+import type { FeedbackTone } from "../../components/FeedbackToast";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
+import type { ModelSettingsSnapshot, SaveModelSettings } from "../../../../../shared/settings";
 import { saveModelSettings } from "./api";
 import { SettingsModelsEditor } from "./SettingsModelsEditor";
 import { useSettings } from "./useSettings";
 
 /** The app edits only model role choices; all provider, tool and environment settings are deployment-managed. */
-export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, setData, loading, error, setError, refresh } = useSettings(open);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState("");
+export function SettingsSheet({ open, onClose, onToast }: {
+  open: boolean;
+  onClose: () => void;
+  onToast: (message: string, tone?: FeedbackTone) => void;
+}) {
+  const writesPending = useRef(false);
+  const writer = useRef(false);
+  const queuedDraft = useRef<Omit<SaveModelSettings, "baseRevision"> | undefined>(undefined);
+  const confirmed = useRef<ModelSettingsSnapshot | undefined>(undefined);
+  const desired = useRef<ModelSettingsSnapshot | undefined>(undefined);
+  const { data, setData, loading, error, setError, refresh, invalidateReads } = useSettings(open, writesPending);
 
   useEffect(() => {
-    if (open) setStatus("");
-  }, [open]);
+    if (!data || writesPending.current) return;
+    confirmed.current = data;
+    desired.current = data;
+  }, [data]);
 
-  const update = useCallback(async (
+  const flush = useCallback(async () => {
+    if (writer.current || !queuedDraft.current) return;
+    writer.current = true;
+    writesPending.current = true;
+    invalidateReads();
+    let refreshAfterFailure = false;
+    try {
+      while (queuedDraft.current) {
+        const draft = queuedDraft.current;
+        queuedDraft.current = undefined;
+        const base = confirmed.current;
+        if (!base) {
+          queuedDraft.current = draft;
+          break;
+        }
+        try {
+          const result = await saveModelSettings({ ...draft, baseRevision: base.revision });
+          confirmed.current = result.snapshot;
+          const next = queuedDraft.current && desired.current
+            ? { ...desired.current, revision: result.snapshot.revision }
+            : result.snapshot;
+          desired.current = next;
+          setData(next);
+        } catch (cause) {
+          queuedDraft.current = undefined;
+          desired.current = confirmed.current;
+          if (confirmed.current) setData(confirmed.current);
+          onToast(cause instanceof Error ? cause.message : "保存模型设置失败，请重试。", "error");
+          refreshAfterFailure = true;
+          break;
+        }
+      }
+    } finally {
+      writer.current = false;
+      writesPending.current = false;
+      if (refreshAfterFailure) void refresh();
+    }
+  }, [invalidateReads, onToast, refresh, setData]);
+
+  const update = useCallback((
     mainModel: ModelSelection | null,
     backgroundModel: ModelSelection | null,
     backgroundThinking: ThinkingLevel | null,
   ) => {
-    if (!data || saving) return;
-    if (JSON.stringify({ mainModel, backgroundModel, backgroundThinking }) === JSON.stringify({
-      mainModel: data.mainModel,
-      backgroundModel: data.backgroundModel,
-      backgroundThinking: data.backgroundThinking,
+    const current = desired.current ?? data;
+    if (!current) return;
+    confirmed.current ??= current;
+    desired.current ??= current;
+    const draft = { mainModel, backgroundModel, backgroundThinking };
+    if (JSON.stringify(draft) === JSON.stringify({
+      mainModel: current.mainModel,
+      backgroundModel: current.backgroundModel,
+      backgroundThinking: current.backgroundThinking,
     })) return;
-    const mainChanged = JSON.stringify(mainModel) !== JSON.stringify(data.mainModel);
-    setSaving(true);
+    const next = { ...current, ...draft };
+    desired.current = next;
+    queuedDraft.current = draft;
+    setData(next);
     setError("");
-    setStatus("");
-    try {
-      const result = await saveModelSettings({
-        baseRevision: data.revision,
-        mainModel,
-        backgroundModel,
-        backgroundThinking,
-      });
-      setData(result.snapshot);
-      if (mainChanged && result.pendingConversations > 0)
-        setStatus(`主模型已保存；${result.pendingConversations} 个忙碌会话将在下一轮对齐。`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "保存模型设置失败，请重试。");
-    } finally {
-      setSaving(false);
-    }
-  }, [data, saving, setData, setError]);
+    void flush();
+  }, [data, flush, setData, setError]);
 
   return <FloatingPanel
     closeLabel="关闭设置"
-    closeDisabled={saving}
     onClose={onClose}
     open={open}
     testID="settings-sheet"
@@ -72,8 +112,6 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     </View> : null}
     {open && data ? <SettingsModelsEditor
       snapshot={data}
-      saving={saving}
-      status={status}
       onChange={(main, background, backgroundThinking) => void update(main, background, backgroundThinking)}
     /> : null}
   </FloatingPanel>;

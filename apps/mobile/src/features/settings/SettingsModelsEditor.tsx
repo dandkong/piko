@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions,
+  Modal, Pressable, StyleSheet, Text, View, useWindowDimensions,
 } from "react-native";
 import { Check, ChevronDown } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
+import { AppScrollView } from "../../components/AppScrollView";
 import { TactilePressable } from "../../components/TactilePressable";
-import { colors, radii, stateColors } from "../../theme";
+import { colors, controlSizes, radii, stateColors } from "../../theme";
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: "关闭", minimal: "最少", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高",
@@ -89,7 +90,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
         <Pressable accessibilityRole="button" accessibilityLabel="关闭模型列表"
           onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
         <View testID={`${role}-model-options`} style={[styles.dropdownMenu, menu]}>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+          <AppScrollView keyboardShouldPersistTaps="handled" showScrollbar>
             {menuOptions.map(option => {
               const active = option.selection === null
                 ? followsMain
@@ -103,18 +104,17 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
                 </TactilePressable>
               </View>;
             })}
-          </ScrollView>
+          </AppScrollView>
         </View>
       </View> : null}
     </Modal>
   </>;
 }
 
-function ThinkingTabs({ role, model, selected, disabled, onSelect }: {
+function ThinkingTabs({ role, model, selected, onSelect }: {
   role: Role;
   model?: ModelInfo;
   selected?: ThinkingLevel;
-  disabled: boolean;
   onSelect: (level: ThinkingLevel) => void;
 }) {
   if (!model) return <Text style={styles.note}>选择主模型后可设置思考强度。</Text>;
@@ -126,7 +126,7 @@ function ThinkingTabs({ role, model, selected, disabled, onSelect }: {
       const active = (selected ?? "off") === level;
       return <TactilePressable key={level} testID={`${role}-thinking-${level}`} accessibilityRole="radio"
         accessibilityLabel={thinkingLabels[level]} accessibilityState={{ selected: active }} selected={active}
-        disabled={disabled} onPress={() => onSelect(level)} variant="plain" scaleTo={1}
+        onPress={() => onSelect(level)} variant="plain" scaleTo={1}
         style={styles.thinkingTabPressable} faceStyle={styles.thinkingTab}>
         <Text style={[styles.thinkingText, active && styles.thinkingTextSelected]}>{thinkingLabels[level]}</Text>
       </TactilePressable>;
@@ -134,10 +134,8 @@ function ThinkingTabs({ role, model, selected, disabled, onSelect }: {
   </View>;
 }
 
-export function SettingsModelsEditor({ snapshot, saving, status, onChange }: {
+export function SettingsModelsEditor({ snapshot, onChange }: {
   snapshot: ModelSettingsSnapshot;
-  saving: boolean;
-  status: string;
   onChange: (mainModel: ModelSelection | null, backgroundModel: ModelSelection | null, backgroundThinking: ThinkingLevel | null) => void;
 }) {
   const mainInfo = selectedInfo(snapshot.mainModel, snapshot.availableModels);
@@ -178,19 +176,18 @@ export function SettingsModelsEditor({ snapshot, saving, status, onChange }: {
 
   return <View style={styles.content} testID="settings-home">
     <ModelSection title="主模型" role="main" selection={snapshot.mainModel} mainModel={snapshot.mainModel}
-      models={snapshot.availableModels} model={mainInfo} thinking={mainThinking} saving={saving}
+      models={snapshot.availableModels} model={mainInfo} thinking={mainThinking}
       onModel={model => selectModel("main", model)} onThinking={thinking => selectThinking("main", thinking)} />
     <ModelSection title="后台模型" role="background" selection={explicitBackground} mainModel={snapshot.mainModel}
-      models={snapshot.availableModels} model={backgroundInfo} thinking={backgroundThinking} saving={saving}
+      models={snapshot.availableModels} model={backgroundInfo} thinking={backgroundThinking}
       onModel={model => selectModel("background", model)} onThinking={thinking => selectThinking("background", thinking)} />
     {!snapshot.availableModels.length ? <Text style={styles.notice}>
       部署中尚未配置可用模型。请在部署配置中添加模型和凭据，然后重启 Piko。
     </Text> : null}
-    {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
   </View>;
 }
 
-function ModelSection({ title, role, selection, mainModel, models, model, thinking, saving, onModel, onThinking }: {
+function ModelSection({ title, role, selection, mainModel, models, model, thinking, onModel, onThinking }: {
   title: string;
   role: Role;
   selection: ModelSelection | null;
@@ -198,16 +195,15 @@ function ModelSection({ title, role, selection, mainModel, models, model, thinki
   models: ModelSettingsSnapshot["availableModels"];
   model?: ModelInfo;
   thinking?: ThinkingLevel;
-  saving: boolean;
   onModel: (model: ModelInfo | null) => void;
   onThinking: (thinking: ThinkingLevel) => void;
 }) {
   return <View style={styles.section} testID={`${role}-model-section`}>
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>
-      <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={saving || (role === "main" && models.length === 0)}
+      <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={role === "main" && models.length === 0}
         onSelect={value => onModel(value ? models.find(model => model.provider === value.provider && model.id === value.model) ?? null : null)} />
-      <ThinkingTabs role={role} model={model} selected={thinking} disabled={saving} onSelect={onThinking} />
+      <ThinkingTabs role={role} model={model} selected={thinking} onSelect={onThinking} />
     </View>
   </View>;
 }
@@ -223,12 +219,11 @@ const styles = StyleSheet.create({
   dropdownOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 14, borderRadius: 0 },
   dropdownOptionText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
   dropdownOptionSelected: { fontWeight: "600" },
-  thinkingTabs: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 2, padding: 3, backgroundColor: stateColors.soft, borderRadius: radii.pill },
+  thinkingTabs: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 1, padding: 3, backgroundColor: "transparent", borderWidth: 1, borderColor: colors.line, borderRadius: radii.pill },
   thinkingTabPressable: { flex: 1, minWidth: 0 },
-  thinkingTab: { flex: 1, minWidth: 0, minHeight: 36, paddingHorizontal: 2, borderRadius: radii.pill },
-  thinkingText: { color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "500" },
+  thinkingTab: { flex: 1, minWidth: 0, minHeight: controlSizes.md, paddingHorizontal: 1, borderRadius: radii.pill },
+  thinkingText: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: "500" },
   thinkingTextSelected: { color: colors.text, fontWeight: "600" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
   notice: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
-  status: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
 });

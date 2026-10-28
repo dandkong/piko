@@ -12,6 +12,7 @@ import { PostsScreen } from "../posts/PostsScreen";
 import { TasksScreen } from "../tasks/TasksScreen";
 import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
+import type { FeedbackTone, FeedbackToastMessage } from "../../components/FeedbackToast";
 import {
   DEFAULT_SIDE_CHAT_TITLE,
   type UpdateSideChat,
@@ -25,7 +26,7 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
-  const [toastMessage, setToastMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState<FeedbackToastMessage>();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [headerHeight, setHeaderHeight] = useState(0);
   // The footer is shared by all conversations; an unchanged layout need not emit onLayout on a switch.
@@ -44,10 +45,10 @@ export function MainScreen() {
     },
     [],
   );
-  const showToast = useCallback((message: string) => {
+  const showToast = useCallback((message: string, tone: FeedbackTone = "error") => {
     clearTimeout(toastTimer.current);
-    setToastMessage(message);
-    toastTimer.current = setTimeout(() => setToastMessage(""), 2800);
+    setToastMessage({ message, tone });
+    toastTimer.current = setTimeout(() => setToastMessage(undefined), 2800);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   const selectTab = (value: AppTab) => {
@@ -123,6 +124,7 @@ export function MainScreen() {
           <SettingsSheet
             open={settingsOpen}
             onClose={() => setSettingsOpen(false)}
+            onToast={showToast}
           />
           <ArtifactPreviewPanel
             file={artifactPreview}

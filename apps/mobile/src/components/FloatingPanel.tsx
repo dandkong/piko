@@ -1,7 +1,7 @@
 import { X } from "lucide-react-native";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  ScrollView,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -17,15 +17,15 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { IconButton } from "./IconButton";
+import { AppScrollView } from "./AppScrollView";
 import { colors, motion, radii } from "../theme";
 
-/** Shared elevated overlay for pages that cover the app and close only by an explicit button. */
+/** Shared elevated overlay; close from its button or by tapping the scrim. */
 export function FloatingPanel({
   open,
   title,
   onClose,
   closeLabel,
-  closeDisabled = false,
   children,
   headerActions,
   footer,
@@ -39,7 +39,6 @@ export function FloatingPanel({
   title: string;
   onClose: () => void;
   closeLabel: string;
-  closeDisabled?: boolean;
   children?: ReactNode;
   headerActions?: ReactNode;
   footer?: ReactNode;
@@ -88,9 +87,12 @@ export function FloatingPanel({
       testID={testID}
     >
       <Animated.View
-        pointerEvents="auto"
+        pointerEvents={open ? "auto" : "none"}
         style={[styles.scrim, scrimStyle]}
-      />
+      >
+        <Pressable accessibilityRole="button" accessibilityLabel={closeLabel}
+          onPress={onClose} style={StyleSheet.absoluteFill} />
+      </Animated.View>
       <Animated.View
         style={[
           styles.panel,
@@ -103,22 +105,20 @@ export function FloatingPanel({
             <Text numberOfLines={1} style={styles.title}>{title}</Text>
             <View style={styles.headerActions}>
               {headerActions}
-              <IconButton label={closeLabel} onPress={onClose} disabled={closeDisabled}>
+              <IconButton label={closeLabel} onPress={onClose}>
                 <X size={20} strokeWidth={1.8} color={colors.text} />
               </IconButton>
             </View>
           </View>
-          <ScrollView
+          <AppScrollView
             style={styles.scroll}
             key={contentKey}
             testID={scrollTestID}
             contentContainerStyle={styles.body}
-            showsVerticalScrollIndicator={showScrollbar}
-            indicatorStyle="default"
-            persistentScrollbar={showScrollbar}
+            showScrollbar={showScrollbar}
           >
             {children}
-          </ScrollView>
+          </AppScrollView>
           {footer ? <View style={styles.footer}>{footer}</View> : null}
         </>}
       </Animated.View>

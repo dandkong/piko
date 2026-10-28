@@ -28,6 +28,7 @@ import {
   HEADER_FADE_TAIL,
 } from "../../components/EdgeFade";
 import { IconButton } from "../../components/IconButton";
+import { FeedbackToast, type FeedbackToastMessage } from "../../components/FeedbackToast";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDrawerTransition } from "./useDrawerTransition";
 export type { AppTab };
@@ -61,7 +62,7 @@ export function AppShell({
   onTabChange?: (tab: AppTab) => void;
   wide: boolean;
   status: string;
-  toastMessage?: string;
+  toastMessage?: FeedbackToastMessage;
   headerHeight: number;
   footerHeight: number;
   onHeaderHeightChange: (height: number) => void;
@@ -142,10 +143,7 @@ export function AppShell({
             )}
           </Animated.View>
           {sheet}
-          {toastMessage ? <View pointerEvents="none" testID="app-toast" accessibilityRole="alert"
-            accessibilityLiveRegion="assertive" style={[styles.toast, { top: insets.top + 78 }]}>
-            <Text style={styles.toastText}>{toastMessage}</Text>
-          </View> : null}
+          {toastMessage ? <FeedbackToast feedback={toastMessage} top={insets.top + 78} /> : null}
         </View>
       </View>
     </SafeAreaView>
@@ -354,24 +352,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
   },
-  toast: {
-    position: "absolute",
-    alignSelf: "center",
-    maxWidth: "88%",
-    zIndex: 30,
-    elevation: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radii.control,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-  },
-  toastText: { color: colors.text, fontSize: 13, lineHeight: 19, textAlign: "center" },
   identity: {
     alignItems: "center",
     alignSelf: "center",
