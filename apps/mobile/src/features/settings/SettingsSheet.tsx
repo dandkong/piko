@@ -43,13 +43,12 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
       setData(result.snapshot);
       if (mainChanged && result.pendingConversations > 0)
         setStatus(`主模型已保存；${result.pendingConversations} 个忙碌会话将在下一轮对齐。`);
-      else setStatus("模型设置已应用。");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存模型设置失败，请重试。");
     } finally {
       setSaving(false);
     }
-  }, [data, refresh, saving, setData, setError]);
+  }, [data, saving, setData, setError]);
 
   return <FloatingPanel
     closeLabel="关闭设置"

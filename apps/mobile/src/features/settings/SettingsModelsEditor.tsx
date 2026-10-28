@@ -66,7 +66,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
   const openMenu = () => {
     anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
       const menuWidth = Math.min(Math.max(anchorWidth, 260), width - 32);
-      const menuHeight = Math.min(360, menuOptions.length * 52 + 8, height - insets.top - insets.bottom - 32);
+      const menuHeight = Math.min(360, menuOptions.length * 50, height - insets.top - insets.bottom - 32);
       const left = Math.max(16, Math.min(x, width - menuWidth - 16));
       const below = y + anchorHeight + 6;
       const top = below + menuHeight <= height - insets.bottom - 8
@@ -90,7 +90,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
           onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
         <View testID={`${role}-model-options`} style={[styles.dropdownMenu, menu]}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
-            {menuOptions.map((option, index) => {
+            {menuOptions.map(option => {
               const active = option.selection === null
                 ? followsMain
                 : sameModel(selection, option.selection);
@@ -101,7 +101,6 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
                   <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{option.label}</Text>
                   {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : null}
                 </TactilePressable>
-                {index < menuOptions.length - 1 ? <View style={styles.separator} /> : null}
               </View>;
             })}
           </ScrollView>
@@ -121,18 +120,18 @@ function ThinkingTabs({ role, model, selected, disabled, onSelect }: {
   if (!model) return <Text style={styles.note}>选择主模型后可设置思考强度。</Text>;
   const levels = model.thinkingLevels;
   if (!levels.length) return <Text style={styles.note}>该模型没有思考强度选项。</Text>;
-  return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thinkingTabs}
-    accessibilityRole="radiogroup" accessibilityLabel={`${role === "main" ? "主模型" : "后台模型"}思考强度`}
-    testID={`${role}-thinking-tabs`}>
+  return <View accessibilityRole="radiogroup" accessibilityLabel={`${role === "main" ? "主模型" : "后台模型"}思考强度`}
+    testID={`${role}-thinking-tabs`} style={styles.thinkingTabs}>
     {levels.map(level => {
       const active = (selected ?? "off") === level;
       return <TactilePressable key={level} testID={`${role}-thinking-${level}`} accessibilityRole="radio"
         accessibilityLabel={thinkingLabels[level]} accessibilityState={{ selected: active }} selected={active}
-        disabled={disabled} onPress={() => onSelect(level)} variant="plain" scaleTo={1} faceStyle={styles.thinkingTab}>
+        disabled={disabled} onPress={() => onSelect(level)} variant="plain" scaleTo={1}
+        style={styles.thinkingTabPressable} faceStyle={styles.thinkingTab}>
         <Text style={[styles.thinkingText, active && styles.thinkingTextSelected]}>{thinkingLabels[level]}</Text>
       </TactilePressable>;
     })}
-  </ScrollView>;
+  </View>;
 }
 
 export function SettingsModelsEditor({ snapshot, saving, status, onChange }: {
@@ -224,9 +223,9 @@ const styles = StyleSheet.create({
   dropdownOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 14, borderRadius: 0 },
   dropdownOptionText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
   dropdownOptionSelected: { fontWeight: "600" },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 12 },
-  thinkingTabs: { flexDirection: "row", alignItems: "center", gap: 6, padding: 4, backgroundColor: stateColors.soft, borderRadius: radii.pill },
-  thinkingTab: { minWidth: 46, minHeight: 36, paddingHorizontal: 10, borderRadius: radii.pill },
+  thinkingTabs: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 2, padding: 3, backgroundColor: stateColors.soft, borderRadius: radii.pill },
+  thinkingTabPressable: { flex: 1, minWidth: 0 },
+  thinkingTab: { flex: 1, minWidth: 0, minHeight: 36, paddingHorizontal: 2, borderRadius: radii.pill },
   thinkingText: { color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "500" },
   thinkingTextSelected: { color: colors.text, fontWeight: "600" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
