@@ -69,7 +69,7 @@ export function createPostsExtension(options: {
             if (decision.action === "skip") result = { skipped: true, reason: decision.reason };
             else {
               const entry = await tx.appendEntry(PublishedPost, ROOT_CONVERSATION_ID, {
-                data: { body: decision.body, reason: decision.reason, createdAt: runtime.now(), generationTaskId: Number(record.id) },
+                data: { title: decision.title, body: decision.body, reason: decision.reason, createdAt: runtime.now(), generationTaskId: Number(record.id) },
               });
               result = { postId: String(entry.id) };
             }

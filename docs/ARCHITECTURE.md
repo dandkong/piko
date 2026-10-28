@@ -104,7 +104,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | piko.agent-resources / piko.background-job | 资源文件/技能选择与用途、继续/回报策略；不复制 AgentDoc、文件正文或执行状态 |
 | piko.tasks / piko.task-command / piko.task-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
-| piko.post / piko.posts-generation | 原生应用 entry 保存正式正文与生成理由；原生后台 task 执行研究，不向主聊天或 Telegram 回报 |
+| piko.post / piko.posts-generation | 原生应用 entry 保存标题、正式正文与生成理由；原生后台 task 执行研究，不向主聊天或 Telegram 回报 |
 | piko.posts-request / piko.posts-context | 请求去重与研究角色/历史截止边界，不复制正文或执行状态 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
@@ -124,7 +124,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | POST /api/chat | {requestId,message}，返回 {submission,duplicate}；不返回 SSE |
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
-| GET /api/posts、GET /api/posts/:id | 帖子卡片分页、正文与理由，见[帖子说明](features/posts.md) |
+| GET /api/posts、GET /api/posts/:id | 帖子卡片分页、标题/正文/理由，见[帖子说明](features/posts.md) |
 | POST /api/posts/generations、GET /api/posts/generations/:id | 手动生成与原生状态；另提供 stop 请求取消 |
 | GET /api/health | 后端和模型可用状态 |
 | GET /api/settings | 模型选择器所需的可用模型列表与当前主会话模型 |

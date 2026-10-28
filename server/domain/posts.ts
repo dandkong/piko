@@ -29,8 +29,9 @@ export function postDecision(text: string): PostDecision {
   if (typeof input.reason !== "string" || !input.reason.trim()) throw new PostError("帖子生成结果缺少理由。");
   if (input.action === "skip" && Object.keys(input).every(key => ["action", "reason"].includes(key)))
     return { action: "skip", reason: input.reason.trim() };
-  if (input.action === "publish" && typeof input.body === "string" && input.body.trim() &&
-    Object.keys(input).every(key => ["action", "body", "reason"].includes(key)))
-    return { action: "publish", body: input.body.trim(), reason: input.reason.trim() };
-  throw new PostError("帖子生成结果需要正文和生成理由。");
+  if (input.action === "publish" && typeof input.title === "string" && input.title.trim() &&
+    typeof input.body === "string" && input.body.trim() &&
+    Object.keys(input).every(key => ["action", "title", "body", "reason"].includes(key)))
+    return { action: "publish", title: input.title.trim(), body: input.body.trim(), reason: input.reason.trim() };
+  throw new PostError("帖子生成结果需要标题、正文和生成理由。");
 }

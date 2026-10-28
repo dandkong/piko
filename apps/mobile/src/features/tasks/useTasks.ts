@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { createUuidV4 } from "../../utils/uuid";
 import type {
-  TaskExecution,
   AssistantTask,
   AssistantTaskCommand,
   AssistantTaskDetail,
 } from "../../../../../shared/tasks";
-import { loadExecution, loadTask, loadTasks, sendCommand } from "./api";
+import { loadTask, loadTasks, sendCommand } from "./api";
 
 type Command = AssistantTaskCommand extends infer T
   ? T extends AssistantTaskCommand
@@ -20,8 +19,6 @@ export function useTasks() {
   const [tasks, setTasks] = useState<AssistantTask[]>([]);
   const [selected, setSelected] = useState<string>();
   const [detail, setDetail] = useState<AssistantTaskDetail>();
-  const [open, setOpen] = useState<string>();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -78,34 +75,9 @@ export function useTasks() {
   const openTask = (id?: string) => {
     setSelected(id);
     setDetail(undefined);
-    setOpen(undefined);
     setError("");
     setLoading(Boolean(id));
   };
-  const showAnswer = useCallback(
-    async (execution: TaskExecution) => {
-      const selectedTask = selection.current;
-      if (!selectedTask || answers[execution.id] !== undefined) return;
-      try {
-        const result = await loadExecution(selectedTask, execution.id);
-        if (selection.current === selectedTask)
-          setAnswers((previous) => ({
-            ...previous,
-            [execution.id]: result.answer,
-          }));
-      } catch {
-        if (selection.current === selectedTask)
-          setError("暂时加载不了这次运行结果。");
-      }
-    },
-    [answers],
-  );
-  const toggle = (execution: TaskExecution) => {
-    const next = open === execution.id ? undefined : execution.id;
-    setOpen(next);
-    if (next) void showAnswer(execution);
-  };
-
   const send = async (body: Command) => {
     if (sending.current) return false;
     sending.current = true;
@@ -153,14 +125,11 @@ export function useTasks() {
     tasks,
     selected,
     detail,
-    open,
-    answers,
     loading,
     busy,
     error,
     openSections,
     openTask,
-    toggle,
     toggleArchive,
     runTask,
     deleteTask,

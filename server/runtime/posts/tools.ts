@@ -13,7 +13,7 @@ export function createPostTools() {
   return defineExtension({ name: "piko-posts", tools: [
     defineTool({
       name: "posts_search", replay: "unsafe",
-      description: "Search published private posts by literal keywords. Use this to check what has already been published, then posts_read to inspect a result. All whitespace-separated terms must occur in the post body or reason.",
+      description: "Search published private posts by literal keywords. Use this to check what has already been published, then posts_read to inspect a result. All whitespace-separated terms must occur in the post title, body or reason.",
       parameters: Type.Object({ query: Type.String({ minLength: 1, maxLength: 4096 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 25 })) }, { additionalProperties: false }),
       execute: async (args, api, context) => {
         if (!await allowed(api, context)) return output({ error: "Post search is not available in this conversation." }, true);
@@ -23,7 +23,7 @@ export function createPostTools() {
     }),
     defineTool({
       name: "posts_read", replay: "unsafe",
-      description: "Read the Markdown body and generation reason of one published post returned by posts_search or the initial context.",
+      description: "Read the title, Markdown body and generation reason of one published post returned by posts_search or the initial context.",
       parameters: Type.Object({ postId: Type.String({ pattern: "^[1-9]\\d*$" }) }, { additionalProperties: false }),
       execute: async (args, api, context) => {
         if (!await allowed(api, context)) return output({ error: "Post reading is not available in this conversation." }, true);

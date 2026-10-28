@@ -36,7 +36,7 @@ export function FloatingPanel({
   scrollTestID,
 }: {
   open: boolean;
-  title: string;
+  title?: string;
   onClose: () => void;
   closeLabel: string;
   children?: ReactNode;
@@ -101,8 +101,8 @@ export function FloatingPanel({
         ]}
       >
         {overlay ? <View style={styles.panelOverlay}>{overlay}</View> : <>
-          <View style={styles.header}>
-            <Text numberOfLines={1} style={styles.title}>{title}</Text>
+          <View style={[styles.header, !title && styles.untitledHeader]}>
+            {title ? <Text numberOfLines={1} style={styles.title}>{title}</Text> : null}
             <View style={styles.headerActions}>
               {headerActions}
               <IconButton label={closeLabel} onPress={onClose}>
@@ -162,6 +162,7 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12,
   },
+  untitledHeader: { justifyContent: "flex-end", paddingTop: 12, paddingBottom: 0 },
   title: {
     flex: 1,
     fontSize: 22,

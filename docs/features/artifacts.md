@@ -14,7 +14,7 @@
 
 ## 内置预览
 
-产物与 Posts 正文共用 `ContentPreviewPanel` 阅读组件；产物仍通过原有受限文件 API 加载，不因组件复用扩大路径或文件类型范围。
+产物、Posts 和任务执行结果共用 `ContentPreviewPanel` 阅读组件，Markdown 由共享 `MarkdownContent` 渲染。标题可选，文件预览显示文件名；不支持类型的文案由产物组件提供。产物仍通过原有受限文件 API 加载，不因组件复用扩大路径或文件类型范围。
 
 - `.md`、`.markdown` 使用 Markdown 渲染。
 - 常见文本和代码扩展名按白名单作为普通文本显示，包括 `.txt`、`.text`、`.log`、`.json`、`.jsonl`、`.ndjson`、`.csv`、`.tsv`、`.yaml`、`.yml`、`.toml`、`.xml`、`.ini`、`.conf`、`.properties`，以及常见 JS/TS、Python、Shell、CSS/HTML、SQL、Go、Rust、Java、C/C++、C#、PHP、Ruby、Swift、Kotlin、Vue、Svelte 和 SVG 源文件扩展名。

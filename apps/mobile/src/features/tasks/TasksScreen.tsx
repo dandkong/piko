@@ -18,7 +18,8 @@ import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
 import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
-import { AssistantMessage } from "../chat/AssistantMessage";
+import { MarkdownContent } from "../../components/MarkdownContent";
+import type { TaskExecutionPreviewTarget } from "./TaskExecutionPreviewPanel";
 import { useTasks } from "./useTasks";
 
 type FinishedExecution = TaskExecution & {
@@ -46,22 +47,21 @@ type MenuState = { task: AssistantTask; left: number; top: number };
 export function TasksScreen({
   topInset,
   bottomInset,
+  onPreviewExecution,
 }: {
   topInset: number;
   bottomInset: number;
+  onPreviewExecution: (target: TaskExecutionPreviewTarget) => void;
 }) {
   const {
     tasks,
     selected,
     detail,
-    open,
-    answers,
     loading,
     busy,
     error,
     openSections,
     openTask,
-    toggle,
     toggleArchive,
     runTask,
     deleteTask,
@@ -219,7 +219,7 @@ export function TasksScreen({
       {currentTask && (
         <>
           <ScreenCard>
-            <AssistantMessage content={currentTask.prompt} />
+            <MarkdownContent content={currentTask.prompt} />
             <Text style={styles.meta}>{scheduleLabel(currentTask)}</Text>
           </ScreenCard>
 
@@ -227,8 +227,6 @@ export function TasksScreen({
           {!!records.length && (
             <View style={styles.timeline}>
               {records.map((run, index) => {
-                const expanded = open === run.id;
-                const expandable = !!run.preview;
                 const content = (
                   <>
                     <View style={styles.entryHeader}>
@@ -246,15 +244,7 @@ export function TasksScreen({
                         )}
                       </View>
                     </View>
-                    {expanded ? (
-                      answers[run.id] === undefined ? (
-                        <Text style={styles.meta}>正在加载…</Text>
-                      ) : answers[run.id] ? (
-                        <AssistantMessage content={answers[run.id]} />
-                      ) : (
-                        <Text style={styles.meta}>没有回答。</Text>
-                      )
-                    ) : run.preview ? (
+                    {run.preview ? (
                       <Text numberOfLines={2} style={styles.preview}>
                         {run.preview}
                       </Text>
@@ -277,24 +267,19 @@ export function TasksScreen({
                         index === records.length - 1 && styles.timelineBodyLast,
                       ]}
                     >
-                      {expandable ? (
-                        <TactilePressable
-                          accessibilityHint={
-                            expanded ? "收起运行结果" : "展开运行结果"
-                          }
-                          accessibilityRole="button"
-                          accessibilityState={{ expanded }}
-                          onPress={() => toggle(run)}
-                          scaleTo={1}
-                          style={styles.entryHit}
-                          faceStyle={styles.entry}
-                          variant="plain"
-                        >
-                          {content}
-                        </TactilePressable>
-                      ) : (
-                        <View style={styles.entry}>{content}</View>
-                      )}
+                      <TactilePressable
+                        accessibilityHint="使用内置预览器阅读运行结果"
+                        accessibilityLabel={`查看运行结果：${dayTime(run.startedAt)}，${statusNames[run.status]}`}
+                        accessibilityRole="button"
+                        onPress={() => onPreviewExecution({ taskId: currentTask.id, executionId: run.id })}
+                        scaleTo={1}
+                        style={styles.entryHit}
+                        faceStyle={styles.entry}
+                        variant="plain"
+                        testID="task-execution-row"
+                      >
+                        {content}
+                      </TactilePressable>
                     </View>
                   </View>
                 );

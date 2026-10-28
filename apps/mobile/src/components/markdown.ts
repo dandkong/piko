@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it";
 import markdownItCjkFriendly from "markdown-it-cjk-friendly";
 import remend from "remend";
 
-export const assistantMarkdown = new MarkdownIt({
+export const contentMarkdown = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: true,
@@ -10,7 +10,7 @@ export const assistantMarkdown = new MarkdownIt({
 }).use(markdownItCjkFriendly);
 
 // Completion is only for the active reply's display, never for stored content.
-export function prepareAssistantMarkdown(content: string, streaming: boolean): string {
+export function prepareMarkdown(content: string, streaming: boolean): string {
   return streaming ? remend(content, {
     linkMode: "text-only",
     katex: false,
@@ -19,7 +19,7 @@ export function prepareAssistantMarkdown(content: string, streaming: boolean): s
   }) : content;
 }
 
-export function isAssistantLink(url: string): boolean {
+export function isContentLink(url: string): boolean {
   try {
     const parsed = new URL(url);
     return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;

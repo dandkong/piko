@@ -11,7 +11,7 @@ import { colors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
-import { AssistantMessage } from "./AssistantMessage";
+import { MarkdownContent } from "../../components/MarkdownContent";
 import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
@@ -51,7 +51,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           <View style={{ gap: 7 }}>
             <AttachmentList attachments={item.attachments} />
             {hasContent ? (
-              <AssistantMessage
+              <MarkdownContent
                 content={item.content}
                 streaming={item.role === "assistant" && item.id.startsWith("live-")}
               />

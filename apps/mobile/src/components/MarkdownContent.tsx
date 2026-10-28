@@ -8,8 +8,8 @@ import Markdown, {
   type MarkdownStyles,
   type RenderRules,
 } from "react-native-markdown-renderer";
-import { colors, radii, stateColors } from "../../theme";
-import { assistantMarkdown, isAssistantLink, prepareAssistantMarkdown } from "./markdown";
+import { colors, radii, stateColors } from "../theme";
+import { contentMarkdown, isContentLink, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
 const body = { color: colors.text, fontSize: 16, lineHeight: 24 };
@@ -74,12 +74,12 @@ const ui = StyleSheet.create({
   error: { fontSize: 13, color: colors.danger, marginTop: 8 },
 });
 
-export const AssistantMessage = memo(function AssistantMessage({ content, streaming = false }: {
+export const MarkdownContent = memo(function MarkdownContent({ content, streaming = false }: {
   content: string;
   streaming?: boolean;
 }) {
   const [linkError, setLinkError] = useState(false);
-  const source = useMemo(() => prepareAssistantMarkdown(content, streaming), [content, streaming]);
+  const source = useMemo(() => prepareMarkdown(content, streaming), [content, streaming]);
   const rules = useMemo<RenderRules>(() => {
     const code: RenderRules[string] = (node) => (
       <View key={node.key} style={ui.code}>
@@ -98,7 +98,7 @@ export const AssistantMessage = memo(function AssistantMessage({ content, stream
         }]}>{children}</Text>
       </View>
     );
-    const link: RenderRules[string] = (node, children) => isAssistantLink(node.attributes.href) ? (
+    const link: RenderRules[string] = (node, children) => isContentLink(node.attributes.href) ? (
       <Text key={node.key} accessibilityRole="link" style={ui.link} onPress={() => {
         setLinkError(false);
         void Linking.openURL(node.attributes.href).catch(() => setLinkError(true));
@@ -152,7 +152,7 @@ export const AssistantMessage = memo(function AssistantMessage({ content, stream
   return (
     <View style={ui.container}>
       <View style={ui.content}>
-        <Markdown markdownit={assistantMarkdown} renderer={renderMarkdown}>{source}</Markdown>
+        <Markdown markdownit={contentMarkdown} renderer={renderMarkdown}>{source}</Markdown>
       </View>
       {linkError && <Text accessibilityRole="alert" style={ui.error}>无法打开这个链接。</Text>}
     </View>

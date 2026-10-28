@@ -12,6 +12,7 @@ import { PostsScreen } from "../posts/PostsScreen";
 import { PostPreviewPanel } from "../posts/PostPreviewPanel";
 import type { PostSummary } from "../../../../../shared/posts";
 import { TasksScreen } from "../tasks/TasksScreen";
+import { TaskExecutionPreviewPanel, type TaskExecutionPreviewTarget } from "../tasks/TaskExecutionPreviewPanel";
 import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
 import type { FeedbackTone, FeedbackToastMessage } from "../../components/FeedbackToast";
@@ -29,6 +30,7 @@ export function MainScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
   const [postPreview, setPostPreview] = useState<PostSummary>();
+  const [executionPreview, setExecutionPreview] = useState<TaskExecutionPreviewTarget>();
   const [toastMessage, setToastMessage] = useState<FeedbackToastMessage>();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -58,6 +60,7 @@ export function MainScreen() {
     Keyboard.dismiss();
     setArtifactPreview(undefined);
     setPostPreview(undefined);
+    setExecutionPreview(undefined);
     setTab(value);
     setMenuOpen(false);
     if (value === "Chat") setSelectedId(undefined);
@@ -66,6 +69,7 @@ export function MainScreen() {
     Keyboard.dismiss();
     setArtifactPreview(undefined);
     setPostPreview(undefined);
+    setExecutionPreview(undefined);
     setVisited((current) =>
       current.includes(id) ? current : [...current, id],
     );
@@ -132,6 +136,7 @@ export function MainScreen() {
             onToast={showToast}
           />
           <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} />
+          <TaskExecutionPreviewPanel target={executionPreview} onClose={() => setExecutionPreview(undefined)} />
           <ArtifactPreviewPanel
             file={artifactPreview}
             onClose={() => setArtifactPreview(undefined)}
@@ -173,6 +178,7 @@ export function MainScreen() {
         bottomInset={footerHeight + MESSAGE_GAP}
         onArtifactPreview={setArtifactPreview}
         onPostPreview={setPostPreview}
+        onExecutionPreview={setExecutionPreview}
       />
       {[undefined, ...visited].map((id) => (
         <ChatConversation
@@ -224,12 +230,14 @@ function TabPanel({
   bottomInset,
   onArtifactPreview,
   onPostPreview,
+  onExecutionPreview,
 }: {
   tab: AppTab;
   topInset: number;
   bottomInset: number;
   onArtifactPreview: (file: ArtifactEntry) => void;
   onPostPreview: (post: PostSummary) => void;
+  onExecutionPreview: (target: TaskExecutionPreviewTarget) => void;
 }) {
   switch (tab) {
     case "Chat":
@@ -239,6 +247,6 @@ function TabPanel({
     case "Artifacts":
       return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
     case "Tasks":
-      return <TasksScreen topInset={topInset} bottomInset={bottomInset} />;
+      return <TasksScreen topInset={topInset} bottomInset={bottomInset} onPreviewExecution={onExecutionPreview} />;
   }
 }

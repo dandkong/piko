@@ -56,11 +56,12 @@ export function PostsScreen({ topInset, bottomInset, onPreview }: {
     </View> : null}
     {!loading && !error && !posts.length ? <Text style={styles.empty}>还没有帖子。</Text> : null}
     {posts.map(post => <TactilePressable key={post.id} variant="card" scaleTo={1}
-      accessibilityRole="button" accessibilityLabel={`阅读帖子：${post.excerpt.slice(0, 48)}`}
+      accessibilityRole="button" accessibilityLabel={`阅读帖子：${post.title}`}
       accessibilityHint="使用内置预览器阅读正文" onPress={() => onPreview(post)}
       faceStyle={styles.card} testID="post-card">
       <Text style={styles.date}>{dayTime(post.createdAt)}</Text>
-      <Text numberOfLines={4} style={styles.excerpt}>{post.excerpt}</Text>
+      <Text numberOfLines={2} style={styles.title}>{post.title}</Text>
+      <Text numberOfLines={3} style={styles.excerpt}>{post.excerpt}</Text>
       <View style={styles.reasonBlock}>
         <Text style={styles.reasonLabel}>生成理由</Text>
         <Text numberOfLines={3} style={styles.reason}>{post.reason}</Text>
@@ -75,7 +76,8 @@ export function PostsScreen({ topInset, bottomInset, onPreview }: {
 const styles = StyleSheet.create({
   card: { alignItems: "stretch", padding: 16, gap: 10, borderRadius: radii.card },
   date: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-  excerpt: { color: colors.text, fontSize: 16, lineHeight: 24 },
+  title: { color: colors.text, fontSize: 17, lineHeight: 24, fontWeight: "600" },
+  excerpt: { color: colors.text, fontSize: 14, lineHeight: 21 },
   reasonBlock: { gap: 3 },
   reasonLabel: { color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "500" },
   reason: { color: colors.muted, fontSize: 13, lineHeight: 20 },
