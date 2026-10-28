@@ -4,7 +4,6 @@ import { ROOT_CONVERSATION_ID, type Harness, type TaskId } from "@earendil-works
 import type { GeneratePost, PostGeneration } from "../../../shared/posts";
 import { PostError, postId } from "../../domain/posts";
 import { logInfo } from "../../logging";
-import { rootHighWater } from "../chat-batch";
 import { POSTS_GENERATION_KIND, PostRequests } from "./documents";
 import type { PostGenerationTask, PostGenerationResult } from "./generation";
 import { postPage, readPost } from "./queries";
@@ -37,7 +36,7 @@ export class PostsService {
         if (page.items.some(row => row.state.status !== "terminal")) throw new PostError("已有帖子正在生成，请稍后重试。", 409);
         cursor = page.next;
       } while (cursor);
-      const taskId = await tx.createTask(this.task, { topic, requestedAt: Date.now(), throughEntryId: await rootHighWater(tx) },
+      const taskId = await tx.createTask(this.task, { topic },
         { conversationId: ROOT_CONVERSATION_ID, ownership: { kind: "conversation" }, background: true });
       receipt.hash = hash;
       receipt.taskId = Number(taskId);

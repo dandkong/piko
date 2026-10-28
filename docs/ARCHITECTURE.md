@@ -105,7 +105,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | piko.tasks / piko.task-command / piko.task-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | piko.post / piko.posts-generation | 原生应用 entry 保存标题、正式正文与生成理由；原生后台 task 执行研究，不向主聊天或 Telegram 回报 |
-| piko.posts-request / piko.posts-context | 请求去重与研究角色/历史截止边界，不复制正文或执行状态 |
+| piko.posts-request / piko.posts-context | 请求去重与研究角色绑定，不复制正文或执行状态 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
 

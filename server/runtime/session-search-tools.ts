@@ -15,14 +15,14 @@ const SEARCH_MAX_LIMIT = 25;
 const HISTORY_DEFAULT_LIMIT = 10;
 const HISTORY_MAX_LIMIT = 20;
 
-type HistoryScope = { conversationId: ConversationId; throughEntryId?: number };
+type HistoryScope = { conversationId: ConversationId };
 type SessionHistoryAccess = {
   backgroundScope?: (api: ToolExecutionApi, ctx: Context) => Promise<HistoryScope | undefined>;
-  search: (conversationId: ConversationId, query: string, limit: number, throughEntryId?: number) => Promise<{
+  search: (conversationId: ConversationId, query: string, limit: number) => Promise<{
     results: SessionSearchHit[];
     truncated: boolean;
   }>;
-  history: (conversationId: ConversationId, messageId: string, limit: number, throughEntryId?: number) => Promise<SessionHistoryWindow | undefined>;
+  history: (conversationId: ConversationId, messageId: string, limit: number) => Promise<SessionHistoryWindow | undefined>;
 };
 
 function output(value: object): ToolExecutionResult {
@@ -58,7 +58,7 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
       const scope = await scopeFor(api, ctx);
       if (!scope) return failure("Session search is not available in this conversation.");
       try {
-        const result = await access.search(scope.conversationId, query, args.limit ?? SEARCH_DEFAULT_LIMIT, scope.throughEntryId);
+        const result = await access.search(scope.conversationId, query, args.limit ?? SEARCH_DEFAULT_LIMIT);
         return output({ sessionId: String(scope.conversationId), ...result });
       } catch {
         return failure("Could not search this conversation's history.");
@@ -83,7 +83,7 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
       if (!scope || args.sessionId !== String(scope.conversationId))
         return failure("sessions_history can only read the host-authorized conversation.");
       try {
-        const history = await access.history(scope.conversationId, args.messageId, args.limit ?? HISTORY_DEFAULT_LIMIT, scope.throughEntryId);
+        const history = await access.history(scope.conversationId, args.messageId, args.limit ?? HISTORY_DEFAULT_LIMIT);
         return history
           ? output({ sessionId: String(scope.conversationId), messageId: args.messageId, ...history })
           : failure("Message not found in visible history for this conversation.");

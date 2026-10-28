@@ -7,7 +7,7 @@ import { localDate } from "../../domain/chat-batch";
 import { historyPageFromTransaction } from "../pi-history";
 import { postPage } from "./queries";
 
-export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap<number, string>, throughEntryId: number, now: number) {
+export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap<number, string>, now: number) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const today = localDate(now, timezone);
   const date = new Date(`${today}T12:00:00Z`);
@@ -22,7 +22,7 @@ export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     }
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const recent = await historyPageFromTransaction(tx, inputs, String(throughEntryId + 1), 20, ROOT_CONVERSATION_ID);
+  const recent = await historyPageFromTransaction(tx, inputs, undefined, 20, ROOT_CONVERSATION_ID);
   const recentMessages = [];
   let remaining = 12_000;
   let messagesTruncated = !!recent.nextBefore;
@@ -34,7 +34,7 @@ export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap
     if (content.trim()) recentMessages.unshift({ id: message.id, role: message.role, content, createdAt: message.createdAt });
   }
   return {
-    asOf: now, timezone, throughEntryId: String(throughEntryId),
+    asOf: now, timezone,
     memory: { path: "MEMORY.md", content: readGuidance(workspace, "MEMORY.md") },
     dailyMemories, recentMessages, messagesTruncated,
     recentPosts: (await postPage(tx, undefined, 10)).posts,

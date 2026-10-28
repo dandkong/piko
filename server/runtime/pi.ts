@@ -115,12 +115,10 @@ class PikoRuntime {
     const web = createWebTools(env, { settings: settings.tools });
     const sessionSearch = createSessionSearchTools({
       backgroundScope: (api, context) => api.commit(tx => postHistoryScope(tx, api.conversationId), context),
-      search: async (conversationId, query, limit, through) => through === undefined
-        ? (await this.session(conversationId)).searchHistory(query, limit)
-        : this.harness.commit(tx => searchPiHistory(tx, this.main.bindings, query, limit, conversationId, through), ctx),
-      history: async (conversationId, messageId, limit, through) => through === undefined
-        ? (await this.session(conversationId)).historyAround(messageId, limit)
-        : this.harness.commit(tx => historyAroundPiMessage(tx, this.main.bindings, messageId, limit, conversationId, through), ctx),
+      search: async (conversationId, query, limit) =>
+        (await this.session(conversationId)).searchHistory(query, limit),
+      history: async (conversationId, messageId, limit) =>
+        (await this.session(conversationId)).historyAround(messageId, limit),
     });
     const postTools = createPostTools();
     const posts = createPostsExtension({ workspace: this.paths.workspace, bindings: () => this.main.bindings,

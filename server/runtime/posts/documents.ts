@@ -8,9 +8,9 @@ export const PostRequests = defineDocFamily<{ hash: string; taskId: number | nul
   kind: "piko.posts-request", version: 1, scope: "conversation", history: "latest", fork: "initial", family: true,
   checkpointWhen: () => false, initial: () => ({ hash: "", taskId: null }),
 });
-export const PostWorker = defineDoc<{ taskId: number | null; throughEntryId: number }>({
+export const PostWorker = defineDoc<{ taskId: number | null }>({
   kind: "piko.posts-context", version: 1, scope: "conversation", history: "latest", fork: "initial",
-  checkpointWhen: () => false, initial: () => ({ taskId: null, throughEntryId: 0 }),
+  checkpointWhen: () => false, initial: () => ({ taskId: null }),
 });
 
 /** Host-assigned binding, not an agent-supplied session ID or prompt permission. */
@@ -21,5 +21,5 @@ export async function postHistoryScope(tx: Tx, conversationId: ConversationId) {
   const child = await tx.conversation(conversationId);
   if (!owner || owner.kind !== POSTS_GENERATION_KIND || owner.conversationId !== ROOT_CONVERSATION_ID ||
     owner.state.status === "terminal" || owner.abortRequested || child?.owner?.taskId !== owner.id) return undefined;
-  return { conversationId: ROOT_CONVERSATION_ID, throughEntryId: worker.throughEntryId };
+  return { conversationId: ROOT_CONVERSATION_ID };
 }
