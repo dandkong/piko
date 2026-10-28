@@ -1,7 +1,7 @@
 export const colors = {
   canvas: "#FCFCFC", card: "#FFFFFF", text: "#11191C", muted: "#697176",
   line: "#EEEEF0", lineStrong: "#CDD5DC",
-  blue: "#C8E7FF", blueDark: "#1473C8",
+  blue: "#D6EEFF", blueDark: "#1473C8",
   danger: "#AA4A45", dangerSurface: "#FBEFED",
   codeSurface: "#E2E4E7", mascot: "#ECF5FA",
   drawerEdge: "#E3E6E8", desk: "#F2F3F4", scrim: "rgba(17, 25, 28, 0.16)",
@@ -21,7 +21,7 @@ export const motion = {
   tabSlide: 260,
 } as const;
 
-/** Neutral states stay gray; pale blue is reserved for committing actions. */
+/** Neutral interaction states stay gray; pale blue is used for primary actions. */
 export const stateColors = {
   selected: "#F0F1F2",
   selectedHover: "#E9EBEC",
@@ -31,8 +31,8 @@ export const stateColors = {
   soft: "#F3F5F6",
   softHover: "#EDF0F2",
   softPressed: "#E6EAEC",
-  primaryHover: "#BCE0FC",
-  primaryPressed: "#AED7F7",
+  primaryHover: "#C8E7FF",
+  primaryPressed: "#BCE0FC",
   disabledOpacity: 0.4,
   focus: "#858E92",
 } as const;

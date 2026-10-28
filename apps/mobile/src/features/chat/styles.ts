@@ -56,7 +56,7 @@ export const styles = StyleSheet.create({
   userBubble: {
     alignSelf: "flex-end",
     maxWidth: "85%",
-    backgroundColor: stateColors.selected,
+    backgroundColor: colors.blue,
     borderBottomRightRadius: radii.control,
   },
   assistantBubble: {
@@ -109,10 +109,10 @@ export const styles = StyleSheet.create({
     elevation: 4,
   },
   composerFocused: {
-    borderColor: stateColors.focus,
+    borderColor: colors.lineStrong,
   },
   composerFocusVisible: {
-    boxShadow: `0 0 0 1px ${stateColors.focus}`,
+    boxShadow: `0 0 0 1px ${colors.lineStrong}`,
   } as unknown as ViewStyle,
   composerAttachment: {
     flexDirection: "row",
