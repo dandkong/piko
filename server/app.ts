@@ -7,6 +7,8 @@ import { SideChatError } from "./runtime/side-chats";
 import { AssistantTaskError } from "./domain/tasks";
 import { HttpError, json, withCors } from "./http";
 import { taskRequest } from "./tasks/http";
+import { postRequest } from "./posts/http";
+import { PostError } from "./domain/posts";
 import { chatRequest } from "./chat/http";
 import { sideChatRequest } from "./side-chats/http";
 import { attachmentRequest } from "./attachments/http";
@@ -67,6 +69,7 @@ export function createApp({
       );
     try {
       const response =
+        (await postRequest(request, runtime, config.maxRequestBytes)) ??
         (await settingsRequest(request, runtime)) ??
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
@@ -99,7 +102,7 @@ export function createApp({
     } catch (error) {
       const status =
         error instanceof HttpError ||
-        error instanceof AssistantTaskError ||
+        error instanceof AssistantTaskError || error instanceof PostError ||
         error instanceof SideChatError || error instanceof ModelConfigurationError
           ? error.status
           : error instanceof RuntimeBusyError

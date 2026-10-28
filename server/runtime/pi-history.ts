@@ -1,4 +1,4 @@
-import type { Cursor, EntryRecord, Session, Storage, ConversationId, Tx } from "@earendil-works/pi-durable";
+import type { Cursor, EntryId, EntryRecord, Session, Storage, ConversationId, Tx } from "@earendil-works/pi-durable";
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
@@ -161,6 +161,7 @@ export async function searchPiHistory(
   rawQuery: string,
   limit: number,
   conversationId = ROOT_CONVERSATION_ID,
+  throughEntryId?: number,
 ): Promise<{ results: SessionSearchHit[]; truncated: boolean }> {
   const query = normalizeSearchText(rawQuery);
   const terms = query.split(" ").filter(Boolean);
@@ -171,7 +172,8 @@ export async function searchPiHistory(
   let matches = 0;
   let cursor: Cursor | undefined;
   do {
-    const page = await tx.scanEntries({ conversationId, order: "descending" }, 100, cursor);
+    const page = await tx.scanEntries({ conversationId, order: "descending",
+      ...(throughEntryId !== undefined && { maxEntryId: throughEntryId as EntryId }) }, 100, cursor);
     for (const entry of page.items) {
       const messages = visibleEntryMessages(entry, hidden, inputs).reverse();
       for (const message of messages) {
@@ -197,10 +199,11 @@ export async function historyAroundPiMessage(
   messageId: string,
   limit: number,
   conversationId = ROOT_CONVERSATION_ID,
+  throughEntryId?: number,
 ): Promise<SessionHistoryWindow | undefined> {
   const match = /^([1-9]\d*)$/.exec(messageId);
   const entryId = match ? Number(match[1]) : NaN;
-  if (!Number.isSafeInteger(entryId)) return undefined;
+  if (!Number.isSafeInteger(entryId) || throughEntryId !== undefined && entryId > throughEntryId) return undefined;
 
   const anchorEntry = await tx.entry(entryId as EntryRecord["id"]);
   if (!anchorEntry || anchorEntry.conversationId !== conversationId) return undefined;
@@ -221,7 +224,8 @@ export async function historyAroundPiMessage(
         conversationId,
         ...(side === "before"
           ? { maxEntryId: (entryId - 1) as EntryRecord["id"], order: "descending" as const }
-          : { minEntryId: (entryId + 1) as EntryRecord["id"], order: "ascending" as const }),
+          : { minEntryId: (entryId + 1) as EntryRecord["id"], order: "ascending" as const,
+            ...(throughEntryId !== undefined && { maxEntryId: throughEntryId as EntryId }) }),
       }, 100, cursor);
       for (const entry of page.items) {
         const projected = visibleEntryMessages(entry, hidden, inputs);
@@ -238,7 +242,7 @@ export async function historyAroundPiMessage(
     return hasMore;
   };
   const hasMoreBefore = entryId > 1 ? await collectAdjacent("before") : false;
-  const hasMoreAfter = entryId < Number.MAX_SAFE_INTEGER ? await collectAdjacent("after") : false;
+  const hasMoreAfter = entryId < (throughEntryId ?? Number.MAX_SAFE_INTEGER) ? await collectAdjacent("after") : false;
 
   let countBefore = Math.min(targetBefore, before.length);
   let countAfter = Math.min(targetAfter, after.length);

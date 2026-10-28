@@ -9,6 +9,8 @@ import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
 import { ArtifactPreviewPanel } from "../artifacts/ArtifactPreviewPanel";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { PostsScreen } from "../posts/PostsScreen";
+import { PostPreviewPanel } from "../posts/PostPreviewPanel";
+import type { PostSummary } from "../../../../../shared/posts";
 import { TasksScreen } from "../tasks/TasksScreen";
 import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
@@ -26,6 +28,7 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
+  const [postPreview, setPostPreview] = useState<PostSummary>();
   const [toastMessage, setToastMessage] = useState<FeedbackToastMessage>();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -54,6 +57,7 @@ export function MainScreen() {
   const selectTab = (value: AppTab) => {
     Keyboard.dismiss();
     setArtifactPreview(undefined);
+    setPostPreview(undefined);
     setTab(value);
     setMenuOpen(false);
     if (value === "Chat") setSelectedId(undefined);
@@ -61,6 +65,7 @@ export function MainScreen() {
   const selectChat = (id: string) => {
     Keyboard.dismiss();
     setArtifactPreview(undefined);
+    setPostPreview(undefined);
     setVisited((current) =>
       current.includes(id) ? current : [...current, id],
     );
@@ -126,6 +131,7 @@ export function MainScreen() {
             onClose={() => setSettingsOpen(false)}
             onToast={showToast}
           />
+          <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} />
           <ArtifactPreviewPanel
             file={artifactPreview}
             onClose={() => setArtifactPreview(undefined)}
@@ -166,6 +172,7 @@ export function MainScreen() {
         topInset={headerHeight + MESSAGE_GAP}
         bottomInset={footerHeight + MESSAGE_GAP}
         onArtifactPreview={setArtifactPreview}
+        onPostPreview={setPostPreview}
       />
       {[undefined, ...visited].map((id) => (
         <ChatConversation
@@ -216,17 +223,19 @@ function TabPanel({
   topInset,
   bottomInset,
   onArtifactPreview,
+  onPostPreview,
 }: {
   tab: AppTab;
   topInset: number;
   bottomInset: number;
   onArtifactPreview: (file: ArtifactEntry) => void;
+  onPostPreview: (post: PostSummary) => void;
 }) {
   switch (tab) {
     case "Chat":
       return null;
     case "Posts":
-      return <PostsScreen topInset={topInset} bottomInset={bottomInset} />;
+      return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} />;
     case "Artifacts":
       return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
     case "Tasks":

@@ -44,6 +44,11 @@ import { ModelSettingsStore, SettingsValidationError } from "../settings/configu
 import type { SaveModelSettings } from "../../shared/settings";
 import type { ModelSelection } from "../../shared/runtime";
 import type { ModelProfile } from "../config/schema";
+import { createPostsExtension } from "./posts/generation";
+import { createPostTools } from "./posts/tools";
+import { PostsService } from "./posts/service";
+import { postHistoryScope } from "./posts/documents";
+import { historyAroundPiMessage, searchPiHistory } from "./pi-history";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -57,6 +62,7 @@ class PikoRuntime {
   private readonly replies = new BackgroundReplies();
   private searchConfigured = false;
   private tasks!: DurableAssistantTasks;
+  private posts!: PostsService;
   private memory?: MemoryCurationService;
   private main!: DurableChatSession;
   private readonly sessions = new Map<
@@ -108,11 +114,17 @@ class PikoRuntime {
     });
     const web = createWebTools(env, { settings: settings.tools });
     const sessionSearch = createSessionSearchTools({
-      search: async (conversationId, query, limit) =>
-        (await this.session(conversationId)).searchHistory(query, limit),
-      history: async (conversationId, messageId, limit) =>
-        (await this.session(conversationId)).historyAround(messageId, limit),
+      backgroundScope: (api, context) => api.commit(tx => postHistoryScope(tx, api.conversationId), context),
+      search: async (conversationId, query, limit, through) => through === undefined
+        ? (await this.session(conversationId)).searchHistory(query, limit)
+        : this.harness.commit(tx => searchPiHistory(tx, this.main.bindings, query, limit, conversationId, through), ctx),
+      history: async (conversationId, messageId, limit, through) => through === undefined
+        ? (await this.session(conversationId)).historyAround(messageId, limit)
+        : this.harness.commit(tx => historyAroundPiMessage(tx, this.main.bindings, messageId, limit, conversationId, through), ctx),
     });
+    const postTools = createPostTools();
+    const posts = createPostsExtension({ workspace: this.paths.workspace, bindings: () => this.main.bindings,
+      background, web: web.extension, history: sessionSearch, posts: postTools });
     this.searchConfigured = web.searchConfigured;
     const registry = createRegistry();
     for (const extension of [
@@ -124,6 +136,8 @@ class PikoRuntime {
       createTaskTools(() => this.tasks),
       memory.extension,
       sessionSearch,
+      postTools,
+      posts.extension,
     ])
       registry.install(extension);
     const opened = await openRuntime(this.paths, config, registry);
@@ -142,6 +156,7 @@ class PikoRuntime {
     );
     try {
       this.main = await this.session();
+      this.posts = new PostsService(harness, posts.task, background);
       this.tasks = new DurableAssistantTasks(
         harness,
         this.paths.workspace,
@@ -223,6 +238,9 @@ class PikoRuntime {
   }
   tasksService() {
     return this.tasks;
+  }
+  postsService() {
+    return this.posts;
   }
   subagentsService(): AssistantSubagentsRuntime {
     return {
@@ -362,6 +380,7 @@ export function createPiRuntime(
   };
   return {
     tasks: async () => (await get()).tasksService(),
+    posts: async () => (await get()).postsService(),
     subagents: async () => (await get()).subagentsService(),
     skill: async name => (await get()).skill(name),
     sideChats: {

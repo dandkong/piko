@@ -3,6 +3,7 @@ import type { ModelSettingsSnapshot, SaveModelSettings, SaveModelSettingsResult 
 import type { ConversationResponse, ConversationActivity, HistoryPage, MessageEvent, SubmissionReceipt } from "../../shared/chat";
 import type { CompactionEvent, CompactionResult, RuntimeDescription, RuntimeSelection } from "../../shared/runtime";
 import type { TaskExecutionDetail, AssistantTask, AssistantTaskCommand, AssistantTaskDetail, AssistantTaskReceipt } from "../../shared/tasks";
+import type { GeneratePost, Post, PostGeneration, PostPage } from "../../shared/posts";
 /** Runtime facts. Transport snapshots and channel-specific rendering instructions do not belong here. */
 export type SessionEvent =
   | MessageEvent
@@ -56,7 +57,15 @@ export type WorkspaceSkillDetail = {
   body: string;
   disableModelInvocation: boolean;
 };
+export interface PostsRuntime {
+  list(before?: string, limit?: number): Promise<PostPage>;
+  read(id: string): Promise<Post>;
+  generate(command: GeneratePost): Promise<PostGeneration>;
+  generation(id: string): Promise<PostGeneration>;
+  stop(id: string): Promise<PostGeneration>;
+}
 export interface ChatRuntime {
+  posts(): Promise<PostsRuntime>;
   tasks(): Promise<AssistantTasksRuntime>;
   subagents(): Promise<AssistantSubagentsRuntime>;
   skill(name: string): Promise<WorkspaceSkillDetail | undefined>;

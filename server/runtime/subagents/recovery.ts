@@ -12,6 +12,7 @@ import {
 } from "./documents";
 import { subagentIds } from "./queries";
 import { Recovery } from "../conversation-docs";
+import { POSTS_GENERATION_KIND } from "../posts/documents";
 
 /** Mark inherited uncertain work before enabling the scheduler; report and retry phases may resume. */
 export async function prepareRestart(
@@ -36,7 +37,13 @@ export async function prepareRestart(
     const children = (
       await Promise.all(userConversations.map((id) => subagentIds(tx, id)))
     ).flat();
-    const ids = [...new Set([...userConversations, ...children])];
+    const postChildren = inspection.tasks.flatMap(item => {
+      const state = item.record.state;
+      const childId = "checkpoint" in state ? (state.checkpoint as { childId?: number } | undefined)?.childId : undefined;
+      return item.record.kind === POSTS_GENERATION_KIND && state.status !== "terminal" && typeof childId === "number"
+        ? [childId as ConversationId] : [];
+    });
+    const ids = [...new Set([...userConversations, ...children, ...postChildren])];
     for (const item of inspection.tasks) {
       if (
         item.record.kind === REPORTER_KIND &&
@@ -73,7 +80,7 @@ export async function prepareRestart(
     interruptedIds: [
       ...new Set(
         inspection.tasks
-          .filter((item) => !preserved.includes(item.record.id))
+          .filter((item) => !preserved.includes(item.record.id) && item.record.kind !== POSTS_GENERATION_KIND)
           .map((item) => item.record.conversationId),
       ),
     ],

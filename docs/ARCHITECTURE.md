@@ -104,6 +104,8 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | piko.agent-resources / piko.background-job | 资源文件/技能选择与用途、继续/回报策略；不复制 AgentDoc、文件正文或执行状态 |
 | piko.tasks / piko.task-command / piko.task-context | 保存任务定义、游标、回执与归属；执行状态从原生 Reporter/submission/LiveDoc 投影 |
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
+| piko.post / piko.posts-generation | 原生应用 entry 保存正式正文与生成理由；原生后台 task 执行研究，不向主聊天或 Telegram 回报 |
+| piko.posts-request / piko.posts-context | 请求去重与研究角色/历史截止边界，不复制正文或执行状态 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
@@ -122,6 +124,8 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | POST /api/chat | {requestId,message}，返回 {submission,duplicate}；不返回 SSE |
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
+| GET /api/posts、GET /api/posts/:id | 帖子卡片分页、正文与理由，见[帖子说明](features/posts.md) |
+| POST /api/posts/generations、GET /api/posts/generations/:id | 手动生成与原生状态；另提供 stop 请求取消 |
 | GET /api/health | 后端和模型可用状态 |
 | GET /api/settings | 模型选择器所需的可用模型列表与当前主会话模型 |
 | GET /api/settings | 配置修订、主/后台模型选择、当前执行模型和可用模型摘要 |
@@ -157,4 +161,4 @@ RN 持续观察会话；Telegram 持续观察主会话助手输出，无论该�
 
 ## 未实现能力与后续方向
 
-Tasks、后台工作、旁聊和 Artifacts 浏览/下载/确认删除已接入，详情见[任务说明](features/tasks.md)、[后台工作说明](features/background-subagents.md)、[旁聊说明](features/side-chats.md)和[产物浏览](features/artifacts.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、Posts 发布能力、任务产物聚合及创建/重命名/移动尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。
+Tasks、后台工作、旁聊、Posts 手动发布与卡片预览，以及 Artifacts 浏览/下载/确认删除已接入，详情见[任务说明](features/tasks.md)、[后台工作说明](features/background-subagents.md)、[旁聊说明](features/side-chats.md)、[个性化帖子](features/posts.md)和[产物浏览](features/artifacts.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、Posts 自动调度、任务产物聚合及创建/重命名/移动尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。
