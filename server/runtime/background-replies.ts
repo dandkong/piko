@@ -1,5 +1,5 @@
 import type { BackgroundReply } from "./types";
-import { errorFields, logWarn } from "../logging";
+import { logWarn } from "../logging";
 
 /** Process-local channel attachment hints, not persisted results or a reliable outbox. */
 export class BackgroundReplies {
@@ -22,9 +22,8 @@ export class BackgroundReplies {
   subscribe(listener: (reply: BackgroundReply) => Promise<void>): () => void {
     this.listeners.add(listener);
     for (const reply of this.pending.splice(0)) {
-      void listener(reply).catch(error =>
+      void listener(reply).catch(() =>
         logWarn("background_reply.delivery.failed", {
-          ...errorFields(error),
           channel: reply.source.channel,
         }),
       );

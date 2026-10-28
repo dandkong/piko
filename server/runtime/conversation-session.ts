@@ -32,7 +32,7 @@ import type { BackgroundReplies } from "./background-replies";
 import { ConversationControl } from "./conversation-control";
 import { ConversationView, submissionReceipt } from "./conversation-view";
 import { Recovery } from "./conversation-docs";
-import { errorFields, logInfo, logWarn } from "../logging";
+import { logInfo, logWarn } from "../logging";
 
 /** One conversation's facade; Runtime owns its lifetime and the shared Harness. */
 export class DurableChatSession implements ChatSession {
@@ -72,8 +72,8 @@ export class DurableChatSession implements ChatSession {
             running
               ? this.memoryCurationService?.onRunStart()
               : this.memoryCurationService?.onRunEnd()
-          )?.catch((error) =>
-            logWarn("memory.review.activity_failed", errorFields(error)),
+          )?.catch(() =>
+            logWarn("memory.review.activity_failed"),
           );
       },
       () => this.control.isBusy,
@@ -160,9 +160,8 @@ export class DurableChatSession implements ChatSession {
     for (const listener of this.listeners) {
       try {
         listener(event);
-      } catch (error) {
+      } catch {
         logWarn("conversation.output_observer.failed", {
-          ...errorFields(error),
           conversationId: String(this.conversation.id),
         });
       }
@@ -256,7 +255,6 @@ export class DurableChatSession implements ChatSession {
         })
         .catch((error) => {
           logWarn("conversation.input.settlement_failed", {
-            ...errorFields(error),
             conversationId: String(this.conversation.id),
           });
           if (!this.control.closed)

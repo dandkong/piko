@@ -15,7 +15,7 @@ export type SearchArguments = {
   includeDomains?: string[];
   excludeDomains?: string[];
 };
-export type SearchOptions = { providers: readonly SearchProvider[]; redact?: readonly string[] };
+export type SearchOptions = { providers: readonly SearchProvider[] };
 
 /** One provider-neutral search entry point. Backends are tried sequentially by JSON priority. */
 export async function searchWeb(
@@ -45,7 +45,7 @@ export async function searchWeb(
     try {
       const results = (await provider.search(query, count, filters, signal)).slice(0, count);
       // Empty is a successful answer: do not fan a single query out to more paid providers.
-      return formatResults(results, options.redact ?? []);
+      return formatResults(results);
     } catch {
       signal?.throwIfAborted();
       // The adapter deliberately hides upstream details. Try the next configured backend.
@@ -99,13 +99,12 @@ function normalizeHostname(value: string): string | undefined {
   } catch { return undefined; }
 }
 
-function formatResults(results: readonly SearchResult[], secrets: readonly string[]): string {
+function formatResults(results: readonly SearchResult[]): string {
   if (!results.length) return "No results found.";
-  const redact = (value: string) => secrets.reduce((text, secret) => secret ? text.replaceAll(secret, "[redacted]") : text, value);
   return ["Results:", ...results.map((item, index) => {
     const snippet = truncate(item.snippet ?? "", SEARCH_SNIPPET_MAX);
     const published = item.publishedAt ? `\n   Published: ${item.publishedAt}` : "";
-    return `${index + 1}. ${redact(item.title)}\n   ${redact(item.url)}${published}${snippet ? `\n   ${redact(snippet)}` : ""}`;
+    return `${index + 1}. ${item.title}\n   ${item.url}${published}${snippet ? `\n   ${snippet}` : ""}`;
   })].join("\n");
 }
 

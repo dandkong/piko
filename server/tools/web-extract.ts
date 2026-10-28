@@ -27,22 +27,6 @@ function truncate(value: string, maxChars: number): { text: string; truncated: b
 function normalizeWhitespace(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
-const SENSITIVE_QUERY_PARAMETER = /(?:token|secret|key|credential|auth|signature|(?:^|[_-])sig(?:$|[_-])|password|passwd|session|cookie|jwt|meta|code)/i;
-function redactSensitiveUrlParameters(value: string): string {
-  return value.replace(/https?:\/\/[^\s<>"'`]+/gi, match => {
-    let raw = match; let suffix = "";
-    while (/[),.!?]$/.test(raw)) { suffix = raw.slice(-1) + suffix; raw = raw.slice(0, -1); }
-    try {
-      const url = new URL(raw); let changed = false;
-      if (url.username) { url.username = "[REDACTED]"; changed = true; }
-      if (url.password) { url.password = "[REDACTED]"; changed = true; }
-      for (const key of url.searchParams.keys()) {
-        if (SENSITIVE_QUERY_PARAMETER.test(key)) { url.searchParams.set(key, "[REDACTED]"); changed = true; }
-      }
-      return `${changed ? url.toString() : raw}${suffix}`;
-    } catch { return match; }
-  });
-}
 function normalizeUrl(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) throw new WebRequestError("url must be a non-empty URL string.");
   let parsed: URL;
@@ -88,16 +72,15 @@ async function extractBuiltIn(url: string, maxChars: number, options: ExtractOpt
       title = article.title || dom.window.document.title || "Untitled page";
       byline = article.byline; siteName = article.siteName; excerpt = article.excerpt;
       readabilityLength = article.length ?? undefined;
-      content = redactSensitiveUrlParameters(normalizeWhitespace(NodeHtmlMarkdown.translate(article.content || "")));
+      content = normalizeWhitespace(NodeHtmlMarkdown.translate(article.content || ""));
     } else {
       const fallback = extractFallback(dom.window.document);
-      title = fallback.title; content = redactSensitiveUrlParameters(fallback.content);
+      title = fallback.title; content = fallback.content;
     }
     signal?.throwIfAborted();
     const result = truncate(content, maxChars);
-    const safeFinalUrl = fetched.finalUrl ? redactSensitiveUrlParameters(fetched.finalUrl) : undefined;
-    return { url: redactSensitiveUrlParameters(url), finalUrl: safeFinalUrl, provider: "built-in", title, byline, siteName,
-      excerpt: excerpt ? redactSensitiveUrlParameters(excerpt) : excerpt,
+    return { url, finalUrl: fetched.finalUrl, provider: "built-in", title, byline, siteName,
+      excerpt,
       content: result.text, contentLength: result.text.length, readabilityLength,
       truncated: result.truncated, contentType: fetched.contentType };
   } finally { dom.window.close(); }
@@ -108,15 +91,15 @@ async function extractRemote(url: string, providerId: Exclude<WebExtractProvider
   const provider = options.providers?.get(providerId);
   if (!provider) throw new WebRequestError(`${providerId} is not configured on this backend.`);
   const result = await provider.extract(url, maxChars, signal);
-  const content = redactSensitiveUrlParameters(normalizeWhitespace(result.content));
+  const content = normalizeWhitespace(result.content);
   if (!content) throw new WebRequestError(`${providerId} returned no readable content.`);
   const bounded = truncate(content, maxChars);
   const excerpt = result.excerpt?.trim();
-  const finalUrl = redactSensitiveUrlParameters(httpUrl(result.finalUrl) ?? url);
-  return { url: redactSensitiveUrlParameters(url), finalUrl, provider: providerId,
+  const finalUrl = httpUrl(result.finalUrl) ?? url;
+  return { url, finalUrl, provider: providerId,
     title: result.title?.trim() || "Untitled page", byline: result.byline?.trim() || undefined,
     siteName: result.siteName?.trim() || undefined,
-    excerpt: excerpt ? redactSensitiveUrlParameters(excerpt).slice(0, 2000) : undefined,
+    excerpt: excerpt ? excerpt.slice(0, 2000) : undefined,
     content: bounded.text, contentLength: bounded.text.length, truncated: bounded.truncated,
     contentType: "text/markdown" };
 }

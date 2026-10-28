@@ -1,6 +1,6 @@
 import { CodingTools, createCodingTools } from "@earendil-works/pi-durable/tools";
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
-import { errorFields, logWarn } from "../logging";
+import { logWarn } from "../logging";
 
 export type CodingExtension = ReturnType<typeof createCodingTools>;
 
@@ -11,8 +11,8 @@ export type CodingExtension = ReturnType<typeof createCodingTools>;
 export async function createPikoCodingTools(): Promise<CodingExtension> {
   try {
     return createCodingTools({ images: await createNodePhotonImages() });
-  } catch (error) {
-    logWarn("images.processor.unavailable", errorFields(error));
+  } catch {
+    logWarn("images.processor.unavailable");
     return CodingTools;
   }
 }

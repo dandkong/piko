@@ -12,7 +12,6 @@ import { ArtifactStore } from "./artifacts";
 import { homedir } from "node:os";
 import {
   configureLogging,
-  errorFields,
   logError,
   logInfo,
   logWarn,
@@ -26,14 +25,14 @@ try {
   if (process.argv.includes("--web"))
     web = await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web"));
 } catch (error) {
-  logError("server.web.initialize_failed", error);
+  logError("server.web.initialize_failed");
   throw error;
 }
 let piko: ReturnType<typeof loadPikoConfig>;
 try {
   piko = loadPikoConfig();
 } catch (error) {
-  logError("server.configuration.failed", error);
+  logError("server.configuration.failed");
   throw error;
 }
 const config = piko.http;
@@ -41,14 +40,14 @@ let paths: ReturnType<typeof initializeWorkspace>;
 try {
   paths = initializeWorkspace(piko.paths);
 } catch (error) {
-  logError("server.workspace.initialize_failed", error);
+  logError("server.workspace.initialize_failed");
   throw error;
 }
 let releaseLock: () => void;
 try {
   releaseLock = acquireBackendLock(paths.state);
 } catch (error) {
-  logError("server.lock.acquire_failed", error);
+  logError("server.lock.acquire_failed");
   throw error;
 }
 process.on("exit", releaseLock);
@@ -61,14 +60,14 @@ void attachments
   .then((removed) => {
     if (removed) logInfo("attachments.cleanup.completed", { removed });
   })
-  .catch((error) => logWarn("attachments.cleanup.failed", errorFields(error)));
+  .catch(() => logWarn("attachments.cleanup.failed"));
 const chats = new ConversationStores(runtime);
 const conversations = chats.main;
 // Open and validate native state, withdrawing inherited work before accepting requests.
 try {
   await conversations.get();
 } catch (error) {
-  logError("runtime.start_failed", error);
+  logError("runtime.start_failed");
   throw error;
 }
 const server = Bun.serve({
@@ -110,9 +109,9 @@ async function shutdown(
   for (const [resource, close] of resources) {
     try {
       await close();
-    } catch (error) {
+    } catch {
       failed = true;
-      logError("server.shutdown.resource_failed", error, { resource });
+      logError("server.shutdown.resource_failed", { resource });
     }
   }
   logInfo("server.shutdown.completed", { failed, exitCode: failed ? 1 : 0 });
@@ -137,8 +136,8 @@ if (piko.channels.telegram.enabled) {
         void shutdown(true, "telegram_failure");
       },
     );
-  } catch (error) {
-    logError("telegram.initialization.failed", error);
+  } catch {
+    logError("telegram.initialization.failed");
     void shutdown(true, "telegram_failure");
   }
 }

@@ -53,7 +53,7 @@ export async function openRuntime(
           toolExecution: "sequential",
           steeringMode: "all",
         },
-        onReport: (error) => logError("durable.report.failed", error),
+        onReport: () => logError("durable.report.failed"),
       },
       ctx,
     );

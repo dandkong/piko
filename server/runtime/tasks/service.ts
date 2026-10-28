@@ -43,7 +43,7 @@ import {
   Receipts,
   type StoredTask,
 } from "./documents";
-import { errorFields, logError, logInfo, logWarn } from "../../logging";
+import { logError, logInfo, logWarn } from "../../logging";
 
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const publicTask = ({ source: _source, ...task }: StoredTask) => plain(task);
@@ -77,9 +77,9 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     if (this.timer) return;
     logInfo("task.scheduler.started");
     const tick = () => {
-      void this.tick().catch((error) => {
+      void this.tick().catch(() => {
         if (!this.closing)
-          logError("task.scheduler.tick_failed", error);
+          logError("task.scheduler.tick_failed");
       });
     };
     this.timer = setInterval(tick, 1000);
@@ -138,10 +138,10 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
       });
       return result;
     } catch (error) {
-      const fields = { action: command.action, channel: source.channel, ...errorFields(error) };
+      const fields = { action: command.action, channel: source.channel };
       if (error instanceof AssistantTaskError && error.status < 500)
-        logWarn("task.command.rejected", fields);
-      else logError("task.command.failed", error, fields);
+        logWarn("task.command.rejected", { ...fields, status: error.status });
+      else logError("task.command.failed", fields);
       throw error;
     }
   }

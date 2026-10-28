@@ -44,7 +44,7 @@ RN 经 HTTP/SSE，TG 直接注入同一个 ConversationStore。server/channels/t
 
 ## 会话、并发与输入去重
 
-TG 使用 telegram:<botId>:<chatId>:<messageId> 作为原生 requestId，不使用可轮换 token。重复已接纳输入返回原提交，不再调用模型或投递回复；不另存哈希或拒绝收据。同 ID 代表同一请求，新内容必须新身份。Telegram update 的游标与确认由 grammY 默认轮询管理，不再与 Durable 接纳成功严格绑定；handler 失败记录脱敏错误并继续处理，不能承诺失败输入一定重投。原生 requestId 去重保留，但不等于端到端无丢失。
+TG 使用 telegram:<botId>:<chatId>:<messageId> 作为原生 requestId，不使用可轮换 token。重复已接纳输入返回原提交，不再调用模型或投递回复；不另存哈希或拒绝收据。同 ID 代表同一请求，新内容必须新身份。Telegram update 的游标与确认由 grammY 默认轮询管理，不再与 Durable 接纳成功严格绑定；handler 失败只记录错误状态类别，不记录错误正文，并继续处理，不能承诺失败输入一定重投。原生 requestId 去重保留，但不等于端到端无丢失。
 
 运行期间输入进入原生 inbox，在工具轮或最终回复的接纳边界一起应用，不打断已经开始的模型/工具。维护期间立即拒绝普通输入，不把它留到维护后执行；拒绝不产生原生提交。执行失败结算并撤回未应用补充，不自动重跑；停止也撤回未应用输入。未落入原生用户 entries 的撤回输入不进入最终历史。
 
@@ -96,11 +96,11 @@ bun run dev:api
 
 采用 grammY 和 long polling，与 Bun 后端同进程运行；不需要为 TG 打开公网入站 HTTP 端口，但后端必须能够出站连接 Telegram。long polling 与 webhook 互斥；采用 grammY 默认行为，启动自动删除 webhook，不设置 drop_pending_updates=true，不主动清空待处理更新。[部署文档](https://grammy.dev/guide/deployment-types)、[Telegram getUpdates](https://core.telegram.org/bots/api#getupdates)
 
-bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮询恢复。轮询 timeout 为 5 秒，小于客户端 10 秒请求超时。网络错误和服务端错误由 grammY 持续重试；429 按 retry_after 等待。bot.catch 仅记录脱敏的 update handler 错误，继续处理后续输入。管理操作与按钮处理作为受追踪后台任务执行，网络发送不占用 polling 接纳。
+bot.ts 使用 grammY Bot.start() / Bot.stop()，SDK 管理游标、确认和轮询恢复。轮询 timeout 为 5 秒，小于客户端 10 秒请求超时。网络错误和服务端错误由 grammY 持续重试；429 按 retry_after 等待。bot.catch 仅记录 API 状态码或固定错误类别，不记录错误正文，继续处理后续输入。管理操作与按钮处理作为受追踪后台任务执行，网络发送不占用 polling 接纳。
 
 启动顺序：工作区/锁/原生历史校验 → 共用会话业务 → HTTP 与可选 TG。TG handler 只等待身份验证和持久化接纳，不等待整轮生成或长时间发送；其后独立观察和发送，否则顺序处理 update 会阻塞 `/stop`。必须显式追踪后台观察/发送 promise，并处理异常；不能只用不受管理的 fire-and-forget。[grammY long polling](https://grammy.dev/guide/deployment-types#how-to-use-long-polling)
 
-明确启用 TG 却缺 Token 或用户 ID 无效时，配置校验直接拒绝启动并只报告字段名。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，报告脱敏错误，按正常关闭顺序清理整个后端并以非零状态退出；是否自动重启由实际运行环境决定。网络抖动由 grammY 重试。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
+明确启用 TG 却缺 Token 或用户 ID 无效时，配置校验直接拒绝启动并只报告字段名。已启用通道的构造/启动失败、或 grammY 因 401/409 等致命错误终止轮询时，只记录失败事件及允许的运行状态字段，不记录错误正文，按正常关闭顺序清理整个后端并以非零状态退出；是否自动重启由实际运行环境决定。网络抖动由 grammY 重试。自动重启不能修复无效凭据或重复实例，需要处理对应配置/实例；没有通道健康管理 UI。配置与 Bot 身份仅在启动时加载，修改后重启生效。
 
 退出先拒绝新输入，停止 TG polling 与 HTTP 接纳，再按现有逻辑取消/等待原生任务，在有界时间内收尾投递，退订并关闭会话、runtime 和锁。TG 退出异常不能跳过共用资源清理。同一 Bot 只运行一个 poller；现有状态目录锁不能阻止其他机器/其他状态目录启动同一 Bot。
 

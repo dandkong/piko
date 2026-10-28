@@ -1,5 +1,5 @@
 import { ROOT_CONVERSATION_ID, type Cursor, type EntryId, type EntryRecord, type Tx } from "@earendil-works/pi-durable";
-import { CHAT_BATCH_MAX_INPUT_CHARS, localDate, redactSecrets, type ChatBatchMessage } from "../domain/chat-batch";
+import { CHAT_BATCH_MAX_INPUT_CHARS, localDate, type ChatBatchMessage } from "../domain/chat-batch";
 import { internalInput } from "./input-origin";
 import { messageText } from "./pi-history";
 
@@ -40,7 +40,7 @@ export async function collectMainChatBatch(tx: Tx, input: {
     }
     const parts = (entry.model ?? []).filter(message => message.role === "user" || message.role === "assistant")
       .map(message => ({ timestamp: typeof message.timestamp === "number" ? message.timestamp : now,
-        content: redactSecrets(messageText(message.content)).trim() }))
+        content: messageText(message.content).trim() }))
       .filter(message => message.content.length > 0);
     if (!parts.length) { processed = entry.id; continue; }
     const role = entry.kind === "pi.user" ? "user" : "assistant";

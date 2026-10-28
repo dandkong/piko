@@ -47,7 +47,7 @@ export function createWebTools(env: Record<string, string | undefined>, options:
     }, { additionalProperties: false }),
     replay: "unsafe",
     outputLimits: { maxBytes: 64 * 1024, maxLines: 2000 },
-    execute: async (args, _api, context) => ({ output: [{ type: "text", text: await searchWeb(args, { providers, redact: Object.values(searchCredentials).filter((key): key is string => !!key?.trim()) }, context.abortSignal) }] }),
+    execute: async (args, _api, context) => ({ output: [{ type: "text", text: await searchWeb(args, { providers }, context.abortSignal) }] }),
   });
   const extract = defineTool({
     name: "web_extract",

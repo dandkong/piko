@@ -17,13 +17,6 @@ import type { ArtifactStore } from "./artifacts";
 import type { WebHandler } from "./web";
 import { logError, logInfo, logWarn } from "./logging";
 
-function routeName(pathname: string): string {
-  return pathname
-    .replace(/^\/api\/side-chats\/[^/]+/, "/api/side-chats/:id")
-    .replace(/^\/api\/tasks\/[^/]+/, "/api/tasks/:id")
-    .replace(/^\/api\/attachments\/[^/]+/, "/api/attachments/:id");
-}
-
 export function createApp({
   config,
   runtime,
@@ -47,16 +40,16 @@ export function createApp({
     const startedAt = performance.now();
     const shouldLog = url.pathname.startsWith("/api") &&
       request.method !== "OPTIONS" && !url.pathname.endsWith("/events");
-    const finish = (response: Response, error?: unknown) => {
+    const finish = (response: Response) => {
       const result = reply(response);
       if (shouldLog && (request.method !== "GET" || result.status >= 400)) {
         const fields = {
           method: request.method,
-          route: routeName(url.pathname),
+          route: url.pathname,
           status: result.status,
           durationMs: Math.round(performance.now() - startedAt),
         };
-        if (result.status >= 500) logError("http.request.failed", error, fields);
+        if (result.status >= 500) logError("http.request.failed", fields);
         else if (result.status >= 400) logWarn("http.request.rejected", fields);
         else logInfo("http.request.completed", fields);
       }
@@ -117,7 +110,6 @@ export function createApp({
           { error: error instanceof Error ? error.message : "Request failed." },
           status,
         ),
-        error,
       );
     }
   };

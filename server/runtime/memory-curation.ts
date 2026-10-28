@@ -9,7 +9,7 @@ import { NO_AGENT_RESOURCES } from "./agents/resources";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 import { curatorTools, type CodingExtension } from "./coding-tools";
-import { errorFields, logWarn } from "../logging";
+import { logWarn } from "../logging";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
@@ -144,7 +144,7 @@ export class MemoryCurationService {
       }
     }, context);
     if (!this.timer) {
-      this.timer = setInterval(() => { void this.tick().catch(error => this.log(error)); }, MEMORY_CURATION_POLL_MS);
+      this.timer = setInterval(() => { void this.tick().catch(() => this.log()); }, MEMORY_CURATION_POLL_MS);
       this.timer.unref();
     }
   }
@@ -161,8 +161,8 @@ export class MemoryCurationService {
     }, context);
   }
 
-  private log(error: unknown): void {
-    logWarn("memory.curation.failed", errorFields(error));
+  private log(): void {
+    logWarn("memory.curation.failed");
   }
 
   tick(): Promise<"started" | "nothing-new"> { return this.drive(); }

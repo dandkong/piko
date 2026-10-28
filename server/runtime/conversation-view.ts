@@ -157,14 +157,10 @@ export class ConversationView {
             ? new Error("The durable session failed; restart Piko.")
             : new Error(`Durable event stream closed: ${end.reason}`);
       if (!this.isClosed())
-        logError(
-          "conversation.observation.closed",
-          "error" in end ? end.error : undefined,
-          {
-            conversationId: String(conversation.id),
-            reason: end.reason,
-          },
-        );
+        logError("conversation.observation.closed", {
+          conversationId: String(conversation.id),
+          reason: end.reason,
+        });
     });
   }
 

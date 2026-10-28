@@ -16,7 +16,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | apps/mobile/src/components/、theme.ts | 通用控件和视觉常量；业务 Shell、头像与导航在 features/shell/ |
 | apps/mobile/src/features/shell/ | 应用唯一 Shell、抽屉动画和聊天滚动层；各聊天保留独立 state owner 和滚动视图 |
 | server/app.ts、http.ts | URL 分发、CORS、错误响应与有界请求读取；具体校验留在各功能 HTTP handler |
-| server/logging.ts | 结构化服务端运行日志、敏感字段过滤、按日写入与保留期清理 |
+| server/logging.ts | 结构化服务端运行日志、显式运行字段、按日写入与保留期清理 |
 | server/index.ts、config.ts | 配置、初始化、单进程锁、监听与退出 |
 | server/web.ts | 正式 Web 导出文件托管、路径边界、缓存与 SPA fallback |
 | server/chat/ | 文本校验、会话观察与输出合并；不重复管理运行时互斥或后台结果缓存 |

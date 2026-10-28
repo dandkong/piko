@@ -10,9 +10,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type LogLevel = "info" | "warn" | "error";
 export type LogFields = Record<string, string | number | boolean | null | undefined>;
-
 const RETENTION_DAYS = 14;
-const PRIVATE_FIELD = /authorization|token|secret|password|credential|api.?key|prompt|content|body|text|args|summary|url|path|query|message|title|detail|output|input|attachment/i;
 let directory: string | undefined;
 let fileFailureReported = false;
 
@@ -49,32 +47,16 @@ export function logWarn(event: string, fields: LogFields = {}): void {
   writeRecord("warn", event, fields);
 }
 
-export function logError(event: string, error?: unknown, fields: LogFields = {}): void {
-  writeRecord("error", event, { ...errorFields(error), ...fields });
-}
-
-/** Error messages and stacks are intentionally omitted; they may contain user data or secrets. */
-export function errorFields(error: unknown): LogFields {
-  if (!error || typeof error !== "object")
-    return error === undefined ? {} : { errorType: typeof error };
-  const value = error as { name?: unknown; code?: unknown; status?: unknown; statusCode?: unknown };
-  const fields: LogFields = {};
-  if (typeof value.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value.name))
-    fields.errorType = value.name;
-  if (typeof value.code === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value.code))
-    fields.errorCode = value.code;
-  const status = typeof value.status === "number" ? value.status : value.statusCode;
-  if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599)
-    fields.errorStatus = status;
-  return fields;
+export function logError(event: string, fields: LogFields = {}): void {
+  writeRecord("error", event, fields);
 }
 
 function writeRecord(level: LogLevel, event: string, fields: LogFields): void {
   const record = {
+    ...fields,
     timestamp: new Date().toISOString(),
     level,
-    event: /^[a-z][a-z0-9_.-]{0,95}$/i.test(event) ? event : "logging.invalid_event",
-    ...safeFields(fields),
+    event,
   };
   const line = JSON.stringify(record) + "\n";
   if (level === "error") console.error(line.trimEnd());
@@ -102,17 +84,6 @@ function writeRecord(level: LogLevel, event: string, fields: LogFields): void {
       }));
     }
   }
-}
-
-function safeFields(fields: LogFields): LogFields {
-  const result: LogFields = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (PRIVATE_FIELD.test(key) || ["timestamp", "level", "event"].includes(key) || value === undefined) continue;
-    if (typeof value === "string") result[key] = value.slice(0, 160);
-    else if (typeof value === "number" && Number.isFinite(value)) result[key] = value;
-    else if (typeof value === "boolean" || value === null) result[key] = value;
-  }
-  return result;
 }
 
 function pruneLogs(): void {
