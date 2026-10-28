@@ -40,4 +40,4 @@
 
 ## 验证边界
 
-`1f0a76e` 上游基线类型检查、Web/iOS/Android 导出和服务健康检查此前已通过。本轮模型设置收敛、动态后台继承及 Toast 修改的验证结果在完成后补记。真实供应商调用、Telegram Bot 端到端和原生真机交互仍需单独验证。
+`1fa6103` 后类型检查及 Web/iOS/Android Expo 导出通过。临时隔离检查验证了设置只写 `piko.json`、不改 models/auth 部署文件、动态后台继承/思考覆盖和旧设置写入字段拒绝；Telegram fake-transport 检查确认缺主模型时发送 `/models` 指引且不接纳消息或下载附件。生产 Web 浏览器检查了一级模型下拉、两组思考强度控件、无凭据输入框、390px 面板，以及模拟 409 时 Toast 显示且草稿保留。服务健康、`GET /api/settings` 字段和旧 `/api/settings/config` 的 404 已核对。未使用真实供应商调用、真实 Telegram Bot 或原生真机验收。
