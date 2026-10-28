@@ -43,6 +43,7 @@ import {
   Receipts,
   type StoredTask,
 } from "./documents";
+import { errorFields, logError, logInfo, logWarn } from "../../logging";
 
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const publicTask = ({ source: _source, ...task }: StoredTask) => plain(task);
@@ -74,13 +75,11 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
 
   start() {
     if (this.timer) return;
+    logInfo("task.scheduler.started");
     const tick = () => {
       void this.tick().catch((error) => {
         if (!this.closing)
-          console.warn(
-            "Piko task scheduler:",
-            error instanceof Error ? error.message : "failed",
-          );
+          logError("task.scheduler.tick_failed", error);
       });
     };
     this.timer = setInterval(tick, 1000);
@@ -93,6 +92,7 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
     this.timer = undefined;
     await this.tickPending?.catch(() => {});
     await this.deletionLine.catch(() => {});
+    logInfo("task.scheduler.stopped");
   }
 
   async list() {
@@ -125,6 +125,30 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
   async command(
     command: AssistantTaskCommand,
     source: InputSource = { channel: "app" },
+    signal?: AbortSignal,
+  ): Promise<AssistantTaskReceipt> {
+    try {
+      const result = await this.executeCommand(command, source, signal);
+      logInfo("task.command.completed", {
+        action: command.action,
+        taskId: result.id,
+        ...(result.executionId && { executionId: result.executionId }),
+        duplicate: result.duplicate,
+        channel: source.channel,
+      });
+      return result;
+    } catch (error) {
+      const fields = { action: command.action, channel: source.channel, ...errorFields(error) };
+      if (error instanceof AssistantTaskError && error.status < 500)
+        logWarn("task.command.rejected", fields);
+      else logError("task.command.failed", error, fields);
+      throw error;
+    }
+  }
+
+  private async executeCommand(
+    command: AssistantTaskCommand,
+    source: InputSource,
     signal?: AbortSignal,
   ): Promise<AssistantTaskReceipt> {
     signal?.throwIfAborted();
@@ -447,7 +471,8 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
       ROOT_CONVERSATION_ID,
       ctx,
     ))!.agent(ctx);
-    await this.harness.commit(async (tx) => {
+    const scheduled = await this.harness.commit(async (tx) => {
+      const created: { taskId: string; conversationId: string; scheduledAt: number }[] = [];
       const now = this.now();
       const runs = await activeTaskExecutions(tx);
       let running = runs.filter(
@@ -481,11 +506,15 @@ export class DurableAssistantTasks implements AssistantTasksRuntime {
           task.schedule.type === "cron"
             ? Math.max(task.nextDueAt, latestDue(task.schedule, now))
             : task.nextDueAt;
-        await this.spawn(tx, agent, task, task.source, scheduledAt, now);
+        const conversationId = await this.spawn(tx, agent, task, task.source, scheduledAt, now);
+        created.push({ taskId: task.id, conversationId: String(conversationId), scheduledAt });
         task.nextDueAt =
           task.schedule.type === "once" ? null : nextDue(task.schedule, now);
         running++;
       }
+      return created;
     }, ctx);
+    for (const item of scheduled)
+      logInfo("task.execution.scheduled", item);
   }
 }

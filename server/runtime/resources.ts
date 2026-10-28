@@ -4,6 +4,7 @@ import { defineExtension, section } from "@earendil-works/pi-durable";
 import { isWithin, readGuidance, type WorkspacePaths } from "../workspace";
 import { AgentResources, NO_AGENT_RESOURCES, workspaceAgentResources, type AgentResourcePolicy } from "./agents/resources";
 import type { WorkspaceSkillDetail } from "./types";
+import { logWarn } from "../logging";
 
 export type WorkspaceSkill = {
   name: string;
@@ -209,7 +210,7 @@ Time zone: ${timeZone}`;
           const key = `${diagnostic.path}:${diagnostic.message}`;
           if (!reported.has(key)) {
             reported.add(key);
-            console.warn("Piko skill:", diagnostic.message, diagnostic.path);
+            logWarn("workspace.resource.diagnostic", { kind: "skill" });
           }
         }
         return formatWorkspaceResources(resources);

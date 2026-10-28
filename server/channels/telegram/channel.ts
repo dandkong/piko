@@ -12,6 +12,7 @@ import { TelegramSubagentMenus } from "./subagent-menu";
 import { TelegramSkillMenus } from "./skills-menu";
 import { TelegramTaskMenus } from "./task-menu";
 import { WELCOME, busyMessage, formatHelp, formatRecent, formatStatus } from "./command-format";
+import { logWarn } from "../../logging";
 export { TELEGRAM_COMMANDS } from "./command-format";
 
 export type TelegramMessage = {
@@ -144,7 +145,11 @@ export class TelegramChannel {
     catch (error) {
       // Once admitted, the native lifecycle observer owns completion, cancellation and failure notices.
       if (error instanceof CompactionExecutionError) return;
-      if (!(error instanceof RuntimeBusyError)) console.warn(`Telegram command failed (${telegramErrorCode(error)}).`);
+      if (!(error instanceof RuntimeBusyError))
+        logWarn("telegram.command.failed", {
+          command,
+          telegramCode: telegramErrorCode(error),
+        });
       await new TelegramReply(this.api, message.chatId, "plain").update(error instanceof RuntimeBusyError
         ? busyMessage("compact")
         : command === "compact"
@@ -190,7 +195,9 @@ export class TelegramChannel {
   }
 
   private track(promise: Promise<void>): void {
-    const task = promise.catch(error => console.warn(`Telegram delivery/command failed (${telegramErrorCode(error)}); saved history remains available in RN.`));
+    const task = promise.catch(error => logWarn("telegram.delivery.failed", {
+      telegramCode: telegramErrorCode(error),
+    }));
     this.tasks.add(task);
     void task.then(() => this.tasks.delete(task));
   }

@@ -32,6 +32,7 @@ import type { BackgroundReplies } from "./background-replies";
 import { ConversationControl } from "./conversation-control";
 import { ConversationView, submissionReceipt } from "./conversation-view";
 import { Recovery } from "./conversation-docs";
+import { errorFields, logInfo, logWarn } from "../logging";
 
 /** One conversation's facade; Runtime owns its lifetime and the shared Harness. */
 export class DurableChatSession implements ChatSession {
@@ -72,10 +73,7 @@ export class DurableChatSession implements ChatSession {
               ? this.memoryCurationService?.onRunStart()
               : this.memoryCurationService?.onRunEnd()
           )?.catch((error) =>
-            console.warn(
-              "Piko memory review activity:",
-              error instanceof Error ? error.message : "failed",
-            ),
+            logWarn("memory.review.activity_failed", errorFields(error)),
           );
       },
       () => this.control.isBusy,
@@ -163,7 +161,10 @@ export class DurableChatSession implements ChatSession {
       try {
         listener(event);
       } catch (error) {
-        console.error("Piko output observer:", error);
+        logWarn("conversation.output_observer.failed", {
+          ...errorFields(error),
+          conversationId: String(this.conversation.id),
+        });
       }
     }
   }
@@ -179,7 +180,13 @@ export class DurableChatSession implements ChatSession {
     return this.control.serial(async () => {
       this.control.assertInput();
       const existing = await this.submission(requestId);
-      if (existing) return { submission: existing, duplicate: true };
+      if (existing) {
+        logInfo("conversation.input.duplicate", {
+          conversationId: String(this.conversation.id),
+          channel: source.channel,
+        });
+        return { submission: existing, duplicate: true };
+      }
       await this.assertWritable();
       await this.requireCurrentAgent();
       await this.conversation.commit(async (tx) => {
@@ -198,9 +205,20 @@ export class DurableChatSession implements ChatSession {
         ctx,
       );
       this.control.running = true;
+      const acceptedAt = Date.now();
+      logInfo("conversation.input.accepted", {
+        conversationId: String(this.conversation.id),
+        channel: source.channel,
+        attachmentCount: attachments.length,
+      });
       void handle
         .wait(ctx)
         .then(async (settled) => {
+          logInfo("conversation.input.settled", {
+            conversationId: String(this.conversation.id),
+            status: settled.status,
+            durationMs: Date.now() - acceptedAt,
+          });
           if (
             settled.status === "unanswered" &&
             settled.reason !== "aborted" &&
@@ -237,6 +255,10 @@ export class DurableChatSession implements ChatSession {
           this.emit({ type: "invalidated" });
         })
         .catch((error) => {
+          logWarn("conversation.input.settlement_failed", {
+            ...errorFields(error),
+            conversationId: String(this.conversation.id),
+          });
           if (!this.control.closed)
             this.emit({
               type: "error",

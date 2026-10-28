@@ -5,6 +5,7 @@ import { toolIcon } from "../../runtime/tool-activity";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { TelegramMessageOutput, TelegramReply } from "./output";
 import { formatCompaction } from "./command-format";
+import { logWarn } from "../../logging";
 
 type OutputEvent = SessionEvent | { type: "snapshot"; conversation: ConversationResponse };
 
@@ -47,7 +48,9 @@ export class TelegramConversationOutput {
 
   private enqueue(operation: () => Promise<void>) {
     this.pending = this.pending.then(operation).catch(error => {
-      console.warn(`Telegram conversation output failed (${telegramErrorCode(error)}).`);
+      logWarn("telegram.conversation_output.failed", {
+        telegramCode: telegramErrorCode(error),
+      });
     });
   }
 

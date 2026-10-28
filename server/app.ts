@@ -15,6 +15,14 @@ import { artifactRequest } from "./artifacts/http";
 import { settingsRequest } from "./settings/http";
 import type { ArtifactStore } from "./artifacts";
 import type { WebHandler } from "./web";
+import { logError, logInfo, logWarn } from "./logging";
+
+function routeName(pathname: string): string {
+  return pathname
+    .replace(/^\/api\/side-chats\/[^/]+/, "/api/side-chats/:id")
+    .replace(/^\/api\/tasks\/[^/]+/, "/api/tasks/:id")
+    .replace(/^\/api\/attachments\/[^/]+/, "/api/attachments/:id");
+}
 
 export function createApp({
   config,
@@ -36,8 +44,26 @@ export function createApp({
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const reply = (response: Response) => withCors(request, response);
+    const startedAt = performance.now();
+    const shouldLog = url.pathname.startsWith("/api") &&
+      request.method !== "OPTIONS" && !url.pathname.endsWith("/events");
+    const finish = (response: Response, error?: unknown) => {
+      const result = reply(response);
+      if (shouldLog && (request.method !== "GET" || result.status >= 400)) {
+        const fields = {
+          method: request.method,
+          route: routeName(url.pathname),
+          status: result.status,
+          durationMs: Math.round(performance.now() - startedAt),
+        };
+        if (result.status >= 500) logError("http.request.failed", error, fields);
+        else if (result.status >= 400) logWarn("http.request.rejected", fields);
+        else logInfo("http.request.completed", fields);
+      }
+      return result;
+    };
     if (request.method === "OPTIONS")
-      return reply(
+      return finish(
         new Response(null, {
           status: 204,
           headers: {
@@ -61,9 +87,9 @@ export function createApp({
           attachments,
           config.maxRequestBytes,
         ));
-      if (response) return reply(response);
+      if (response) return finish(response);
       if (request.method === "GET" && url.pathname === "/api/health")
-        return reply(
+        return finish(
           json({
             ok: true,
             app: "Piko",
@@ -73,8 +99,8 @@ export function createApp({
           } satisfies HealthResponse),
         );
       if (url.pathname === "/api" || url.pathname.startsWith("/api/"))
-        return reply(json({ error: "Not found." }, 404));
-      return reply(
+        return finish(json({ error: "Not found." }, 404));
+      return finish(
         web ? await web(request) : new Response("Piko API is running."),
       );
     } catch (error) {
@@ -86,11 +112,12 @@ export function createApp({
           : error instanceof RuntimeBusyError
             ? 409
             : 503;
-      return reply(
+      return finish(
         json(
           { error: error instanceof Error ? error.message : "Request failed." },
           status,
         ),
+        error,
       );
     }
   };

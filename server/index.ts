@@ -9,15 +9,48 @@ import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
 import { AttachmentStore } from "./attachments";
 import { ArtifactStore } from "./artifacts";
+import { homedir } from "node:os";
+import {
+  configureLogging,
+  errorFields,
+  logError,
+  logInfo,
+  logWarn,
+} from "./logging";
 
 // A production entry serves the prebuilt website; API development remains independent of Expo exports.
-const web = process.argv.includes("--web")
-  ? await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web"))
-  : undefined;
-const piko = loadPikoConfig();
+configureLogging(process.env.PIKO_HOME ?? join(homedir(), ".piko"));
+logInfo("server.starting", { webEnabled: process.argv.includes("--web") });
+let web: Awaited<ReturnType<typeof createWebHandler>> | undefined;
+try {
+  if (process.argv.includes("--web"))
+    web = await createWebHandler(resolve(import.meta.dir, "../apps/mobile/dist/web"));
+} catch (error) {
+  logError("server.web.initialize_failed", error);
+  throw error;
+}
+let piko: ReturnType<typeof loadPikoConfig>;
+try {
+  piko = loadPikoConfig();
+} catch (error) {
+  logError("server.configuration.failed", error);
+  throw error;
+}
 const config = piko.http;
-const paths = initializeWorkspace(piko.paths);
-const releaseLock = acquireBackendLock(paths.state);
+let paths: ReturnType<typeof initializeWorkspace>;
+try {
+  paths = initializeWorkspace(piko.paths);
+} catch (error) {
+  logError("server.workspace.initialize_failed", error);
+  throw error;
+}
+let releaseLock: () => void;
+try {
+  releaseLock = acquireBackendLock(paths.state);
+} catch (error) {
+  logError("server.lock.acquire_failed", error);
+  throw error;
+}
 process.on("exit", releaseLock);
 const runtime = createPiRuntime(paths);
 // Telegram and app uploads share one store, outside the workspace; history references these paths.
@@ -26,13 +59,18 @@ const artifacts = new ArtifactStore(paths.workspace);
 void attachments
   .sweep(30 * 24 * 60 * 60 * 1000)
   .then((removed) => {
-    if (removed) console.log(`Removed ${removed} expired attachment(s).`);
+    if (removed) logInfo("attachments.cleanup.completed", { removed });
   })
-  .catch(() => console.warn("Piko attachment cleanup failed."));
+  .catch((error) => logWarn("attachments.cleanup.failed", errorFields(error)));
 const chats = new ConversationStores(runtime);
 const conversations = chats.main;
 // Open and validate native state, withdrawing inherited work before accepting requests.
-await conversations.get();
+try {
+  await conversations.get();
+} catch (error) {
+  logError("runtime.start_failed", error);
+  throw error;
+}
 const server = Bun.serve({
   development: false,
   hostname: config.hostname,
@@ -44,41 +82,47 @@ const server = Bun.serve({
 
 let telegram: TelegramBot | undefined;
 
-console.log(`Piko API listening at http://${server.hostname}:${server.port}`);
-if (web) console.log("Piko Web is available at the same address.");
-console.log(
-  `pi-durable runtime; model configuration: ${paths.home}/config; read, write, edit and bash are enabled.`,
-);
-console.log(`Piko workspace: ${paths.workspace}`);
-console.log(`Piko main conversation: root; state: ${paths.state}`);
+logInfo("server.started", {
+  host: server.hostname,
+  port: server.port,
+  webEnabled: !!web,
+  telegramEnabled: piko.channels.telegram.enabled,
+  runtime: "pi-durable",
+});
 
 let stopping = false;
-async function shutdown(failed = false) {
+async function shutdown(
+  failed = false,
+  reason: "signal" | "telegram_failure" = "signal",
+) {
   if (stopping) return;
   stopping = true;
+  logInfo("server.shutdown.started", { reason });
   server.stop(true);
   // Keep cleanup ordered, but attempt every resource even when an earlier one fails.
-  for (const close of [
-    () => telegram?.stopInput(),
-    () => chats.close(),
-    () => telegram?.close(),
-    () => runtime.dispose(),
-    () => releaseLock(),
-  ]) {
+  const resources: [string, () => Promise<void> | void | undefined][] = [
+    ["telegram_input", () => telegram?.stopInput()],
+    ["conversation_stores", () => chats.close()],
+    ["telegram", () => telegram?.close()],
+    ["runtime", () => runtime.dispose()],
+    ["backend_lock", () => releaseLock()],
+  ];
+  for (const [resource, close] of resources) {
     try {
       await close();
-    } catch {
+    } catch (error) {
       failed = true;
-      console.error("A Piko resource failed to close.");
+      logError("server.shutdown.resource_failed", error, { resource });
     }
   }
+  logInfo("server.shutdown.completed", { failed, exitCode: failed ? 1 : 0 });
   process.exit(failed ? 1 : 0);
 }
 process.on("SIGINT", () => {
-  void shutdown();
+  void shutdown(false, "signal");
 });
 process.on("SIGTERM", () => {
-  void shutdown();
+  void shutdown(false, "signal");
 });
 // Fatal Telegram failures exit cleanly with a failure code so the service manager can restart.
 if (piko.channels.telegram.enabled) {
@@ -90,12 +134,12 @@ if (piko.channels.telegram.enabled) {
       attachments,
       undefined,
       () => {
-        void shutdown(true);
+        void shutdown(true, "telegram_failure");
       },
     );
-  } catch {
-    console.warn("Telegram initialization failed; restarting service.");
-    void shutdown(true);
+  } catch (error) {
+    logError("telegram.initialization.failed", error);
+    void shutdown(true, "telegram_failure");
   }
 }
 // Startup is independent of HTTP readiness and is observed even if shutdown races it.

@@ -21,6 +21,7 @@ import {
   sideChats,
   SIDE_CHAT_INSTRUCTIONS,
 } from "./side-chats";
+import { logInfo } from "../logging";
 
 /** Side-chat product rules; Runtime supplies lifetime and conversation admission. */
 export class SideChats {
@@ -42,7 +43,7 @@ export class SideChats {
   }
   async create(requestId: string, title: string): Promise<SideChat> {
     const rootAgent = await this.rootAgent();
-    return this.harness.commit(async (tx) => {
+    const created = await this.harness.commit(async (tx) => {
       const request = await tx.doc(SideChatCreates, requestId, null);
       const existing = request.conversationId;
       if (existing !== null) {
@@ -66,6 +67,8 @@ export class SideChats {
       request.conversationId = Number(created.id);
       return { id: String(created.id), title: metadata.title, createdAt: metadata.createdAt };
     }, ctx);
+    logInfo("side_chat.create.completed", { conversationId: created.id });
+    return created;
   }
   async update(value: string, change: UpdateSideChat): Promise<SideChat> {
     const { id } = await this.harness.commit(
@@ -79,13 +82,15 @@ export class SideChats {
           metadata.title = validTitle(change.title);
       }, ctx);
     await save();
-    return this.harness.commit(
+    const updated = await this.harness.commit(
       async tx => {
         const { metadata } = await requireSideChat(tx, value);
         return { id: value, title: metadata.title, createdAt: metadata.createdAt };
       },
       ctx,
     );
+    logInfo("side_chat.update.completed", { conversationId: updated.id });
+    return updated;
   }
   remove(value: string): Promise<void> {
     const deletion = this.deletionLine.catch(() => {}).then(async () => {
@@ -111,6 +116,7 @@ export class SideChats {
         await this.forget(id);
       }
       await this.maintenance.compact(this.harness);
+      logInfo("side_chat.delete.completed", { conversationId: value });
     });
     this.deletionLine = deletion;
     return deletion;

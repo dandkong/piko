@@ -32,6 +32,7 @@ import { PiMessageEvents } from "./pi-events";
 import { internalInput } from "./input-origin";
 import type { WorkspaceModelConfig } from "./model-config";
 import { Recovery } from "./conversation-docs";
+import { logError, logInfo, logWarn } from "../logging";
 
 export function submissionReceipt(
   record: SubmissionRecord,
@@ -61,8 +62,9 @@ export class ConversationView {
   selected?: { provider: string; modelId: string };
   private readonly toolCalls = new Map<
     string,
-    { name: string; summary: string }
+    { name: string; summary: string; startedAt: number }
   >();
+  private runStartedAt?: number;
   private readonly liveActivity = new ConversationActivityProjection(activity => this.emit({ type: "activity", activity }));
   observationError?: Error;
 
@@ -142,6 +144,11 @@ export class ConversationView {
     this.activity(!!stream.snapshot.run, false);
     this.compactions.sync(stream.snapshot.compactions, true);
     stream.start((events) => (this.delivery = this.observe(events)));
+    logInfo("conversation.observation.started", {
+      conversationId: String(conversation.id),
+      historyCount: this.entries.length,
+      recoveredRunActive: !!stream.snapshot.run,
+    });
     void stream.closed.then((end) => {
       this.observationError =
         end.reason === "listener_error"
@@ -150,10 +157,13 @@ export class ConversationView {
             ? new Error("The durable session failed; restart Piko.")
             : new Error(`Durable event stream closed: ${end.reason}`);
       if (!this.isClosed())
-        console.error(
-          "Piko conversation event stream closed:",
-          conversation.id,
-          end,
+        logError(
+          "conversation.observation.closed",
+          "error" in end ? end.error : undefined,
+          {
+            conversationId: String(conversation.id),
+            reason: end.reason,
+          },
         );
     });
   }
@@ -179,14 +189,28 @@ export class ConversationView {
         this.compactions.sync(event.compactions);
         this.emit({ type: "invalidated" });
       } else {
-        if (event.type === "compaction_start") this.compactions.start(event);
-        else if (event.type === "compaction_end")
+        if (event.type === "compaction_start") {
+          this.compactions.start(event);
+          logInfo("conversation.compaction.started", {
+            conversationId: String(this.conversation.id),
+            reason: event.reason,
+          });
+        } else if (event.type === "compaction_end") {
           this.compactions.end(event.taskId);
+          logInfo("conversation.compaction.finished", {
+            conversationId: String(this.conversation.id),
+          });
+        }
         if (event.type === "tool_execution_start") {
           const summary = summarizeToolArgs(event.toolName, event.args);
           this.toolCalls.set(event.toolCallId, {
             name: event.toolName,
             summary,
+            startedAt: Date.now(),
+          });
+          logInfo("tool.execution.started", {
+            conversationId: String(this.conversation.id),
+            tool: event.toolName,
           });
           this.emit({
             type: "tool",
@@ -201,6 +225,7 @@ export class ConversationView {
           const call = this.toolCalls.get(event.toolCallId) ?? {
             name: event.toolName,
             summary: "",
+            startedAt: Date.now(),
           };
           this.toolCalls.delete(event.toolCallId);
           const result = event.entry?.model?.[0];
@@ -212,6 +237,14 @@ export class ConversationView {
               : undefined;
           const failed =
             result && "isError" in result && result.isError === true;
+          const elapsedMs = durationMs ?? Date.now() - call.startedAt;
+          const toolFields = {
+            conversationId: String(this.conversation.id),
+            tool: call.name,
+            durationMs: elapsedMs,
+          };
+          if (failed) logWarn("tool.execution.failed", toolFields);
+          else logInfo("tool.execution.completed", toolFields);
           this.emit({
             type: "tool",
             activity: {
@@ -236,6 +269,10 @@ export class ConversationView {
         this.liveActivity.apply(event);
         if (event.type === "run_start") {
           this.toolCalls.clear();
+          this.runStartedAt = Date.now();
+          logInfo("conversation.run.started", {
+            conversationId: String(this.conversation.id),
+          });
           this.activity(true, true);
           this.emit({ type: "run-start" });
         }
@@ -245,6 +282,18 @@ export class ConversationView {
             const records = await Promise.all(event.inputs.map(id => this.storage.submission(id, ctx)));
             return records.filter((record): record is SubmissionRecord => !!record).map(submissionReceipt);
           }, ctx);
+          const durationMs = this.runStartedAt === undefined
+            ? undefined
+            : Date.now() - this.runStartedAt;
+          this.runStartedAt = undefined;
+          logInfo("conversation.run.completed", {
+            conversationId: String(this.conversation.id),
+            ...(durationMs !== undefined && { durationMs }),
+            submissionCount: submissions.length,
+            unansweredCount: submissions.filter(
+              (item) => item.status === "unanswered",
+            ).length,
+          });
           this.emit({ type: "run-end", submissions });
         }
         if (

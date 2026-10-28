@@ -26,6 +26,7 @@ import {
 } from "./model-config";
 import { sideChats, SIDE_CHAT_INSTRUCTIONS } from "./side-chats";
 import { WorkspaceExecutionEnv } from "./execution-env";
+import { logError, logInfo } from "../logging";
 
 /** Finish no-replay recovery and policy refresh before any caller can resume the Harness. */
 export async function openRuntime(
@@ -52,7 +53,7 @@ export async function openRuntime(
           toolExecution: "sequential",
           steeringMode: "all",
         },
-        onReport: (error) => console.error("Piko durable:", error),
+        onReport: (error) => logError("durable.report.failed", error),
       },
       ctx,
     );
@@ -151,6 +152,11 @@ export async function openRuntime(
         });
       }
     }, ctx);
+    logInfo("runtime.recovery.completed", {
+      conversationCount: chatIds.length,
+      interruptedConversationCount: interrupted.length,
+      interruptedChildCount: recovery.interruptedChildren.length,
+    });
     return { storage, harness, maintenance };
   } catch (error) {
     await harness.close(ctx);

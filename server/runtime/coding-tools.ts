@@ -1,5 +1,6 @@
 import { CodingTools, createCodingTools } from "@earendil-works/pi-durable/tools";
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
+import { errorFields, logWarn } from "../logging";
 
 export type CodingExtension = ReturnType<typeof createCodingTools>;
 
@@ -11,8 +12,7 @@ export async function createPikoCodingTools(): Promise<CodingExtension> {
   try {
     return createCodingTools({ images: await createNodePhotonImages() });
   } catch (error) {
-    console.warn("Piko image processor unavailable; only images within inline limits are readable.",
-      error instanceof Error ? error.message : "unknown error");
+    logWarn("images.processor.unavailable", errorFields(error));
     return CodingTools;
   }
 }

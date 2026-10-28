@@ -9,6 +9,7 @@ import { NO_AGENT_RESOURCES } from "./agents/resources";
 import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 import { curatorTools, type CodingExtension } from "./coding-tools";
+import { errorFields, logWarn } from "../logging";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
@@ -161,7 +162,7 @@ export class MemoryCurationService {
   }
 
   private log(error: unknown): void {
-    console.warn("Piko memory review:", error instanceof Error ? error.message : "failed");
+    logWarn("memory.curation.failed", errorFields(error));
   }
 
   tick(): Promise<"started" | "nothing-new"> { return this.drive(); }

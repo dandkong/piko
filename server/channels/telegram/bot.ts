@@ -7,6 +7,7 @@ import { TelegramChannel, TELEGRAM_COMMANDS } from "./channel";
 import type { TelegramConfig } from "../../config";
 import type { AttachmentStore } from "../../attachments";
 import { MAX_ATTACHMENTS } from "../../../shared/chat";
+import { logInfo, logWarn } from "../../logging";
 
 export class TelegramBot {
   private readonly bot: Bot;
@@ -21,7 +22,7 @@ export class TelegramBot {
     this.bot = bot ?? new Bot(config.token, { client: { timeoutSeconds: 10 } });
     this.api = new TelegramApi(this.bot);
     // A failed update is logged without taking down grammY's polling loop.
-    this.bot.catch(error => console.warn(`Telegram update failed (${telegramErrorCode(error.error)}).`));
+    this.bot.catch(error => logWarn("telegram.update.failed", { telegramCode: telegramErrorCode(error.error) }));
     this.bot.on("message", async ctx => {
       const message = ctx.msg;
       const photo = "photo" in message ? message.photo?.at(-1) : undefined;
@@ -72,7 +73,7 @@ export class TelegramBot {
       this.conversations, this.runtime, this.api, this.attachments);
     // grammY owns the cursor, webhook removal and persistent polling retries.
     this.polling = this.bot.start({ timeout: 5, allowed_updates: ["message", "callback_query"],
-      onStart: () => { console.log("Piko Telegram private-chat channel started."); },
+      onStart: () => { logInfo("telegram.polling.started"); },
     }).catch(error => this.failed(error));
   }
 
@@ -80,7 +81,7 @@ export class TelegramBot {
     if (this.stopping) return;
     this.channel?.stopAccepting();
     // Never log the SDK error itself: its request URL may contain the token.
-    console.warn(`Piko Telegram stopped (${telegramErrorCode(error)}).`);
+    logWarn("telegram.polling.failed", { telegramCode: telegramErrorCode(error) });
     this.onFailure?.();
   }
 

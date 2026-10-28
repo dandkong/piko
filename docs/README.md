@@ -34,6 +34,7 @@
 | [Agent 运行时](operations/agent-runtime.md) | 模型、技能、思考强度和 Durable 行为 |
 | [Linux Web/API 运行](operations/deployment.md) | Web 构建、单进程启动与访问安全边界（不含部署模板） |
 | [SQLite 存储](operations/storage.md) | 原生存储、备份与恢复 |
+| [运行日志](operations/logging.md) | 服务端关键运行事件、日志位置与隐私边界 |
 
 ## 仓库约定
 
