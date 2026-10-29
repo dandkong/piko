@@ -12,7 +12,21 @@ import { colors, radii, stateColors } from "../theme";
 import { contentMarkdown, isContentLink, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
+const MIN_TABLE_CELL_WIDTH = 160;
 const body = { color: colors.text, fontSize: 16, lineHeight: 24 };
+
+function firstTableRow(node: ASTNode): ASTNode | undefined {
+  if (node.type === "tr") return node;
+  for (const child of node.children) {
+    const row = firstTableRow(child);
+    if (row) return row;
+  }
+  return undefined;
+}
+
+function tableColumnCount(node: ASTNode): number {
+  return firstTableRow(node)?.children.filter(child => child.type === "th" || child.type === "td").length || 1;
+}
 const markdownStyles: MarkdownStyles = {
   root: { flexShrink: 1, minWidth: 0 },
   text: body,
@@ -64,7 +78,7 @@ const ui = StyleSheet.create({
   codeContent: { padding: 12 },
   codeText: { color: colors.text, fontFamily: monospace, fontSize: 14, lineHeight: 21 },
   horizontal: { maxWidth: "100%", flexGrow: 0 },
-  table: { marginBottom: 8, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radii.control, overflow: "hidden", alignSelf: "flex-start" },
+  table: { marginBottom: 8, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radii.control, overflow: "hidden" },
   row: { flexDirection: "row" },
   cell: { width: 160, flexShrink: 0, padding: 10, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.lineStrong },
   headerCell: { backgroundColor: stateColors.selected },
@@ -79,6 +93,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
   streaming?: boolean;
 }) {
   const [linkError, setLinkError] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   const source = useMemo(() => prepareMarkdown(content, streaming), [content, streaming]);
   const rules = useMemo<RenderRules>(() => {
     const code: RenderRules[string] = (node) => (
@@ -91,13 +106,18 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
         </ScrollView>
       </View>
     );
-    const cell: RenderRules[string] = (node, children) => (
-      <View key={node.key} style={[ui.cell, node.type === "th" && ui.headerCell]}>
-        <Text selectable style={[body, node.type === "th" && ui.headerText, {
-          textAlign: node.attributes.style?.includes("right") ? "right" : node.attributes.style?.includes("center") ? "center" : "left",
-        }]}>{children}</Text>
-      </View>
-    );
+    const cell: RenderRules[string] = (node, children, parents) => {
+      const table = parents.find(parent => parent.type === "table");
+      const columns = table ? tableColumnCount(table) : 1;
+      const width = Math.max(MIN_TABLE_CELL_WIDTH, containerWidth / columns);
+      return (
+        <View key={node.key} style={[ui.cell, { width }, node.type === "th" && ui.headerCell]}>
+          <Text selectable style={[body, node.type === "th" && ui.headerText, {
+            textAlign: node.attributes.style?.includes("right") ? "right" : node.attributes.style?.includes("center") ? "center" : "left",
+          }]}>{children}</Text>
+        </View>
+      );
+    };
     const link: RenderRules[string] = (node, children) => isContentLink(node.attributes.href) ? (
       <Text key={node.key} accessibilityRole="link" style={ui.link} onPress={() => {
         setLinkError(false);
@@ -124,11 +144,15 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       },
       code_block: code,
       fence: code,
-      table: (node, children) => (
-        <ScrollView key={node.key} horizontal style={ui.horizontal}>
-          <View style={ui.table}>{children}</View>
-        </ScrollView>
-      ),
+      table: (node, children) => {
+        const columns = tableColumnCount(node);
+        const cellWidth = Math.max(MIN_TABLE_CELL_WIDTH, containerWidth / columns);
+        return (
+          <ScrollView key={node.key} horizontal style={[ui.horizontal, { width: containerWidth || "100%" }]}>
+            <View testID="markdown-table" style={[ui.table, { width: cellWidth * columns }]}>{children}</View>
+          </ScrollView>
+        );
+      },
       tr: (node, children) => <View key={node.key} style={ui.row}>{children}</View>,
       th: cell,
       td: cell,
@@ -137,7 +161,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       // Images remain descriptive text until attachment/media handling is available.
       image: (node) => <Text key={node.key} style={ui.imageAlt}>[{node.attributes.alt || node.content || "Image"}]</Text>,
     };
-  }, []);
+  }, [containerWidth]);
   const renderMarkdown = useMemo(() => {
     const renderer = new AstRenderer({ ...defaultRules, ...rules }, resolvedMarkdownStyles);
     return (nodes: ASTNode[]) => {
@@ -150,7 +174,9 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
     };
   }, [rules]);
   return (
-    <View style={ui.container}>
+    <View style={ui.container} onLayout={({ nativeEvent: { layout } }) => {
+      setContainerWidth(current => Math.abs(current - layout.width) < 1 ? current : layout.width);
+    }}>
       <View style={ui.content}>
         <Markdown markdownit={contentMarkdown} renderer={renderMarkdown}>{source}</Markdown>
       </View>
