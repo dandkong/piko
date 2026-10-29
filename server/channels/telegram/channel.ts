@@ -11,6 +11,7 @@ import { TelegramMenus, TelegramMenuError, type TelegramCallback } from "./menus
 import { TelegramSubagentMenus } from "./subagent-menu";
 import { TelegramSkillMenus } from "./skills-menu";
 import { TelegramTaskMenus } from "./task-menu";
+import { TelegramPostMenus } from "./post-menu";
 import { WELCOME, busyMessage, formatHelp, formatRecent, formatStatus } from "./command-format";
 import { logWarn } from "../../logging";
 export { TELEGRAM_COMMANDS } from "./command-format";
@@ -33,6 +34,7 @@ export class TelegramChannel {
   private readonly subagentMenus: TelegramSubagentMenus;
   private readonly skillMenus: TelegramSkillMenus;
   private readonly taskMenus: TelegramTaskMenus;
+  private readonly postMenus: TelegramPostMenus;
   private unsubscribeReplies?: () => void;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
@@ -42,6 +44,7 @@ export class TelegramChannel {
     this.subagentMenus = new TelegramSubagentMenus(runtime, api);
     this.skillMenus = new TelegramSkillMenus(runtime, api);
     this.taskMenus = new TelegramTaskMenus(runtime, api);
+    this.postMenus = new TelegramPostMenus(() => runtime.posts(), api);
     this.output = new TelegramConversationOutput(api, identity.userId, intervalMs, () => !!this.notificationChatId);
     this.outputReady = conversations.observeRuntime(event => this.output.accept(event))
       .then(unsubscribe => { if (this.accepting) this.unsubscribeOutput = unsubscribe; else unsubscribe(); });
@@ -61,6 +64,8 @@ export class TelegramChannel {
       this.track(this.skillMenus.handle(callback));
     } else if (callback.data.startsWith("t:")) {
       this.track(this.taskMenus.handle(callback));
+    } else if (callback.data.startsWith("o:")) {
+      this.track(this.postMenus.handle(callback));
     } else {
       this.track(this.menus.handle(callback).catch(async error => {
         if (!(error instanceof TelegramMenuError)) throw error;
@@ -173,6 +178,8 @@ export class TelegramChannel {
       await this.subagentMenus.open(message); return;
     } else if (command === "task") {
       await this.taskMenus.open(message); return;
+    } else if (command === "posts") {
+      await this.postMenus.open(message); return;
     } else if (command === "skills") {
       await this.skillMenus.open(message); return;
     } else if (command === "compact") {

@@ -11,6 +11,7 @@ export const TELEGRAM_COMMANDS = [
   { command: "thinking", description: "Set thinking level" },
   { command: "subagent", description: "Browse background work" },
   { command: "task", description: "Browse tasks and executions" },
+  { command: "posts", description: "Browse posts" },
   { command: "stop", description: "Stop the current reply" },
   { command: "recent", description: "Show recent messages" },
   { command: "skills", description: "Browse skills" },
