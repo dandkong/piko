@@ -21,8 +21,8 @@ function policy(binding: TaskBinding, child: ConversationId): BackgroundJobPolic
     },
   };
 }
-function prompt(message: string, binding: TaskBinding, child: ConversationId) {
-  return `${message}\n\nThis is task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${child}. ${binding.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(binding.scheduledAt).toISOString()}.`} Started at ${new Date(binding.startedAt).toISOString()}. Your working directory is this task's persistent directory. Use it for intermediate materials, memory, and retained copies as needed. Keep MEMORY.md as the overview of reusable findings and progress. Your final answer to the main assistant must include the complete requested report, not just a completion notice, summary, or file paths. Clearly explain anything incomplete.`;
+function prompt(message: string, binding: TaskBinding, child: ConversationId, directory: string) {
+  return `${message}\n\nThis is task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${child}. ${binding.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(binding.scheduledAt).toISOString()}.`} Started at ${new Date(binding.startedAt).toISOString()}. Your working directory is the main workspace. Use ${JSON.stringify(directory)} for intermediate materials and retained copies as needed. Keep reusable findings and progress in ${JSON.stringify(join(directory, "MEMORY.md"))}.`;
 }
 
 /** Task business prepares the directory, role, resources and fixed input; the runner only drives execution. */
@@ -33,11 +33,11 @@ export async function spawnTaskAgent(tx: Tx, children: SubagentRuntime, files: T
   const child = await children.spawn(tx, {
     owner, source,
     agent: {
-      agent: { ...model, model: model.model ?? null, cwd: files.directory(binding.taskId),
+      agent: { ...model, model: model.model ?? null, cwd: files.workspace,
         ...childScope(agent), instructions: BACKGROUND_AGENT_INSTRUCTIONS },
       resources: resources(files, binding.taskId),
     },
-    message: child => prompt(message, binding, child),
+    message: child => prompt(message, binding, child, files.directory(binding.taskId)),
     policy: child => policy(binding, child),
   });
   (await tx.doc(TaskContext, child)).binding = binding;

@@ -6,7 +6,7 @@ import { AssistantTaskError, taskId } from "./domain/tasks";
 
 /** Explicit paths, no title-derived directory names, no symlink traversal in product file APIs. */
 export class TaskFiles {
-  constructor(private readonly workspace: string) {}
+  constructor(readonly workspace: string) {}
   directory(id: string) {
     return join(this.workspace, "tasks", taskId(id));
   }
@@ -57,7 +57,7 @@ export class TaskFiles {
       );
       try {
         await file.writeFile(
-          "# Task memory\n\nKeep reusable findings and progress here; save execution deliverables alongside this file.\n",
+          "# Task memory\n\nKeep reusable findings and progress here; save intermediate materials alongside this file.\n",
         );
       } finally {
         await file.close();
