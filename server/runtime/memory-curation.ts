@@ -198,8 +198,8 @@ export class MemoryCurationService {
         state.retryAfter = null;
         return { kind: "empty" as const };
       }
-      if (batch.userMessageCount < MEMORY_CURATION_MIN_USER_MESSAGES) {
-        // Keep the cursor so short exchanges accumulate; disarm the idle timer until another run ends.
+      if (batch.userMessageCount < MEMORY_CURATION_MIN_USER_MESSAGES && !batch.budgetReached) {
+        // Accumulate short exchanges until the threshold or batch boundary; keep the cursor while below threshold.
         state.idleSince = null;
         state.retryAfter = null;
         return { kind: "below-threshold" as const };

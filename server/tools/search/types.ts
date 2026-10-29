@@ -1,10 +1,11 @@
 import { WebRequestError } from "../http";
+import { EXTERNAL_SOURCE_EXCERPT_MAX_CHARS } from "../text-limits";
 
 export const SEARCH_PROVIDER_IDS = ["exa", "tavily", "deepseek", "brave"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 
 /** Per-result excerpt budget shared by provider requests and the tool's output formatter. */
-export const SEARCH_SNIPPET_MAX = 1200;
+export const SEARCH_SNIPPET_MAX = EXTERNAL_SOURCE_EXCERPT_MAX_CHARS;
 
 export const SEARCH_FRESHNESS = ["day", "week", "month", "year"] as const;
 export type SearchFreshness = (typeof SEARCH_FRESHNESS)[number];

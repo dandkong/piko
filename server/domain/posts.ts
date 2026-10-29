@@ -1,4 +1,5 @@
 import type { PostContent } from "../../shared/posts";
+import { PREVIEW_EXCERPT_MAX_CHARS } from "./text-limits";
 
 export class PostError extends Error {
   constructor(message: string, readonly status = 422) { super(message); }
@@ -10,11 +11,15 @@ export function postId(value: string): number {
   return Number(value);
 }
 
-export function postExcerpt(body: string, limit = 240): string {
+export function postExcerpt(body: string, limit = PREVIEW_EXCERPT_MAX_CHARS): string {
   const text = body.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/[#*_`>~]/g, "").replace(/\s+/g, " ").trim();
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  const points = Array.from(text);
+  const boundedLimit = Math.max(0, Math.floor(limit));
+  return points.length > boundedLimit
+    ? boundedLimit > 0 ? `${points.slice(0, boundedLimit - 1).join("")}…` : ""
+    : text;
 }
 
 type PostDecision = ({ action: "publish" } & PostContent) | { action: "skip"; reason: string };

@@ -6,10 +6,10 @@
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10；`freshness` 可选 `day`/`week`/`month`/`year`；`includeDomains` / `excludeDomains` 可选，最多 5 个 hostname | 统一的标题、URL、每条最多 1,200 字符的摘要和可选发布日期；无结果明确说明 |
-| `web_extract` | `url` 必填，仅 HTTP/HTTPS；`provider` 可选，默认 `built-in`；`maxChars` 可选，默认 10,000，范围 1,000–100,000 | 标题、最终 URL、实际 provider、站点/作者/摘要、返回正文字符数及正文 Markdown；提取器截断有标记，details 保留网页元数据 |
+| `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10；`freshness` 可选 `day`/`week`/`month`/`year`；`includeDomains` / `excludeDomains` 可选，最多 5 个 hostname | 统一的标题、URL、每条最多 1,200 Unicode 码点的摘要和可选发布日期；无结果明确说明 |
+| `web_extract` | `url` 必填，仅 HTTP/HTTPS；`provider` 可选，默认 `built-in` | 标题、最终 URL、实际 provider、站点/作者/摘要、返回正文字符数及正文 Markdown；正文固定最多 10,000 Unicode 码点，超限有标记；details 保留网页元数据 |
 
-上述 `maxChars` 限制提取器返回的正文；最终工具输出还统一受 Durable 默认的 50 KiB / 2,000 行上限约束，见[Agent 运行时](../operations/agent-runtime.md#工具输出边界)。
+`web_extract` 不提供逐段/分页读取；正文超过 10,000 Unicode 码点会标记截断。最终工具输出还统一受 Durable 默认的 50 KiB / 2,000 行上限约束，见[Agent 运行时](../operations/agent-runtime.md#工具输出边界)。
 
 `web_search` 的参数不传供应商、不传 Key，也不接收原始供应商 JSON。`web_extract` 仍是单一工具，但 `provider` 选项只包含内置 extractor 和当前后端已配置凭据的远端 provider；每次调用只运行所选的一个，不自动串联或替 Agent 判断质量。工具结果会标明 provider 和提取结果，Agent 可据此决定是否另选一个 provider 再调用。远端 provider 会收到用户给出的完整 URL；正文、标题、摘要和 URL 不会按凭据样式扫描或改写。URL 中的用户名/密码会由输入校验拒绝，但 query 参数会原样保留；不要在 URL query 中放置凭据或临时签名。
 
@@ -78,7 +78,7 @@ FIRECRAWL_API_KEY="..."
 - DeepSeek：`POST https://api.deepseek.com/v1/tools/search`，Bearer Search Key，`need_content:false`；仅取结构化摘要/片段。没有时间或域名过滤参数；带相应过滤条件时跳过该后端。
 - Brave：保留原 `GET /res/v1/web/search` 和 `X-Subscription-Token`。`freshness` 映射为 `pd`/`pw`/`pm`/`py`；它按“发现时间”筛选，不等价于 Exa/Tavily 的发布时间。Brave 没有原生域名过滤；带域名筛选时跳过。
 
-每个搜索模块把 title/url/snippet/date 映射为共享 `SearchResult`，丢弃上游特有字段，限制结果数，要求 URL 为 HTTP/HTTPS。缺少可读摘要时仍保留标题和链接。摘要按 `SEARCH_SNIPPET_MAX`（1,200 字符）统一截断，避免供应商默认返回量直接进入上下文；完整网页正文继续由独立 `web_extract` 按需读取。
+每个搜索模块把 title/url/snippet/date 映射为共享 `SearchResult`，丢弃上游特有字段，限制结果数，要求 URL 为 HTTP/HTTPS。缺少可读摘要时仍保留标题和链接。摘要按 `SEARCH_SNIPPET_MAX`（1,200 Unicode 码点）统一截断，避免供应商默认返回量直接进入上下文；完整网页正文继续由独立 `web_extract` 按需读取。
 
 网页提取 provider 实现在 `server/tools/extract/providers/`：Firecrawl 使用 `/v2/scrape`，Exa 使用 `/contents`，DeepSeek 使用 `/v1/tools/fetch`。远端错误仅返回固定的 provider/HTTP 状态错误，不传递上游响应体或请求头。`contentLength` 是实际返回的正文字符数；本地 Readability 的内部 `article.length` 单独标为 `readabilityLength`，不当作 Markdown 正文长度。提取结果里的 URL 与正文链接按来源内容保留，不扫描或改写 query 参数。
 
@@ -88,6 +88,6 @@ FIRECRAWL_API_KEY="..."
 
 搜索 provider 使用 15 秒超时、Durable AbortSignal、最大 1 MiB JSON body；远端提取 provider 使用 45 秒超时和最大 8 MiB 响应体；本地 HTML fetch 使用 15 秒超时和最大 8 MiB 响应体。固定 API endpoint 禁止 HTTP 重定向。Provider adapter 不返回上游异常正文、凭据或原始 JSON。网络工具仍标记 `replay: unsafe`；中断后不重放不确定请求。
 
-`built-in` 不渲染 JavaScript、不复用浏览器登录态。JSDOM 不启用脚本或子资源加载；优先主正文，无法识别文章时退回清理后的页面文字，正文按 maxChars 截断。远端 provider 接收 URL 并自行抓取；每次请求只调用明确选择的一家，不自动降级。网页内容是来源材料，不是指令或授权。
+`built-in` 不渲染 JavaScript、不复用浏览器登录态。JSDOM 不启用脚本或子资源加载；优先主正文，无法识别文章时退回清理后的页面文字，正文最多返回 10,000 Unicode 码点。远端 provider 接收 URL 并自行抓取；每次请求只调用明确选择的一家，不自动降级。网页内容是来源材料，不是指令或授权。
 
 参考：[Agent 运行时](../operations/agent-runtime.md)、[应用配置](../operations/configuration.md)、[主会话与恢复](workspace-and-main-chat.md)、[Linux 运行与安全边界](../operations/deployment.md)。

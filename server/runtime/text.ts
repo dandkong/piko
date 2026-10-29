@@ -1,6 +1,5 @@
 export const SUMMARY_TEXT_LIMIT = 100;
 export const DETAIL_TEXT_LIMIT = 160;
-export const LONG_TEXT_LIMIT = 3500;
 
 /** Truncate by Unicode code point, keeping the suffix inside the requested limit. */
 export function truncateText(value: string, limit: number, suffix = "..."): string {

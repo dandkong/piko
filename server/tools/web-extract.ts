@@ -4,25 +4,28 @@ import { NodeHtmlMarkdown } from "node-html-markdown";
 import { readResponseText, WebRequestError, withRequestSignal, type WebFetch } from "./http";
 import type { ProviderRegistry, WebExtractProviderId } from "./extract/providers/types";
 import { httpUrl } from "./extract/providers/request";
+import { EXTERNAL_SOURCE_EXCERPT_MAX_CHARS } from "./text-limits";
+import { codePointLength, sliceCodePoints } from "../text";
 
 export type ExtractedPage = {
   url: string; finalUrl?: string; provider: WebExtractProviderId; title: string; byline?: string | null;
   siteName?: string | null; excerpt?: string | null; contentLength: number; readabilityLength?: number;
   content: string; truncated: boolean; contentType?: string;
 };
-export type ExtractArguments = { url: string; maxChars?: number; provider?: WebExtractProviderId };
+export type ExtractArguments = { url: string; provider?: WebExtractProviderId };
 export type ExtractOptions = { fetch?: WebFetch; timeoutMs?: number; providers?: ProviderRegistry };
-const DEFAULT_MAX_CHARS = 10000;
-const MAX_CHARS = 100000;
+const WEB_EXTRACT_MAX_CHARS = 10_000;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
-function clampMaxChars(value: number | undefined): number {
-  if (!Number.isFinite(value ?? NaN)) return DEFAULT_MAX_CHARS;
-  return Math.max(1000, Math.min(MAX_CHARS, Math.floor(value!)));
+function boundedExcerpt(value: string | null | undefined): string | undefined {
+  const excerpt = value?.trim();
+  return excerpt ? sliceCodePoints(excerpt, EXTERNAL_SOURCE_EXCERPT_MAX_CHARS) : undefined;
 }
 function truncate(value: string, maxChars: number): { text: string; truncated: boolean } {
-  return value.length <= maxChars ? { text: value, truncated: false }
-    : { text: `${value.slice(0, maxChars)}\n\n[...truncated to ${maxChars} chars]`, truncated: true };
+  if (codePointLength(value) <= maxChars) return { text: value, truncated: false };
+  const marker = `\n\n[...truncated to ${maxChars} chars]`;
+  const contentLimit = Math.max(0, maxChars - codePointLength(marker));
+  return { text: `${sliceCodePoints(value, contentLimit)}${marker}`, truncated: true };
 }
 function normalizeWhitespace(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -80,8 +83,8 @@ async function extractBuiltIn(url: string, maxChars: number, options: ExtractOpt
     signal?.throwIfAborted();
     const result = truncate(content, maxChars);
     return { url, finalUrl: fetched.finalUrl, provider: "built-in", title, byline, siteName,
-      excerpt,
-      content: result.text, contentLength: result.text.length, readabilityLength,
+      excerpt: boundedExcerpt(excerpt),
+      content: result.text, contentLength: codePointLength(result.text), readabilityLength,
       truncated: result.truncated, contentType: fetched.contentType };
   } finally { dom.window.close(); }
 }
@@ -99,15 +102,15 @@ async function extractRemote(url: string, providerId: Exclude<WebExtractProvider
   return { url, finalUrl, provider: providerId,
     title: result.title?.trim() || "Untitled page", byline: result.byline?.trim() || undefined,
     siteName: result.siteName?.trim() || undefined,
-    excerpt: excerpt ? excerpt.slice(0, 2000) : undefined,
-    content: bounded.text, contentLength: bounded.text.length, truncated: bounded.truncated,
+    excerpt: boundedExcerpt(excerpt),
+    content: bounded.text, contentLength: codePointLength(bounded.text), truncated: bounded.truncated,
     contentType: "text/markdown" };
 }
 
 /** A call executes exactly one provider; the Agent may select another on a later call. */
 export async function extractWebPage(args: ExtractArguments, options: ExtractOptions = {}, signal?: AbortSignal): Promise<ExtractedPage> {
   signal?.throwIfAborted();
-  const url = normalizeUrl(args.url); const maxChars = clampMaxChars(args.maxChars);
+  const url = normalizeUrl(args.url); const maxChars = WEB_EXTRACT_MAX_CHARS;
   const provider = args.provider ?? "built-in";
   return provider === "built-in"
     ? extractBuiltIn(url, maxChars, options, signal)

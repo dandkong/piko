@@ -1,4 +1,5 @@
 export type ChatBatchMessage = { role: "user" | "assistant"; date: string; content: string };
+/** Target Unicode-codepoint budget per curation batch; an atomic entry may exceed it rather than lose text. */
 export const CHAT_BATCH_MAX_INPUT_CHARS = 48_000;
 
 export function localDate(timestamp: number, timezone: string): string {

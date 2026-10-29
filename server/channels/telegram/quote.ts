@@ -1,5 +1,6 @@
 import type { RichBlock, RichText } from "grammy/types";
-import { LONG_TEXT_LIMIT, truncateText } from "../../runtime/text";
+import { truncateUtf16Text } from "../../runtime/text";
+import { TELEGRAM_LONG_TEXT_LIMIT_UTF16 } from "./menu-policy";
 
 function richTextToPlainText(value: RichText): string {
   if (typeof value === "string") return value;
@@ -41,7 +42,7 @@ export function withTelegramQuote(messageText: string, replyText?: string): stri
   const quote = replyText?.replace(/\r\n?/g, "\n").trim();
   if (!quote) return text;
 
-  const excerpt = truncateText(quote, LONG_TEXT_LIMIT, "…");
+  const excerpt = truncateUtf16Text(quote, TELEGRAM_LONG_TEXT_LIMIT_UTF16, "…");
   const blockquote = excerpt.split("\n").map(line => `> ${line}`).join("\n");
   return `${blockquote}${text ? `\n\n${text}` : ""}`;
 }

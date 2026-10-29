@@ -1,9 +1,9 @@
 import type { AssistantTask, AssistantTaskDetail, TaskExecution } from "../../../shared/tasks";
 import type { ChatRuntime } from "../../runtime/types";
-import { DETAIL_TEXT_LIMIT, LONG_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
+import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./api";
-import { TELEGRAM_MENU_PAGE_SIZE, TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
+import { TELEGRAM_LONG_TEXT_LIMIT_UTF16, TELEGRAM_MENU_PAGE_SIZE, TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
 
 type Address = { chatId: string; messageId: string };
 type View = { text: string; buttons?: TelegramKeyboard };
@@ -115,7 +115,7 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
     )!) : ["No executions yet."]),
   ];
   const fixedLength = [...beforePrompt, "", ...afterPrompt].join("\n").length;
-  const promptLimit = Math.max(0, Math.min(LONG_TEXT_LIMIT, TELEGRAM_MENU_TEXT_LIMIT - fixedLength));
+  const promptLimit = Math.max(0, Math.min(TELEGRAM_LONG_TEXT_LIMIT_UTF16, TELEGRAM_MENU_TEXT_LIMIT - fixedLength));
   const prompt = task.prompt.trim()
     ? truncateUtf16Text(task.prompt.trim(), promptLimit, "\n\n[Instructions shortened for Telegram.]")
     : "(empty)";
@@ -132,7 +132,7 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
   buttons.push([{ text: "Back to task list", callbackData: taskListKey(page) }]);
   return { text: lines.join("\n"), buttons };
 }
-function truncateResult(value: string, limit = LONG_TEXT_LIMIT): string {
+function truncateResult(value: string, limit = TELEGRAM_LONG_TEXT_LIMIT_UTF16): string {
   return truncateUtf16Text(value, limit, "\n\n… Result truncated. Open Piko to read the full execution.");
 }
 
@@ -167,7 +167,7 @@ export class TelegramTaskMenus {
     if (detail.task.status !== "active") throw new TaskMenuNotice("Task archived.");
     const runIdShort = shortRunIds(detail.executions.slice(0, EXECUTION_LIMIT)).get(runId) ?? runId.slice(-4);
     const heading = `#${shortId(detail.task, shortTaskIds(all))} · ${singleLine(detail.task.title, DETAIL_TEXT_LIMIT) ?? "Untitled"} · Run #${runIdShort} · ${dateTime(result.execution.startedAt)} · ${statusLabel(result.execution.status)}`;
-    const answerLimit = Math.max(0, Math.min(LONG_TEXT_LIMIT, TELEGRAM_MENU_TEXT_LIMIT - heading.length - 2));
+    const answerLimit = Math.max(0, Math.min(TELEGRAM_LONG_TEXT_LIMIT_UTF16, TELEGRAM_MENU_TEXT_LIMIT - heading.length - 2));
     const answer = truncateResult(result.answer.trim() || "No text result.", answerLimit);
     const text = `${heading}\n\n${answer}`;
     const buttons: TelegramKeyboard = [[{ text: "Back to task", callbackData: assertCallbackData(taskKey(id, page)) }]];

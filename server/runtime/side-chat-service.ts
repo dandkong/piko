@@ -25,6 +25,8 @@ import {
 } from "./side-chats";
 import { logInfo } from "../logging";
 
+const SIDE_CHAT_TITLE_SOURCE_MAX_CHARS = 500;
+
 /** Side-chat product rules; Runtime supplies lifetime and conversation admission. */
 export class SideChats {
   private deletionLine: Promise<unknown> = Promise.resolve();
@@ -113,8 +115,8 @@ export class SideChats {
     if (!exchange)
       throw new SideChatError("No completed user and assistant exchange is available.", 409);
     const transcript = [
-      `User: ${truncateText(exchange.user.content.trim() || "[User sent an attachment]", 500)}`,
-      `Assistant: ${truncateText(exchange.assistant.content.trim(), 500)}`,
+      `User: ${truncateText(exchange.user.content.trim() || "[User sent an attachment]", SIDE_CHAT_TITLE_SOURCE_MAX_CHARS)}`,
+      `Assistant: ${truncateText(exchange.assistant.content.trim(), SIDE_CHAT_TITLE_SOURCE_MAX_CHARS)}`,
     ].join("\n\n");
     const response = await this.models.completeSimple(model, {
       systemPrompt: [

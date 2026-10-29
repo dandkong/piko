@@ -6,6 +6,7 @@ import { readGuidance } from "../../workspace";
 import { localDate } from "../../domain/chat-batch";
 import { historyPageFromTransaction } from "../pi-history";
 import { postPage } from "./queries";
+import { codePointLength } from "../../text";
 
 export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap<number, string>, now: number) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -28,10 +29,12 @@ export async function postContext(tx: Tx, workspace: string, inputs: ReadonlyMap
   let messagesTruncated = !!recent.nextBefore;
   for (const message of [...recent.messages].reverse()) {
     if (remaining <= 0) { messagesTruncated = true; break; }
-    const content = message.content.slice(0, remaining);
-    if (content.length < message.content.length) messagesTruncated = true;
-    remaining -= content.length;
-    if (content.trim()) recentMessages.unshift({ id: message.id, role: message.role, content, createdAt: message.createdAt });
+    const messageLength = codePointLength(message.content);
+    if (messageLength > remaining) { messagesTruncated = true; break; }
+    remaining -= messageLength;
+    if (message.content.trim()) recentMessages.unshift({
+      id: message.id, role: message.role, content: message.content, createdAt: message.createdAt,
+    });
   }
   return {
     asOf: now, timezone,

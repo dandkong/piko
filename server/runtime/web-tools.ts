@@ -50,18 +50,16 @@ export function createWebTools(env: Record<string, string | undefined>, options:
   });
   const extract = defineTool({
     name: "web_extract",
-    description: "Extract the main readable content from a specific HTTP/HTTPS URL as Markdown.",
+    description: "Extract the main readable content from a specific HTTP/HTTPS URL as Markdown, up to 10,000 characters.",
     parameters: Type.Object({
       url: Type.String({ minLength: 1, description: "URL of the web page to extract. HTTP and HTTPS only." }),
-      maxChars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 100000, default: 10000,
-        description: "Maximum output characters per URL. Defaults to 10000, max 100000." })),
       provider: extractProviderSchema,
     }),
     replay: "unsafe",
     execute: async (args, _api, context) => {
       const page = await extractWebPage(args, { fetch: options.fetch, providers: extractProviders }, context.abortSignal);
       return { output: [{ type: "text", text: extractedPageMarkdown(page) }],
-        details: JSON.parse(JSON.stringify({ url: page.url, maxChars: args.maxChars ?? 10000, page })) };
+        details: JSON.parse(JSON.stringify({ url: page.url, page })) };
     },
   });
   const settings = options.settings ?? defaultPikoFile.tools;

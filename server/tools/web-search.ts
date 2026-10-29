@@ -1,4 +1,5 @@
 import { WebRequestError } from "./http";
+import { codePointLength, sliceCodePoints } from "../text";
 import {
   SEARCH_FRESHNESS,
   SEARCH_SNIPPET_MAX,
@@ -109,5 +110,9 @@ function formatResults(results: readonly SearchResult[]): string {
 }
 
 function truncate(value: string, length: number) {
-  return value.length <= length ? value : `${value.slice(0, length)}... [truncated ${value.length - length} chars]`;
+  const total = codePointLength(value);
+  if (total <= length) return value;
+  const marker = "…";
+  const bodyLimit = Math.max(0, length - codePointLength(marker));
+  return `${sliceCodePoints(value, bodyLimit)}${marker}`;
 }

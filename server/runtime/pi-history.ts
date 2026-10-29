@@ -4,6 +4,7 @@ import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
 import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
 import { detectExtension } from "../attachments";
+import { PREVIEW_EXCERPT_MAX_CHARS } from "../domain/text-limits";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -123,15 +124,17 @@ function normalizeSearchText(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function searchSnippet(content: string, terms: readonly string[], limit = 300): string {
+function searchSnippet(content: string, terms: readonly string[], limit = PREVIEW_EXCERPT_MAX_CHARS): string {
   const flattened = content.replace(/\s+/g, " ").trim();
   const normalized = normalizeSearchText(flattened);
   const matchAt = Math.min(...terms.map(term => normalized.indexOf(term)).filter(index => index >= 0));
   const points = Array.from(flattened);
-  if (!Number.isFinite(matchAt)) return points.slice(0, limit).join("") + (points.length > limit ? "…" : "");
+  if (!Number.isFinite(matchAt))
+    return points.length > limit ? `${points.slice(0, Math.max(0, limit - 1)).join("")}…` : flattened;
   const codePointAt = Array.from(normalized.slice(0, matchAt)).length;
-  const start = Math.max(0, codePointAt - Math.floor(limit / 3));
-  const end = Math.min(points.length, start + limit);
+  const contentLimit = Math.max(0, limit - 2);
+  const start = Math.max(0, codePointAt - Math.floor(contentLimit / 3));
+  const end = Math.min(points.length, start + contentLimit);
   return `${start ? "…" : ""}${points.slice(start, end).join("")}${end < points.length ? "…" : ""}`;
 }
 

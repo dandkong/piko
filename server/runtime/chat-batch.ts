@@ -2,8 +2,9 @@ import { ROOT_CONVERSATION_ID, type Cursor, type EntryId, type EntryRecord, type
 import { CHAT_BATCH_MAX_INPUT_CHARS, localDate, type ChatBatchMessage } from "../domain/chat-batch";
 import { internalInput } from "./input-origin";
 import { messageText } from "./pi-history";
+import { codePointLength } from "../text";
 
-export type CollectedBatch = { messages: ChatBatchMessage[]; userMessageCount: number; throughEntryId: number };
+export type CollectedBatch = { messages: ChatBatchMessage[]; userMessageCount: number; throughEntryId: number; budgetReached: boolean };
 
 /** Newest entry ID of the root conversation; background work uses it as a high-water cursor. */
 export async function rootHighWater(tx: Tx): Promise<number> {
@@ -31,7 +32,7 @@ export async function collectMainChatBatch(tx: Tx, input: {
     internalUsers.add(entry.id);
   }
 
-  const messages: ChatBatchMessage[] = []; let userMessageCount = 0; let chars = 0; let processed = from;
+  const messages: ChatBatchMessage[] = []; let userMessageCount = 0; let chars = 0; let processed = from; let budgetReached = false;
   for (const entry of entries) {
     if ((entry.kind !== "pi.user" && entry.kind !== "pi.assistant") || internalUsers.has(entry.id)) {
       processed = entry.id; continue;
@@ -42,19 +43,14 @@ export async function collectMainChatBatch(tx: Tx, input: {
       .filter(message => message.content.length > 0);
     if (!parts.length) { processed = entry.id; continue; }
     const role = entry.kind === "pi.user" ? "user" : "assistant";
-    const cost = parts.reduce((sum, part) => sum + part.content.length, 0);
-    if (messages.length && chars + cost > CHAT_BATCH_MAX_INPUT_CHARS) break;
+    const cost = parts.reduce((sum, part) => sum + codePointLength(part.content), 0);
+    if (messages.length && chars + cost > CHAT_BATCH_MAX_INPUT_CHARS) { budgetReached = true; break; }
     if (role === "user") userMessageCount++;
-    let remaining = CHAT_BATCH_MAX_INPUT_CHARS - chars;
-    for (const part of parts) {
-      if (remaining <= 0) break;
-      const content = part.content.length > remaining ? `${part.content.slice(0, remaining)}\n[This message was abbreviated to fit the batch.]` : part.content;
-      messages.push({ role, date: localDate(part.timestamp, timezone), content });
-      remaining -= Math.min(part.content.length, remaining);
-    }
-    chars += Math.min(cost, CHAT_BATCH_MAX_INPUT_CHARS - chars);
+    for (const part of parts)
+      messages.push({ role, date: localDate(part.timestamp, timezone), content: part.content });
+    chars += cost;
     processed = entry.id;
-    if (chars >= CHAT_BATCH_MAX_INPUT_CHARS) break;
+    if (chars >= CHAT_BATCH_MAX_INPUT_CHARS) { budgetReached = true; break; }
   }
-  return { messages, userMessageCount, throughEntryId: Math.max(from, processed) };
+  return { messages, userMessageCount, throughEntryId: Math.max(from, processed), budgetReached };
 }
