@@ -11,7 +11,7 @@ export async function rootHighWater(tx: Tx): Promise<number> {
   return page.items[0]?.id ?? 0;
 }
 
-/** Collect only external, user-visible root chat text. Internal reports and tool results are never input. */
+/** Collect user-visible root chat text. Exclude explicitly internal background-result inputs, but retain the main assistant's visible replies. */
 export async function collectMainChatBatch(tx: Tx, input: {
   from: number; through: number; timezone: string; bindings: ReadonlyMap<number, string>; now: number;
 }): Promise<CollectedBatch> {
@@ -23,19 +23,17 @@ export async function collectMainChatBatch(tx: Tx, input: {
     entries.push(...page.items); cursor = page.next;
   } while (cursor);
 
-  const internalUsers = new Set<number>(); const internalAnswers = new Set<number>();
+  const internalUsers = new Set<number>();
   for (const entry of entries) {
     if (entry.kind !== "pi.user") continue;
     const requestId = bindings.get(entry.id);
     if (!await internalInput(tx, requestId)) continue;
     internalUsers.add(entry.id);
-    const submission = requestId ? await tx.submissionByRequest(ROOT_CONVERSATION_ID, requestId) : undefined;
-    if (submission?.type === "input" && submission.status === "done") internalAnswers.add(submission.answer);
   }
 
   const messages: ChatBatchMessage[] = []; let userMessageCount = 0; let chars = 0; let processed = from;
   for (const entry of entries) {
-    if ((entry.kind !== "pi.user" && entry.kind !== "pi.assistant") || internalUsers.has(entry.id) || internalAnswers.has(entry.id)) {
+    if ((entry.kind !== "pi.user" && entry.kind !== "pi.assistant") || internalUsers.has(entry.id)) {
       processed = entry.id; continue;
     }
     const parts = (entry.model ?? []).filter(message => message.role === "user" || message.role === "assistant")
