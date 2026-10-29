@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { ChevronDown, ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
+import { ArrowUpDown, ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
@@ -49,7 +49,6 @@ export function ArtifactsScreen({
   const scrollRef = useRef<ScrollView>(null);
   const { width, height } = useWindowDimensions();
   const sortedEntries = useMemo(() => sortArtifacts(entries, sort), [entries, sort]);
-  const sortOption = artifactSortOptions.find(option => option.value === sort)!;
   const listLoading = loading || !sortReady;
 
   useEffect(() => {
@@ -165,47 +164,44 @@ export function ArtifactsScreen({
         ) : (
           <Text style={styles.headerTitle}>产物</Text>
         )}
-        <View style={styles.headerSpacer} />
+        {segments.length ? (
+          <ScrollView
+            horizontal
+            style={styles.headerCrumbs}
+            contentContainerStyle={styles.breadcrumb}
+            showsHorizontalScrollIndicator={false}
+            testID="artifact-breadcrumb"
+          >
+            {segments.map((segment, index) => {
+              const value = segments.slice(0, index + 1).join("/");
+              const current = index === segments.length - 1;
+              return (
+                <View key={value} style={styles.crumbSegment}>
+                  <ChevronRight size={13} color={colors.muted} />
+                  <TextButton label={`打开文件夹 ${segment}`} onPress={() => navigateTo(value)} variant="plain" style={styles.crumbHit} faceStyle={styles.crumbFace}>
+                    <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
+                  </TextButton>
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : <View style={styles.headerSpacer} />}
         <View ref={sortAnchor} collapsable={false}>
-          <TextButton
-            label={`排序：${sortOption.label}`}
+          <IconButton
+            label="排序"
             hint="选择名称或修改时间排序"
             accessibilityState={{ expanded: menu?.kind === "sort" }}
             disabled={!sortReady}
             onPress={openSortMenu}
-            faceStyle={styles.sortFace}
             testID="artifact-sort-button"
           >
-            <Text style={styles.sortLabel}>{sortOption.shortLabel}</Text>
-            <ChevronDown size={15} strokeWidth={1.8} color={colors.muted} />
-          </TextButton>
+            <ArrowUpDown size={20} strokeWidth={1.8} color={colors.text} />
+          </IconButton>
         </View>
         <IconButton label="刷新产物列表" hint="重新读取当前文件夹" onPress={refresh}>
           <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
         </IconButton>
       </View>
-      {!!segments.length && (
-        <ScrollView
-          horizontal
-          style={styles.headerCrumbs}
-          contentContainerStyle={styles.breadcrumb}
-          showsHorizontalScrollIndicator={false}
-          testID="artifact-breadcrumb"
-        >
-          {segments.map((segment, index) => {
-            const value = segments.slice(0, index + 1).join("/");
-            const current = index === segments.length - 1;
-            return (
-              <View key={value} style={styles.crumbSegment}>
-                <ChevronRight size={13} color={colors.muted} />
-                <TextButton label={`打开文件夹 ${segment}`} onPress={() => navigateTo(value)} variant="plain" style={styles.crumbHit} faceStyle={styles.crumbFace}>
-                  <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
-                </TextButton>
-              </View>
-            );
-          })}
-        </ScrollView>
-      )}
 
       {!!downloadError && <Text accessibilityRole="alert" style={styles.error}>{downloadError}</Text>}
       {!!error && (
@@ -345,11 +341,9 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   headerTitleHit: { flexShrink: 0 },
   headerTitleFace: { minHeight: 44, paddingHorizontal: 0, paddingVertical: 0, justifyContent: "flex-start" },
-  headerCrumbs: { minWidth: 0, flexGrow: 0 },
-  sortFace: { minHeight: 44, paddingHorizontal: 10, gap: 4 },
-  sortLabel: { color: colors.text, fontSize: 13 },
-  headerSpacer: { flex: 1, minWidth: 0 },
+  headerCrumbs: { flex: 1, minWidth: 0 },
   breadcrumb: { alignItems: "center", minHeight: 36, paddingRight: 4 },
+  headerSpacer: { flex: 1, minWidth: 0 },
   crumbSegment: { flexDirection: "row", alignItems: "center", gap: 1 },
   crumbHit: { flexShrink: 0 },
   crumbFace: { minHeight: 32, paddingHorizontal: 4, paddingVertical: 4, gap: 4 },
