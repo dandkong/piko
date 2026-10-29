@@ -4,7 +4,6 @@ import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
 import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
 import { detectExtension } from "../attachments";
-import { truncateText } from "./text";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -256,7 +255,7 @@ export async function historyAroundPiMessage(
   const selected = selectedMessages.map(({ id, role, content, createdAt }) => ({
     id,
     role,
-    content: truncateText(content, 500),
+    content,
     createdAt,
   }));
   return { messages: selected, messagesBefore: countBefore, messagesAfter: countAfter,

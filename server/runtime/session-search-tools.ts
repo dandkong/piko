@@ -51,7 +51,6 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: SEARCH_MAX_LIMIT,
         description: `Maximum results to return (default ${SEARCH_DEFAULT_LIMIT}, max ${SEARCH_MAX_LIMIT}).` })),
     }, { additionalProperties: false }),
-    outputLimits: { maxBytes: 64 * 1024, maxLines: 500 },
     execute: async (args, api, ctx) => {
       const query = args.query.trim();
       if (!query) return failure("query must not be empty.");
@@ -70,14 +69,13 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
     name: "sessions_history",
     replay: "unsafe",
     description:
-      "Read a bounded window of visible messages around a sessions_search result. Pass its sessionId and the raw Durable entry ID as messageId, without a prefix. Each message is capped at 500 characters. To continue scrolling, pass an id from the returned messages as messageId. A missing or out-of-session anchor returns an error rather than falling back to the latest messages.",
+      "Read a bounded window of visible messages around a sessions_search result. Pass its sessionId and the raw Durable entry ID as messageId, without a prefix. Message text is returned without per-message truncation. To continue scrolling, pass an id from the returned messages as messageId. A missing or out-of-session anchor returns an error rather than falling back to the latest messages.",
     parameters: Type.Object({
       sessionId: Type.String({ minLength: 1, description: "sessionId returned by sessions_search; must be within the host-authorized history scope." }),
       messageId: Type.String({ pattern: "^[1-9]\\d*$", description: "Raw Durable entry ID returned by sessions_search or as a message id in sessions_history; do not add a prefix." }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: HISTORY_MAX_LIMIT,
         description: `Maximum total messages including the anchor (default ${HISTORY_DEFAULT_LIMIT}, max ${HISTORY_MAX_LIMIT}).` })),
     }, { additionalProperties: false }),
-    outputLimits: { maxBytes: 64 * 1024, maxLines: 500 },
     execute: async (args, api, ctx) => {
       const scope = await scopeFor(api, ctx);
       if (!scope || args.sessionId !== String(scope.conversationId))

@@ -7,7 +7,9 @@
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | `web_search` | `query` 必填；`maxResults` 可选，默认 5，整数 1–10；`freshness` 可选 `day`/`week`/`month`/`year`；`includeDomains` / `excludeDomains` 可选，最多 5 个 hostname | 统一的标题、URL、每条最多 1,200 字符的摘要和可选发布日期；无结果明确说明 |
-| `web_extract` | `url` 必填，仅 HTTP/HTTPS；`provider` 可选，默认 `built-in`；`maxChars` 可选，默认 10,000，范围 1,000–100,000 | 标题、最终 URL、实际 provider、站点/作者/摘要、返回正文字符数及正文 Markdown；截断有标记，details 保留网页元数据 |
+| `web_extract` | `url` 必填，仅 HTTP/HTTPS；`provider` 可选，默认 `built-in`；`maxChars` 可选，默认 10,000，范围 1,000–100,000 | 标题、最终 URL、实际 provider、站点/作者/摘要、返回正文字符数及正文 Markdown；提取器截断有标记，details 保留网页元数据 |
+
+上述 `maxChars` 限制提取器返回的正文；最终工具输出还统一受 Durable 默认的 50 KiB / 2,000 行上限约束，见[Agent 运行时](../operations/agent-runtime.md#工具输出边界)。
 
 `web_search` 的参数不传供应商、不传 Key，也不接收原始供应商 JSON。`web_extract` 仍是单一工具，但 `provider` 选项只包含内置 extractor 和当前后端已配置凭据的远端 provider；每次调用只运行所选的一个，不自动串联或替 Agent 判断质量。工具结果会标明 provider 和提取结果，Agent 可据此决定是否另选一个 provider 再调用。远端 provider 会收到用户给出的完整 URL；正文、标题、摘要和 URL 不会按凭据样式扫描或改写。URL 中的用户名/密码会由输入校验拒绝，但 query 参数会原样保留；不要在 URL query 中放置凭据或临时签名。
 
