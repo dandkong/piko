@@ -22,7 +22,7 @@ function policy(binding: TaskBinding, child: ConversationId): BackgroundJobPolic
   };
 }
 function prompt(message: string, binding: TaskBinding, child: ConversationId) {
-  return `${message}\n\nThis is task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${child}. ${binding.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(binding.scheduledAt).toISOString()}.`} Started at ${new Date(binding.startedAt).toISOString()}. Your working directory is this task's persistent directory. Write this execution's deliverables directly into this directory. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Report findings and written paths to the main assistant, and clearly explain anything incomplete. Directory conventions are not a security sandbox.`;
+  return `${message}\n\nThis is task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${child}. ${binding.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(binding.scheduledAt).toISOString()}.`} Started at ${new Date(binding.startedAt).toISOString()}. Your working directory is this task's persistent directory. Use it for intermediate materials, memory, and retained copies as needed. Keep MEMORY.md as the overview of reusable findings and progress; do not modify global guidance or global memory. Your final answer to the main assistant must include the complete requested report, not just a completion notice, summary, or file paths. Clearly explain anything incomplete. Directory conventions are not a security sandbox.`;
 }
 
 /** Task business prepares the directory, role, resources and fixed input; the runner only drives execution. */
