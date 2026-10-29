@@ -1,7 +1,6 @@
 import {
   CHAT_PAGE_SIZE,
   MAX_ATTACHMENTS,
-  MAX_MESSAGE_LENGTH,
   isHistoryCursor,
   isRequestId,
 } from "../../shared/chat";
@@ -63,10 +62,9 @@ export async function chatRequest(
     }
     if (
       typeof input.message !== "string" ||
-      input.message.length > MAX_MESSAGE_LENGTH ||
       (!input.message.trim() && !paths.length)
     )
-      return json({ error: "Message must contain 1–12,000 characters." }, 422);
+      return json({ error: "Message or attachment is required." }, 422);
     return json(
       await conversations.submit(
         input.message,

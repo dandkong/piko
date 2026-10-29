@@ -127,7 +127,7 @@ export class TelegramChannel {
       const normalized = normalizeMessage(text, paths.length > 0);
       prompt = normalizeMessage(withTelegramQuote(normalized, message.replyText), paths.length > 0);
     } catch {
-      this.feedback(message, "Send a message with 1–12,000 characters.");
+      this.feedback(message, "Send a text message or supported attachment.");
       return;
     }
     try {

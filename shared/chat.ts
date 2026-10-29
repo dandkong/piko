@@ -23,5 +23,4 @@ export type StreamEvent =
   | { type: "snapshot"; conversation: ConversationResponse }
   | { type: "error"; message: string };
 export type HealthResponse = { ok: boolean; app: "Piko"; runtime: "Pi"; modelReady: boolean; activeSessions: number };
-export const MAX_MESSAGE_LENGTH = 12_000;
 export function isRequestId(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value.length <= 250 && !value.startsWith("piko:"); }

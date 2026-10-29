@@ -1,9 +1,7 @@
-import { MAX_MESSAGE_LENGTH } from "../../shared/chat";
-
 export function normalizeMessage(message: string, allowEmpty = false): string {
   const text = message.trim();
-  if ((!text && !allowEmpty) || text.length > MAX_MESSAGE_LENGTH) {
-    throw new Error("Message must contain 1–12,000 characters.");
+  if (!text && !allowEmpty) {
+    throw new Error("Message or attachment is required.");
   }
   return text;
 }

@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Platform, Text, TextInput, type TextInputProps, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
-import { MAX_MESSAGE_LENGTH } from "../../../../../shared/chat";
 import { colors, stateColors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
@@ -141,7 +140,6 @@ export function ChatComposer({
           onBlur={() => { setFocused(false); setFocusVisible(false); }}
           style={[styles.input, webInputStyle, { height: inputHeight }]}
           multiline
-          maxLength={MAX_MESSAGE_LENGTH}
           editable={!loading}
           submitBehavior={Platform.OS === "web" ? "newline" : "submit"}
           returnKeyType="send"
