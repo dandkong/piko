@@ -1,9 +1,10 @@
 import type { RuntimeDescription } from "../../../shared/runtime";
 import type { ChatRuntime, WorkspaceSkillDetail } from "../../runtime/types";
-import { LONG_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, DETAIL_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
+import { SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 import type { TelegramCallback } from "./menus";
 import { TELEGRAM_BUTTON_LABEL_LIMIT, TELEGRAM_MENU_PAGE_SIZE } from "./menu-policy";
+import { editTelegramRich, escapeTelegramMarkdown, sendTelegramRich, splitTelegramRichText } from "./rich-text";
 
 type Skill = RuntimeDescription["skills"][number];
 type Address = { chatId: string; messageId: string };
@@ -13,8 +14,9 @@ type Menu = Address & {
   working: boolean;
   actions: Set<string>;
   skills: Skill[];
+  extraMessageIds: string[];
 };
-type View = { text: string; buttons?: TelegramKeyboard };
+type View = { text: string; buttons: TelegramKeyboard };
 
 const MAX_MENUS = 64;
 const MENU_TTL_MS = 15 * 60_000;
@@ -31,10 +33,8 @@ function skillKey(token: string, index: number, page: number): string {
   return `k:${token}:skill:${index}:${page.toString(36)}`;
 }
 
-function detailBody(value: string): string {
-  const text = value.trim();
-  const note = "\n\n[Skill body shortened for Telegram.]";
-  return truncateUtf16Text(text, LONG_TEXT_LIMIT, note) || "(empty skill body)";
+function skillBody(value: string): string {
+  return value.trim() || "(empty skill body)";
 }
 
 function listView(menu: Menu, skills: Skill[], requestedPage: number): View {
@@ -42,46 +42,42 @@ function listView(menu: Menu, skills: Skill[], requestedPage: number): View {
   const page = Math.min(Math.max(requestedPage, 0), pages - 1);
   const start = page * TELEGRAM_MENU_PAGE_SIZE;
   const visible = skills.slice(start, start + TELEGRAM_MENU_PAGE_SIZE);
-  if (!skills.length) return { text: "Skills\nNo skills available." };
+  if (!skills.length) return { text: "**Skills**\n\nNo skills available.", buttons: [] };
 
-  const lines = [
-    `Skills · ${skills.length}${pages > 1 ? ` · Page ${page + 1}/${pages}` : ""}`,
-    "Choose a skill to view its description:",
-    "",
-    ...visible.map(skill => singleLine(
-      `${skill.name} — ${skill.description?.trim() || "(no description)"}`,
-      SUMMARY_TEXT_LIMIT,
-    )!),
-  ];
-  const buttons: TelegramKeyboard = [];
-  for (let index = 0; index < visible.length; index += 2) {
-    buttons.push(visible.slice(index, index + 2).map((skill, offset) => {
-      const absoluteIndex = start + index + offset;
-      return {
-        text: singleLine(skill.name, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Skill",
-        callbackData: skillKey(menu.token, absoluteIndex, page),
-      };
-    }));
-  }
+  const buttons: TelegramKeyboard = visible.map((skill, offset) => {
+    const index = start + offset;
+    return [{
+      text: truncateUtf16Text(singleLine(skill.name, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Skill", TELEGRAM_BUTTON_LABEL_LIMIT),
+      callbackData: skillKey(menu.token, index, page),
+    }];
+  });
   if (pages > 1) {
     const navigation: TelegramKeyboard[number] = [];
     if (page > 0) navigation.push({ text: "‹ Previous", callbackData: pageKey(menu.token, page - 1) });
     if (page < pages - 1) navigation.push({ text: "Next ›", callbackData: pageKey(menu.token, page + 1) });
     buttons.push(navigation);
   }
+  const lines = [
+    `**Skills · Page ${page + 1}**`,
+    "",
+    ...visible.map((skill, offset) => `${offset + 1}. **${escapeTelegramMarkdown(skill.name)}** — ${escapeTelegramMarkdown(
+      singleLine(skill.description?.trim() || "(no description)", SUMMARY_TEXT_LIMIT) ?? "(no description)",
+    )}`),
+    "",
+    "Select a skill below.",
+  ];
   return { text: lines.join("\n"), buttons };
 }
 
-function detailView(menu: Menu, skill: WorkspaceSkillDetail, page: number): View {
-  return {
-    text: [
-      `Skill · ${singleLine(skill.name, DETAIL_TEXT_LIMIT) ?? "Skill"}`,
-      "",
-      detailBody(skill.body),
-      ...(skill.disableModelInvocation ? ["", "Not included in the assistant skill index."] : []),
-    ].join("\n"),
-    buttons: [[{ text: "Back to skills", callbackData: pageKey(menu.token, page) }]],
-  };
+function detailText(skill: WorkspaceSkillDetail): string {
+  return [
+    `**Skill · ${escapeTelegramMarkdown(skill.name)}**`,
+    "",
+    escapeTelegramMarkdown(skill.description),
+    "",
+    skillBody(skill.body),
+    ...(skill.disableModelInvocation ? ["", "Not included in the assistant skill index."] : []),
+  ].join("\n");
 }
 
 /** Ephemeral, source-bound browser for the current skill catalog. */
@@ -100,10 +96,11 @@ export class TelegramSkillMenus {
       working: false,
       actions: new Set(),
       skills,
+      extraMessageIds: [],
     };
     const view = listView(menu, skills, 0);
-    menu.messageId = await this.api.send(address.chatId, view.text, false, view.buttons);
-    menu.actions = new Set(view.buttons?.flat().map(button => button.callbackData) ?? []);
+    menu.messageId = await sendTelegramRich(this.api, address.chatId, view.text, view.buttons);
+    menu.actions = new Set(view.buttons.flat().map(button => button.callbackData));
     if (menu.actions.size) {
       this.menus.set(menu.token, menu);
       this.prune();
@@ -116,11 +113,34 @@ export class TelegramSkillMenus {
     while (this.menus.size > MAX_MENUS) this.menus.delete(this.menus.keys().next().value!);
   }
 
+  private async removeContinuationMessages(menu: Menu) {
+    const ids = menu.extraMessageIds.splice(0);
+    await Promise.all(ids.map(id => this.api.remove(menu.chatId, id).catch(() => {})));
+  }
+
   private async editList(menu: Menu, skills: Skill[], page: number): Promise<void> {
+    await this.removeContinuationMessages(menu);
     const view = listView(menu, skills, page);
-    await this.api.edit(menu.chatId, menu.messageId, view.text, false, view.buttons);
+    await editTelegramRich(this.api, menu.chatId, menu.messageId, view.text, view.buttons);
     menu.skills = skills;
-    menu.actions = new Set(view.buttons?.flat().map(button => button.callbackData) ?? []);
+    menu.actions = new Set(view.buttons.flat().map(button => button.callbackData));
+  }
+
+  private async editSkillDetail(menu: Menu, skill: WorkspaceSkillDetail, page: number): Promise<void> {
+    await this.removeContinuationMessages(menu);
+    const chunks = splitTelegramRichText(detailText(skill));
+    const back = pageKey(menu.token, page);
+    const buttons: TelegramKeyboard = [[{ text: "‹ Back to skills", callbackData: back }]];
+    await editTelegramRich(this.api, menu.chatId, menu.messageId, chunks[0]!, buttons);
+    menu.actions = new Set([back]);
+    try {
+      for (const chunk of chunks.slice(1)) menu.extraMessageIds.push(await sendTelegramRich(this.api, menu.chatId, chunk));
+    } catch (error) {
+      await this.removeContinuationMessages(menu);
+      const skills = sortedSkills((await this.runtime.describe()).skills);
+      await this.editList(menu, skills, page);
+      throw error;
+    }
   }
 
   async handle(callback: TelegramCallback): Promise<void> {
@@ -153,9 +173,7 @@ export class TelegramSkillMenus {
           await this.api.answerCallback(callback.callbackId, "Skill unavailable. List refreshed.", false);
           return;
         }
-        const view = detailView(menu, skill, page);
-        await this.api.edit(menu.chatId, menu.messageId, view.text, false, view.buttons);
-        menu.actions = new Set(view.buttons?.flat().map(button => button.callbackData) ?? []);
+        await this.editSkillDetail(menu, skill, page);
       }
       await this.api.answerCallback(callback.callbackId);
     } catch {

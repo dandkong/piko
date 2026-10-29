@@ -2,8 +2,9 @@ import type { PostSummary } from "../../../shared/posts";
 import type { PostsRuntime } from "../../runtime/types";
 import { singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
-import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./api";
-import { TELEGRAM_BUTTON_LABEL_LIMIT, TELEGRAM_MENU_PAGE_SIZE, TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
+import type { TelegramKeyboard, TelegramTransport } from "./api";
+import { TELEGRAM_BUTTON_LABEL_LIMIT, TELEGRAM_MENU_PAGE_SIZE } from "./menu-policy";
+import { editTelegramRich, escapeTelegramMarkdown, sendTelegramRich, splitTelegramRichText } from "./rich-text";
 
 type Address = { chatId: string; messageId: string };
 type View = { text: string; buttons: TelegramKeyboard; actions: Set<string> };
@@ -19,32 +20,10 @@ type Menu = Address & {
   extraMessageIds: string[];
 };
 
-function escapeMarkdown(value: string): string {
-  return value.replace(/[\\`*_{}\[\]()#+.!|>~-]/g, "\\$&");
-}
-
 function callbackData(token: string, action: string) {
   const value = `o:${token}:${action}`;
   if (new TextEncoder().encode(value).byteLength > 64) throw new Error("Post callback is too long.");
   return value;
-}
-
-/** Split long Telegram detail into complete chunks without splitting UTF-16 surrogate pairs. */
-function splitText(value: string, limit = TELEGRAM_MENU_TEXT_LIMIT - 128): string[] {
-  const chunks: string[] = [];
-  let rest = value;
-  while (rest.length > limit) {
-    const bounded = truncateUtf16Text(rest, limit, "");
-    const paragraph = bounded.lastIndexOf("\n\n");
-    const line = bounded.lastIndexOf("\n");
-    const boundary = paragraph >= limit * 0.5 ? paragraph : line >= limit * 0.5 ? line : bounded.length;
-    const chunk = bounded.slice(0, boundary);
-    if (!chunk) throw new Error("Could not split Telegram post text.");
-    chunks.push(chunk);
-    rest = rest.slice(chunk.length);
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
 }
 
 /** Telegram's current Post browser is an ephemeral, source-bound list/detail menu. */
@@ -75,7 +54,7 @@ export class TelegramPostMenus {
     if (navigation.length) buttons.push(navigation);
     const text = page.posts.length
       ? [`**Posts · Page ${menu.page + 1}**`, "", ...page.posts.map((post, index) =>
-          `${index + 1}. ${escapeMarkdown(singleLine(post.title, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Untitled")}`), "", "Select a title below."].join("\n")
+          `${index + 1}. ${escapeTelegramMarkdown(singleLine(post.title, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Untitled")}`), "", "Select a title below."].join("\n")
       : `**Posts**\n\n${menu.page === 0 ? "No posts yet." : "No more posts on this page."}`;
     return { text, buttons, actions: new Set(buttons.flat().map(button => button.callbackData)) };
   }
@@ -87,11 +66,7 @@ export class TelegramPostMenus {
       page: 0, cursors: [undefined], posts: [], actions: new Set(), extraMessageIds: [],
     };
     const view = await this.listView(menu);
-    try { menu.messageId = await this.api.send(address.chatId, view.text, true, view.buttons); }
-    catch (error) {
-      if (!isFormatError(error)) throw error;
-      menu.messageId = await this.api.send(address.chatId, view.text, false, view.buttons);
-    }
+    menu.messageId = await sendTelegramRich(this.api, address.chatId, view.text, view.buttons);
     menu.actions = view.actions;
     this.menus.set(menu.token, menu);
     this.prune();
@@ -105,36 +80,21 @@ export class TelegramPostMenus {
   private async editList(menu: Menu) {
     await this.removeContinuationMessages(menu);
     const view = await this.listView(menu);
-    try { await this.api.edit(menu.chatId, menu.messageId, view.text, true, view.buttons); }
-    catch (error) {
-      if (!isFormatError(error)) throw error;
-      await this.api.edit(menu.chatId, menu.messageId, view.text, false, view.buttons);
-    }
+    await editTelegramRich(this.api, menu.chatId, menu.messageId, view.text, view.buttons);
     menu.actions = view.actions;
   }
 
   private async editDetail(menu: Menu, postId: string) {
     await this.removeContinuationMessages(menu);
     const post = await (await this.getPosts()).read(postId);
-    const chunks = splitText(`**${escapeMarkdown(post.title)}**\n\n${post.body}`);
+    const chunks = splitTelegramRichText(`**${escapeTelegramMarkdown(post.title)}**\n\n${post.body}`);
     const back = callbackData(menu.token, "back");
     const buttons: TelegramKeyboard = [[{ text: "‹ Back to posts", callbackData: back }]];
-    try {
-      await this.api.edit(menu.chatId, menu.messageId, chunks[0]!, true, buttons);
-    } catch (error) {
-      if (!isFormatError(error)) throw error;
-      await this.api.edit(menu.chatId, menu.messageId, chunks[0]!, false, buttons);
-    }
+    await editTelegramRich(this.api, menu.chatId, menu.messageId, chunks[0]!, buttons);
     menu.actions = new Set([back]);
     try {
       for (const chunk of chunks.slice(1)) {
-        let messageId: string;
-        try { messageId = await this.api.send(menu.chatId, chunk, true); }
-        catch (error) {
-          if (!isFormatError(error)) throw error;
-          messageId = await this.api.send(menu.chatId, chunk, false);
-        }
-        menu.extraMessageIds.push(messageId);
+        menu.extraMessageIds.push(await sendTelegramRich(this.api, menu.chatId, chunk));
       }
     } catch (error) {
       await this.removeContinuationMessages(menu);
