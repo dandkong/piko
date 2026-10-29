@@ -1,15 +1,16 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { colors, radii } from "../theme";
 
 /** Every non-chat tab shares this page rhythm so the modules feel like one product. */
-export function Screen({ children, topInset, bottomInset, testID }: {
+export function Screen({ children, topInset, bottomInset, testID, scrollRef }: {
   children: ReactNode;
   topInset: number;
   bottomInset: number;
   testID?: string;
+  scrollRef?: Ref<ScrollView>;
 }) {
-  return <ScrollView testID={testID} showsVerticalScrollIndicator={false}
+  return <ScrollView ref={scrollRef} testID={testID} showsVerticalScrollIndicator={false}
     contentContainerStyle={[styles.page, { paddingTop: topInset, paddingBottom: bottomInset }]}>
     {children}
   </ScrollView>;

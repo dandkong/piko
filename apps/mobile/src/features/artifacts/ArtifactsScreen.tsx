@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
@@ -13,16 +14,12 @@ import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors, controlSizes, radii } from "../../theme";
 import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
 
-const fileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-const modifiedAt = (value: number) => new Date(value).toLocaleString("zh-CN", {
-  month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
-});
+import { artifactMetadata, artifactSortOptions, DEFAULT_ARTIFACT_SORT, isArtifactSort, sortArtifacts, type ArtifactSort } from "./presentation";
 
-type MenuState = { entry: ArtifactEntry; left: number; top: number };
+const SORT_STORAGE_KEY = "piko.artifacts.sort";
+// Keep rapid selections ordered, including when this screen unmounts and opens again.
+let sortWrites = Promise.resolve();
+type MenuState = { left: number; top: number } & ({ kind: "entry"; entry: ArtifactEntry } | { kind: "sort" });
 
 /** Workspace/artifacts browser; task execution folders remain separate. */
 export function ArtifactsScreen({
@@ -40,13 +37,28 @@ export function ArtifactsScreen({
   const [error, setError] = useState("");
   const [downloadError, setDownloadError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [sort, setSort] = useState<ArtifactSort>(DEFAULT_ARTIFACT_SORT);
+  const [sortReady, setSortReady] = useState(false);
   const [menu, setMenu] = useState<MenuState>();
   const [pendingDelete, setPendingDelete] = useState<ArtifactEntry>();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const deletingRef = useRef(false);
   const anchors = useRef(new Map<string, View>());
+  const sortAnchor = useRef<View>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const { width, height } = useWindowDimensions();
+  const sortedEntries = useMemo(() => sortArtifacts(entries, sort), [entries, sort]);
+  const sortOption = artifactSortOptions.find(option => option.value === sort)!;
+  const listLoading = loading || !sortReady;
+
+  useEffect(() => {
+    let active = true;
+    void sortWrites.then(() => AsyncStorage.getItem(SORT_STORAGE_KEY)).then(value => {
+      if (active && isArtifactSort(value)) setSort(value);
+    }).catch(() => {}).finally(() => { if (active) setSortReady(true); });
+    return () => { active = false; };
+  }, []);
 
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   useDismissOnBack(!!menu, () => setMenu(undefined));
@@ -80,13 +92,32 @@ export function ArtifactsScreen({
       const menuWidth = 176;
       const menuHeight = entry.kind === "file" ? 112 : 64;
       const below = y + h + 4;
-      const top = below + menuHeight <= height - 10 ? below : Math.max(10, y - menuHeight - 4);
+      const top = Math.max(10, below + menuHeight <= height - 10 ? below : y - menuHeight - 4);
       setMenu({
-        entry,
+        kind: "entry", entry,
         left: Math.max(10, Math.min(width - menuWidth - 10, x + w - menuWidth)),
         top,
       });
     });
+  };
+  const openSortMenu = () => {
+    sortAnchor.current?.measureInWindow((x, y, w, h) => {
+      const menuWidth = Math.min(232, width - 20);
+      const menuHeight = artifactSortOptions.length * 48 + 2;
+      const below = y + h + 4;
+      setMenu({
+        kind: "sort",
+        left: Math.max(10, Math.min(width - menuWidth - 10, x + w - menuWidth)),
+        top: Math.max(10, below + menuHeight <= height - 10 ? below : y - menuHeight - 4),
+      });
+    });
+  };
+  const selectSort = (value: ArtifactSort) => {
+    setMenu(undefined);
+    if (sort === value) return;
+    setSort(value);
+    sortWrites = sortWrites.then(() => AsyncStorage.setItem(SORT_STORAGE_KEY, value)).catch(() => {});
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   };
   const download = (entry: ArtifactEntry) => {
     setMenu(undefined);
@@ -118,7 +149,7 @@ export function ArtifactsScreen({
   };
 
   return (
-    <Screen testID="artifacts-screen" topInset={topInset} bottomInset={bottomInset}>
+    <Screen testID="artifacts-screen" topInset={topInset} bottomInset={bottomInset} scrollRef={scrollRef}>
       <View style={styles.header}>
         {segments.length ? (
           <TextButton
@@ -134,39 +165,47 @@ export function ArtifactsScreen({
         ) : (
           <Text style={styles.headerTitle}>产物</Text>
         )}
-        {!!segments.length && (
-          <ScrollView
-            horizontal
-            style={styles.headerCrumbs}
-            contentContainerStyle={styles.breadcrumb}
-            showsHorizontalScrollIndicator={false}
-            testID="artifact-breadcrumb"
-          >
-            {segments.map((segment, index) => {
-              const value = segments.slice(0, index + 1).join("/");
-              const current = index === segments.length - 1;
-              return (
-                <View key={value} style={styles.crumbSegment}>
-                  <ChevronRight size={13} color={colors.muted} />
-                  <TextButton
-                    label={`打开文件夹 ${segment}`}
-                    onPress={() => navigateTo(value)}
-                    variant="plain"
-                    style={styles.crumbHit}
-                    faceStyle={styles.crumbFace}
-                  >
-                    <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
-                  </TextButton>
-                </View>
-              );
-            })}
-          </ScrollView>
-        )}
         <View style={styles.headerSpacer} />
+        <View ref={sortAnchor} collapsable={false}>
+          <TextButton
+            label={`排序：${sortOption.label}`}
+            hint="选择名称或修改时间排序"
+            accessibilityState={{ expanded: menu?.kind === "sort" }}
+            disabled={!sortReady}
+            onPress={openSortMenu}
+            faceStyle={styles.sortFace}
+            testID="artifact-sort-button"
+          >
+            <Text style={styles.sortLabel}>{sortOption.shortLabel}</Text>
+            <ChevronDown size={15} strokeWidth={1.8} color={colors.muted} />
+          </TextButton>
+        </View>
         <IconButton label="刷新产物列表" hint="重新读取当前文件夹" onPress={refresh}>
           <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
         </IconButton>
       </View>
+      {!!segments.length && (
+        <ScrollView
+          horizontal
+          style={styles.headerCrumbs}
+          contentContainerStyle={styles.breadcrumb}
+          showsHorizontalScrollIndicator={false}
+          testID="artifact-breadcrumb"
+        >
+          {segments.map((segment, index) => {
+            const value = segments.slice(0, index + 1).join("/");
+            const current = index === segments.length - 1;
+            return (
+              <View key={value} style={styles.crumbSegment}>
+                <ChevronRight size={13} color={colors.muted} />
+                <TextButton label={`打开文件夹 ${segment}`} onPress={() => navigateTo(value)} variant="plain" style={styles.crumbHit} faceStyle={styles.crumbFace}>
+                  <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
+                </TextButton>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {!!downloadError && <Text accessibilityRole="alert" style={styles.error}>{downloadError}</Text>}
       {!!error && (
@@ -177,13 +216,13 @@ export function ArtifactsScreen({
           </TextButton>
         </View>
       )}
-      {loading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.muted} />}
-      {!loading && !error && !entries.length && (
+      {listLoading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.muted} />}
+      {!listLoading && !error && !entries.length && (
         <Text style={styles.empty}>
           {path ? "这个文件夹还没有内容。" : "产物文件夹还没有内容。你可以让 Piko 把文件保存到 artifacts/。"}
         </Text>
       )}
-      {!loading && !error && entries.map(entry => (
+      {!listLoading && !error && sortedEntries.map(entry => (
         <TactileListRow key={entry.path} surfaceVariant="card" style={styles.rowCard}>
           <TactilePressable
             accessibilityRole="button"
@@ -203,7 +242,7 @@ export function ArtifactsScreen({
             <View style={styles.rowInfo}>
               <Text numberOfLines={1} style={styles.name}>{entry.name}</Text>
               <Text numberOfLines={1} style={styles.meta}>
-                {entry.kind === "directory" ? "文件夹" : fileSize(entry.size ?? 0)} · {modifiedAt(entry.modifiedAt)}
+                {artifactMetadata(entry)}
               </Text>
             </View>
           </TactilePressable>
@@ -216,7 +255,7 @@ export function ArtifactsScreen({
               accessibilityRole="button"
               accessibilityLabel={`更多操作：${entry.kind === "directory" ? "文件夹" : "文件"} ${entry.name}`}
               accessibilityHint={entry.kind === "file" ? "下载或删除" : "删除文件夹"}
-              accessibilityState={{ expanded: menu?.entry.path === entry.path }}
+              accessibilityState={{ expanded: menu?.kind === "entry" && menu.entry.path === entry.path }}
               onPress={() => openMenu(entry)}
               scaleTo={0.94}
               style={styles.menuHit}
@@ -252,7 +291,24 @@ export function ArtifactsScreen({
             error={deleteError}
             testID="artifact-delete-dialog"
           />
-        ) : menu ? (
+        ) : menu?.kind === "sort" ? (
+          <AnchoredMenuContent
+            left={menu.left}
+            top={menu.top}
+            width={Math.min(232, width - 20)}
+            closeLabel="关闭排序菜单"
+            label="产物排序"
+            onClose={() => setMenu(undefined)}
+            testID="artifact-sort-menu"
+            actions={artifactSortOptions.map(option => ({
+              id: option.value,
+              label: option.label,
+              accessibilityLabel: option.label,
+              selected: option.value === sort,
+              onPress: () => selectSort(option.value),
+            }))}
+          />
+        ) : menu?.kind === "entry" ? (
           <AnchoredMenuContent
             left={menu.left}
             top={menu.top}
@@ -289,7 +345,9 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   headerTitleHit: { flexShrink: 0 },
   headerTitleFace: { minHeight: 44, paddingHorizontal: 0, paddingVertical: 0, justifyContent: "flex-start" },
-  headerCrumbs: { minWidth: 0, flexShrink: 1 },
+  headerCrumbs: { minWidth: 0, flexGrow: 0 },
+  sortFace: { minHeight: 44, paddingHorizontal: 10, gap: 4 },
+  sortLabel: { color: colors.text, fontSize: 13 },
   headerSpacer: { flex: 1, minWidth: 0 },
   breadcrumb: { alignItems: "center", minHeight: 36, paddingRight: 4 },
   crumbSegment: { flexDirection: "row", alignItems: "center", gap: 1 },

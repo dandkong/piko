@@ -123,7 +123,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `TextButton` | `apps/mobile/src/components/TextButton.tsx` | 文本动作，统一内边距、按压和焦点 |
 | `Screen` / `ScreenCard` | `apps/mobile/src/components/Screen.tsx` | 非聊天页统一滚动节奏、标题和卡片表面 |
 | `TextInputDialog` / `TextInputDialogContent` | `apps/mobile/src/components/TextInputDialog.tsx` | 通用受控单行文本弹窗；已有 Modal 的菜单切换复用 Content，不叠加原生 Modal |
-| `AnchoredMenuContent` | `apps/mobile/src/components/AnchoredMenu.tsx` | 旁聊和产物列表的锚定式行菜单，共用菜单项交互与视觉 |
+| `AnchoredMenuContent` | `apps/mobile/src/components/AnchoredMenu.tsx` | 旁聊、产物操作与排序的锚定菜单；所有项提供 selected 时为单选菜单 |
 | `ConfirmationDialogContent` | `apps/mobile/src/components/ConfirmationDialog.tsx` | 旁聊和产物删除共用二次确认内容；只能通过取消/确认按钮关闭 |
 | `FloatingPanel` | `apps/mobile/src/components/FloatingPanel.tsx` | 设置、产物预览等盖在主界面上的上浮面板；统一遮罩、圆角、动效与滚动内容，可点关闭按钮或遮罩关闭；headerLeading 放内部返回，contentKey 只重置滚动内容 |
 | `ContentPreviewPanel` | `apps/mobile/src/components/ContentPreviewPanel.tsx` | 产物、帖子和执行结果共用的 Markdown/文本阅读器；标题可选，功能层各自加载内容与提供业务 fallback |
@@ -165,7 +165,8 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 头像下方实时活动共用各端现有状态栏：整轮开始显示“工作中”，工具开始时在 3–5 字标签或“调用工具”前显示与 TG 一致的工具 emoji，正文输出显示“正在回复”。标签保留到下一活动覆盖，整轮结束后清空，不因工具/单条回复完成而回退。活动由服务端投影，加载、上传、停止和重连状态仍优先；聊天区不显示额外等待气泡，也不新增工具气泡。
 - 所有平台共享同一套尺寸和状态，不为平台单独发明按钮样式。
 - 设置、产物预览和执行结果等上浮覆盖面板共用 `FloatingPanel`，标题可选；无标题时不渲染空标题占位，关闭按钮仍右对齐保留。可点面板内关闭按钮或遮罩关闭；Escape 和系统返回不自动关闭。
-- 旁聊和产物行菜单共用 `AnchoredMenuContent`，菜单可由外点、Escape 或系统返回关闭。破坏性操作共用 `ConfirmationDialogContent`，只由取消/确认按钮关闭，执行中禁用关闭和重复提交。
+- 旁聊和产物行菜单共用 `AnchoredMenuContent`，菜单可由外点、Escape 或系统返回关闭。单选菜单沿用白底、细边框、轻阴影和 18px 圆角，各项至少 48px 高；当前项显示勾选与中性浅灰整行背景，由浮层外框裁切，不使用独立圆角选中块。单选菜单暴露 radiogroup/radio 与 checked 状态，选择立即应用并关闭；触发按钮显示当前选择、暴露 expanded 状态且有效命中区域至少 44×44。
+- 产物排序在标题栏使用一个文本下拉按钮，与刷新并列；不另设升降序按钮。菜单列名称升序/降序、修改时间最新/最早在前；目录面包屑独立一行，避免窄屏挤占排序与刷新。破坏性操作共用 `ConfirmationDialogContent`，只由取消/确认按钮关闭，执行中禁用关闭和重复提交。
 - 主聊和旁聊共用滚动规则：只挂载当前可见聊天的列表，切走卸载；刷新、首次进入和切回会话都从最新位置开始，不恢复旧阅读位置。初始跟随持续覆盖历史加载、顶栏状态和输入区尺寸就绪，会话数据、草稿、附件和请求身份仍按会话保留。
 - “是否贴底”和“是否跟随”独立：离底超过 2 个布局单位才显示“最新消息”箭头；发送本地新消息或点击箭头恢复跟随，手动滚回底部同样恢复。用户拖动、上滚或键盘翻页解除跟随；历史快照、等待提示、正文增长与布局变化本身不能解除或重新抢回跟随。处于阅读位置时，恢复观察的 busy 快照不触发置底。
 - Web 按真实滚动容器的尺寸同步置底，监听包含 padding 的完整内容与视口尺寸；自动跟随和点击箭头都直接定位，不启动会保留旧目标的浏览器平滑滚动。箭头依据实际位置隐藏，不用点击或发送状态假装已到达。加载更早历史保留可见消息的位置。原生使用列表尺寸/滚动事件，用户拖动时不自动校正。聊天输入区与底部导航仍共用一份实测高度，供列表留白、渐隐和按钮定位使用。

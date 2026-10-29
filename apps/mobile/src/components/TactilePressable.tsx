@@ -116,12 +116,28 @@ export function TactilePressable({
     transform: [{ scale: scale.value }],
   }));
 
+  const effectiveAccessibilityState = { ...accessibilityState, disabled: isDisabled, ...(selected === undefined ? {} : { selected }) };
+
   return (
     <Pressable
       accessibilityHint={accessibilityHint}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}
-      accessibilityState={{ ...accessibilityState, disabled: isDisabled, ...(selected === undefined ? {} : { selected }) }}
+      accessibilityState={effectiveAccessibilityState}
+      {...(Platform.OS === "web" ? {
+        "aria-checked": effectiveAccessibilityState.checked,
+        "aria-selected": effectiveAccessibilityState.selected,
+        "aria-expanded": effectiveAccessibilityState.expanded,
+        "aria-busy": effectiveAccessibilityState.busy,
+        "aria-disabled": effectiveAccessibilityState.disabled,
+        // React Native Web handles Enter for radios, but Space only for buttons.
+        onKeyDown: (event: { key: string; repeat: boolean; preventDefault: () => void }) => {
+          if (accessibilityRole === "radio" && !isDisabled && (event.key === " " || event.key === "Spacebar")) {
+            event.preventDefault();
+            if (!event.repeat) onPress?.();
+          }
+        },
+      } : {})}
       disabled={isDisabled}
       hitSlop={hitSlop}
       onBlur={() => setFocusVisible(false)}
