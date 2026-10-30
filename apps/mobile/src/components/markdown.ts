@@ -27,3 +27,12 @@ export function isContentLink(url: string): boolean {
     return false;
   }
 }
+
+export function isMarkdownImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && !!parsed.hostname && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}

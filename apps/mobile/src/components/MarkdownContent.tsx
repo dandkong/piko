@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { Image, Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import Markdown, {
   AstRenderer,
   renderRules as defaultRules,
@@ -9,10 +9,12 @@ import Markdown, {
   type RenderRules,
 } from "react-native-markdown-renderer";
 import { colors, radii, stateColors } from "../theme";
-import { contentMarkdown, isContentLink, prepareMarkdown } from "./markdown";
+import { contentMarkdown, isContentLink, isMarkdownImageUrl, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
 const MIN_TABLE_CELL_WIDTH = 160;
+const MAX_MARKDOWN_IMAGE_HEIGHT = 640;
+const DEFAULT_IMAGE_ASPECT_RATIO = 3 / 2;
 const body = { color: colors.text, fontSize: 16, lineHeight: 24 };
 
 function firstTableRow(node: ASTNode): ASTNode | undefined {
@@ -85,8 +87,38 @@ const ui = StyleSheet.create({
   headerText: { ...body, fontWeight: "600" },
   link: { color: colors.blueDark, textDecorationLine: "underline" },
   imageAlt: { ...body, color: colors.muted },
+  image: { alignSelf: "center", marginVertical: 4 },
   error: { fontSize: 13, color: colors.danger, marginTop: 8 },
 });
+
+function MarkdownImage({ source, alt, availableWidth }: { source?: string; alt: string; availableWidth: number }) {
+  const [aspectRatio, setAspectRatio] = useState(DEFAULT_IMAGE_ASPECT_RATIO);
+  const [failed, setFailed] = useState(false);
+  if (!source || failed || availableWidth <= 0) {
+    return <Text style={ui.imageAlt}>{`[${alt || "Image"}]`}</Text>;
+  }
+
+  const width = Math.min(availableWidth, MAX_MARKDOWN_IMAGE_HEIGHT * aspectRatio);
+  const height = width / aspectRatio;
+  return <Image
+    testID="markdown-image"
+    source={{ uri: source }}
+    accessible={!!alt}
+    accessibilityLabel={alt || undefined}
+    resizeMode="contain"
+    style={[ui.image, { width, height, maxWidth: availableWidth }]}
+    onLoad={event => {
+      const nativeEvent = event.nativeEvent as unknown as {
+        source?: { width?: number; height?: number };
+        target?: { naturalWidth?: number; naturalHeight?: number };
+      };
+      const imageWidth = nativeEvent.source?.width ?? nativeEvent.target?.naturalWidth;
+      const imageHeight = nativeEvent.source?.height ?? nativeEvent.target?.naturalHeight;
+      if (imageWidth && imageHeight) setAspectRatio(imageWidth / imageHeight);
+    }}
+    onError={() => setFailed(true)}
+  />;
+}
 
 export const MarkdownContent = memo(function MarkdownContent({ content, streaming = false }: {
   content: string;
@@ -158,8 +190,15 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       td: cell,
       link,
       blocklink: link,
-      // Images remain descriptive text until attachment/media handling is available.
-      image: (node) => <Text key={node.key} style={ui.imageAlt}>[{node.attributes.alt || node.content || "Image"}]</Text>,
+      image: (node) => {
+        const source = isMarkdownImageUrl(node.attributes.src) ? node.attributes.src : undefined;
+        return <MarkdownImage
+          key={`${node.key}:${source ?? "blocked"}`}
+          source={source}
+          alt={node.attributes.alt || node.content || "Image"}
+          availableWidth={containerWidth}
+        />;
+      },
     };
   }, [containerWidth]);
   const renderMarkdown = useMemo(() => {
