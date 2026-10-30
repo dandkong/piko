@@ -9,9 +9,9 @@ export async function postRequest(request: Request, runtime: ChatRuntime, maxByt
   const parts = url.pathname.split("/").slice(3);
   if (request.method === "POST" && parts.length === 1 && parts[0] === "generations") {
     const input = await readObjectBody(request, maxBytes);
-    if (!isRequestId(input.requestId) || (input.topic !== undefined && (typeof input.topic !== "string" || input.topic.length > 4096)) ||
-      Object.keys(input).some(key => !["requestId", "topic"].includes(key))) throw new PostError("需要 requestId 和可选的 topic。");
-    return json(await (await runtime.posts()).generate({ requestId: input.requestId, ...(typeof input.topic === "string" && { topic: input.topic }) }), 202);
+    if (!isRequestId(input.requestId) || Object.keys(input).some(key => key !== "requestId"))
+      throw new PostError("需要 requestId，且不接受其他字段。");
+    return json(await (await runtime.posts()).generate({ requestId: input.requestId }), 202);
   }
   if (parts[0] === "generations" && parts[1]) {
     const id = parts[1]; postId(id);

@@ -8,4 +8,4 @@ export type PostGeneration = {
   postId?: string;
   reason?: string;
 };
-export type GeneratePost = { requestId: string; topic?: string };
+export type GeneratePost = { requestId: string };

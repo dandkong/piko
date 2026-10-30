@@ -1,6 +1,6 @@
 # 个性化帖子
 
-Posts 是私有阅读流：结合用户背景与近期交流，发现值得读的信息并解释其意义，不是持续向用户提建议的栏目。范围包括技术、游戏、社会、生活、音乐及少量视野拓展。
+Posts 是私有阅读流：结合用户背景与近期交流，发现值得读的信息并解释其意义，不是持续向用户提建议的栏目。
 
 ## 第一版行为
 
@@ -18,7 +18,7 @@ Posts 是私有阅读流：结合用户背景与近期交流，发现值得读�
 不读取旁聊、隐藏内部输入、工具日志、思考或附件正文。不 fork 主聊天；研究子会话从空白开始，显式接收上下文。
 
 - 复用 `sessions_search`、`sessions_history`：Posts 的宿主绑定允许读取 root 主聊天的可见历史，包括生成期间新增的消息；不允许读取旁聊，其他后台仍不能查询 root。
-- `posts_search` 按关键词检索已发布标题、正文和理由，`posts_read` 读取指定帖子；仅主聊天和有效 Posts 研究角色可用。
+- Posts 研究 Agent 收到最近 10 篇帖子摘要，不提供全量 `posts_search`；必要时可用 `posts_read` 查看这 10 篇的全文。主聊天仍可用 `posts_search` 按关键词检索已发布帖子。
 - 复用 `web_search`、`web_extract`，按需使用，不强制调用顺序或来源字段。
 - 研究角色无任意文件读写、shell、任务管理、委派和模型配置工具；不自动注入技能和全局指导文件。
 
@@ -36,7 +36,7 @@ Posts 是私有阅读流：结合用户背景与近期交流，发现值得读�
 
 | 接口 | 行为 |
 | --- | --- |
-| `POST /api/posts/generations` | `{ requestId, topic? }`，启动生成，返回 202 和生成引用 |
+| `POST /api/posts/generations` | `{ requestId }`，由 Agent 自行选题并启动生成，返回 202 和生成引用 |
 | `GET /api/posts/generations/:id` | 原生状态，完成时返回 postId，跳过时返回理由 |
 | `POST /api/posts/generations/:id/stop` | 请求取消并返回当前状态 |
 | `GET /api/posts?before=&limit=` | 倒序卡片分页，默认 20、最多 50 条 |

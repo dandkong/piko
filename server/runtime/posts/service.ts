@@ -14,7 +14,7 @@ export class PostsService {
   read(id: string) { return this.harness.commit(tx => readPost(tx, id), ctx); }
 
   async generate(command: GeneratePost): Promise<PostGeneration> {
-    const topic = command.topic?.trim() || null;
+    const topic = null;
     const hash = createHash("sha256").update(JSON.stringify({ topic })).digest("hex");
     const existing = await this.harness.commit(async tx => {
       const receipt = await tx.doc(PostRequests, ROOT_CONVERSATION_ID, command.requestId, null);
