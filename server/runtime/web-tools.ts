@@ -50,7 +50,7 @@ export function createWebTools(env: Record<string, string | undefined>, options:
   });
   const extract = defineTool({
     name: "web_extract",
-    description: "Extract the main readable content from a specific HTTP/HTTPS URL as Markdown, up to 10,000 characters.",
+    description: "Extract the main readable content from a specific HTTP/HTTPS URL as Markdown. Piko adds no character cap; Durable applies its default tool-output limit. Providers may impose their own limits.",
     parameters: Type.Object({
       url: Type.String({ minLength: 1, description: "URL of the web page to extract. HTTP and HTTPS only." }),
       provider: extractProviderSchema,
@@ -59,7 +59,12 @@ export function createWebTools(env: Record<string, string | undefined>, options:
     execute: async (args, _api, context) => {
       const page = await extractWebPage(args, { fetch: options.fetch, providers: extractProviders }, context.abortSignal);
       return { output: [{ type: "text", text: extractedPageMarkdown(page) }],
-        details: JSON.parse(JSON.stringify({ url: page.url, page })) };
+        details: JSON.parse(JSON.stringify({ url: page.url, page: {
+          url: page.url, finalUrl: page.finalUrl, provider: page.provider, title: page.title,
+          byline: page.byline, siteName: page.siteName, excerpt: page.excerpt,
+          contentLength: page.contentLength, readabilityLength: page.readabilityLength,
+          contentType: page.contentType,
+        } })) };
     },
   });
   const settings = options.settings ?? defaultPikoFile.tools;

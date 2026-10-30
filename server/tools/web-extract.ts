@@ -10,22 +10,15 @@ import { codePointLength, sliceCodePoints } from "../text";
 export type ExtractedPage = {
   url: string; finalUrl?: string; provider: WebExtractProviderId; title: string; byline?: string | null;
   siteName?: string | null; excerpt?: string | null; contentLength: number; readabilityLength?: number;
-  content: string; truncated: boolean; contentType?: string;
+  content: string; contentType?: string;
 };
 export type ExtractArguments = { url: string; provider?: WebExtractProviderId };
 export type ExtractOptions = { fetch?: WebFetch; timeoutMs?: number; providers?: ProviderRegistry };
-const WEB_EXTRACT_MAX_CHARS = 10_000;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 function boundedExcerpt(value: string | null | undefined): string | undefined {
   const excerpt = value?.trim();
   return excerpt ? sliceCodePoints(excerpt, EXTERNAL_SOURCE_EXCERPT_MAX_CHARS) : undefined;
-}
-function truncate(value: string, maxChars: number): { text: string; truncated: boolean } {
-  if (codePointLength(value) <= maxChars) return { text: value, truncated: false };
-  const marker = `\n\n[...truncated to ${maxChars} chars]`;
-  const contentLimit = Math.max(0, maxChars - codePointLength(marker));
-  return { text: `${sliceCodePoints(value, contentLimit)}${marker}`, truncated: true };
 }
 function normalizeWhitespace(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -61,7 +54,7 @@ function extractFallback(document: Document): { title: string; content: string }
 }
 
 /** Local Readability → Markdown extraction. HTML is parsed only: scripts and subresources are not enabled. */
-async function extractBuiltIn(url: string, maxChars: number, options: ExtractOptions, signal?: AbortSignal): Promise<ExtractedPage> {
+async function extractBuiltIn(url: string, options: ExtractOptions, signal?: AbortSignal): Promise<ExtractedPage> {
   const fetched = await fetchHtml(url, options, signal);
   signal?.throwIfAborted();
   const dom = new JSDOM(fetched.html, { url: fetched.finalUrl || url });
@@ -81,40 +74,37 @@ async function extractBuiltIn(url: string, maxChars: number, options: ExtractOpt
       title = fallback.title; content = fallback.content;
     }
     signal?.throwIfAborted();
-    const result = truncate(content, maxChars);
     return { url, finalUrl: fetched.finalUrl, provider: "built-in", title, byline, siteName,
       excerpt: boundedExcerpt(excerpt),
-      content: result.text, contentLength: codePointLength(result.text), readabilityLength,
-      truncated: result.truncated, contentType: fetched.contentType };
+      content, contentLength: codePointLength(content), readabilityLength,
+      contentType: fetched.contentType };
   } finally { dom.window.close(); }
 }
 
-async function extractRemote(url: string, providerId: Exclude<WebExtractProviderId, "built-in">, maxChars: number,
+async function extractRemote(url: string, providerId: Exclude<WebExtractProviderId, "built-in">,
   options: ExtractOptions, signal?: AbortSignal): Promise<ExtractedPage> {
   const provider = options.providers?.get(providerId);
   if (!provider) throw new WebRequestError(`${providerId} is not configured on this backend.`);
-  const result = await provider.extract(url, maxChars, signal);
+  const result = await provider.extract(url, signal);
   const content = normalizeWhitespace(result.content);
   if (!content) throw new WebRequestError(`${providerId} returned no readable content.`);
-  const bounded = truncate(content, maxChars);
   const excerpt = result.excerpt?.trim();
   const finalUrl = httpUrl(result.finalUrl) ?? url;
   return { url, finalUrl, provider: providerId,
     title: result.title?.trim() || "Untitled page", byline: result.byline?.trim() || undefined,
     siteName: result.siteName?.trim() || undefined,
     excerpt: boundedExcerpt(excerpt),
-    content: bounded.text, contentLength: codePointLength(bounded.text), truncated: bounded.truncated,
-    contentType: "text/markdown" };
+    content, contentLength: codePointLength(content), contentType: "text/markdown" };
 }
 
 /** A call executes exactly one provider; the Agent may select another on a later call. */
 export async function extractWebPage(args: ExtractArguments, options: ExtractOptions = {}, signal?: AbortSignal): Promise<ExtractedPage> {
   signal?.throwIfAborted();
-  const url = normalizeUrl(args.url); const maxChars = WEB_EXTRACT_MAX_CHARS;
+  const url = normalizeUrl(args.url);
   const provider = args.provider ?? "built-in";
   return provider === "built-in"
-    ? extractBuiltIn(url, maxChars, options, signal)
-    : extractRemote(url, provider, maxChars, options, signal);
+    ? extractBuiltIn(url, options, signal)
+    : extractRemote(url, provider, options, signal);
 }
 
 export function extractedPageMarkdown(page: ExtractedPage): string {
@@ -123,7 +113,6 @@ export function extractedPageMarkdown(page: ExtractedPage): string {
   if (page.siteName) lines.push(`Site: ${page.siteName}`);
   if (page.byline) lines.push(`Byline: ${page.byline}`);
   if (page.excerpt) lines.push(`Excerpt: ${page.excerpt}`);
-  if (page.truncated) lines.push("Content: truncated");
   lines.push("", "---", "", page.content || "No readable content extracted.");
   return lines.join("\n");
 }

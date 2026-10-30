@@ -7,7 +7,7 @@ const DEEPSEEK_FETCH_URL = "https://api.deepseek.com/v1/tools/fetch";
 export function createDeepSeekExtractProvider(options: ProviderRequestOptions): WebExtractProvider {
   return {
     id: "deepseek",
-    async extract(url, _maxChars, signal) {
+    async extract(url, signal) {
       const response = await requestJson("deepseek", DEEPSEEK_FETCH_URL, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },

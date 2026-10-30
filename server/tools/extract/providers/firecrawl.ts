@@ -7,7 +7,7 @@ const FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape";
 export function createFirecrawlProvider(options: ProviderRequestOptions): WebExtractProvider {
   return {
     id: "firecrawl",
-    async extract(url, _maxChars, signal) {
+    async extract(url, signal) {
       const response = await requestJson("firecrawl", FIRECRAWL_SCRAPE_URL, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },

@@ -15,7 +15,7 @@ export type ProviderResult = {
 };
 export type WebExtractProvider = {
   id: RemoteWebExtractProviderId;
-  extract(url: string, maxChars: number, signal?: AbortSignal): Promise<ProviderResult>;
+  extract(url: string, signal?: AbortSignal): Promise<ProviderResult>;
 };
 export type ProviderRequestOptions = {
   apiKey: string;

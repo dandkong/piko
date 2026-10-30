@@ -7,11 +7,11 @@ const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
 export function createExaExtractProvider(options: ProviderRequestOptions): WebExtractProvider {
   return {
     id: "exa",
-    async extract(url, maxChars, signal) {
+    async extract(url, signal) {
       const response = await requestJson("exa", EXA_CONTENTS_URL, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },
-        body: JSON.stringify({ ids: [url], text: { maxCharacters: maxChars } }),
+        body: JSON.stringify({ ids: [url], text: {} }),
       }, options, signal);
       const results = response.results;
       if (!Array.isArray(results)) throw new WebRequestError("Exa returned no page results.");
