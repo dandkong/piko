@@ -105,7 +105,6 @@ export function AppShell({
                 height={footerHeight + FOOTER_FADE_OVERHANG}
               />
               <AgentHeader
-                wide={wide}
                 topInset={insets.top}
                 status={status}
                 menuOpen={!!menuOpen}
@@ -126,7 +125,6 @@ export function AppShell({
                   {composer}
                 </View>
                 <BottomTabs
-                  wide={wide}
                   activeTab={activeTab}
                   onTabChange={onTabChange}
                 />
@@ -175,14 +173,12 @@ function Mascot({ size }: { size: number }) {
 }
 
 function AgentHeader({
-  wide,
   topInset,
   status,
   menuOpen,
   onOpenMenu,
   onHeightChange,
 }: {
-  wide: boolean;
   topInset: number;
   status: string;
   menuOpen: boolean;
@@ -205,7 +201,7 @@ function AgentHeader({
         <Menu size={20} strokeWidth={1.8} color={colors.text} />
       </IconButton>
       <View pointerEvents="none" style={styles.identity}>
-        <Mascot size={wide ? 58 : 49} />
+        <Mascot size={50} />
         <View testID="chat-identity-capsule" style={styles.identityCapsule}>
           <Text style={styles.name}>Piko</Text>
           {status ? (
@@ -225,11 +221,9 @@ function AgentHeader({
 }
 
 function BottomTabs({
-  wide,
   activeTab,
   onTabChange,
 }: {
-  wide: boolean;
   activeTab: AppTab;
   onTabChange?: (tab: AppTab) => void;
 }) {
@@ -251,7 +245,7 @@ function BottomTabs({
     transform: [{ translateX: position.value * tabWidth }],
   }));
   return (
-    <View style={[styles.tabBarWrap, { paddingBottom: wide ? 22 : 7 }]}>
+    <View style={[styles.tabBarWrap, { paddingBottom: 22 }]}>
       <View
         style={styles.tabBar}
         onLayout={({ nativeEvent: { layout } }) =>

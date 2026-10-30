@@ -108,7 +108,7 @@ export function NavigationDrawer({
           <SideChatList {...sideChatActions} />
         </ScrollView>
 
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.footer}>
           <IconButton
             hint="打开设置"
             label="设置"
@@ -231,6 +231,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 18,
     paddingTop: 12,
-    paddingBottom: 16,
+    paddingBottom: 22,
   },
 });
