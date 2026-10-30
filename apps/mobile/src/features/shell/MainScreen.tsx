@@ -183,6 +183,7 @@ export function MainScreen() {
         onArtifactPreview={setArtifactPreview}
         onPostPreview={setPostPreview}
         onExecutionPreview={setExecutionPreview}
+        onToast={showToast}
       />
       {[undefined, ...visited].map((id) => (
         <ChatConversation
@@ -239,6 +240,7 @@ function TabPanel({
   onArtifactPreview,
   onPostPreview,
   onExecutionPreview,
+  onToast,
 }: {
   tab: AppTab;
   topInset: number;
@@ -246,12 +248,13 @@ function TabPanel({
   onArtifactPreview: (file: ArtifactEntry) => void;
   onPostPreview: (post: PostSummary) => void;
   onExecutionPreview: (target: TaskExecutionPreviewTarget) => void;
+  onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
   switch (tab) {
     case "Chat":
       return null;
     case "Posts":
-      return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} />;
+      return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} onToast={onToast} />;
     case "Artifacts":
       return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
     case "Tasks":

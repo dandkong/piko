@@ -1,27 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
-import { RefreshCw } from "lucide-react-native";
+import { RefreshCw, Sparkles } from "lucide-react-native";
 import type { PostSummary } from "../../../../../shared/posts";
 import { IconButton } from "../../components/IconButton";
 import { Screen, ScreenHeader } from "../../components/Screen";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { colors, radii } from "../../theme";
-import { loadPosts } from "./api";
+import type { FeedbackTone } from "../../components/FeedbackToast";
+import { generatePost, loadPosts } from "./api";
 
 const dayTime = (value: number) => new Date(value).toLocaleString("zh-CN", {
   month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
 });
 
 /** Private posts use the same card surface and reader as the rest of the app. */
-export function PostsScreen({ topInset, bottomInset, onPreview }: {
+export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
   topInset: number; bottomInset: number; onPreview: (post: PostSummary) => void;
+  onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [before, setBefore] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const request = useRef<AbortController | undefined>(undefined);
+  const generationRequest = useRef<AbortController | undefined>(undefined);
+  const [generating, setGenerating] = useState(false);
   const moreBefore = useRef<string | undefined>(undefined);
   const refresh = useCallback(async (more = false) => {
     if (more && request.current) return;
@@ -40,16 +44,58 @@ export function PostsScreen({ topInset, bottomInset, onPreview }: {
       if (!controller.signal.aborted) { setLoading(false); request.current = undefined; }
     }
   }, []);
+  const startGeneration = useCallback(async () => {
+    if (generationRequest.current) return;
+    const controller = new AbortController();
+    generationRequest.current = controller;
+    setGenerating(true);
+    try {
+      const result = await generatePost(controller.signal);
+      if (controller.signal.aborted) return;
+      if (result.status === "completed") {
+        await refresh();
+        onToast("帖子已生成。", "info");
+      } else if (result.status === "skipped") {
+        onToast(result.reason || "本次没有生成新帖子。", "info");
+      } else if (result.status === "failed" || result.status === "stopped") {
+        onToast(result.reason || "帖子生成未完成。", "error");
+      } else {
+        onToast("已开始生成帖子，完成后可刷新查看。", "info");
+      }
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        const message = cause instanceof Error ? cause.message : "启动帖子生成失败，请重试。";
+        onToast(message, message.includes("已有帖子正在生成") ? "warning" : "error");
+      }
+    } finally {
+      if (generationRequest.current === controller) {
+        generationRequest.current = undefined;
+        setGenerating(false);
+      }
+    }
+  }, [onToast, refresh]);
   useEffect(() => {
     void refresh();
     const subscription = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
-    return () => { request.current?.abort(); subscription.remove(); };
+    return () => {
+      request.current?.abort();
+      generationRequest.current?.abort();
+      generationRequest.current = undefined;
+      subscription.remove();
+    };
   }, [refresh]);
 
   return <Screen testID="posts-screen" topInset={topInset} bottomInset={bottomInset}>
-    <ScreenHeader title="帖子" action={<IconButton label="刷新帖子列表" onPress={() => void refresh()}>
-      <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
-    </IconButton>} />
+    <ScreenHeader title="帖子" action={<View style={styles.headerActions}>
+      <IconButton label="生成帖子" hint="根据当前上下文生成一篇帖子" onPress={() => void startGeneration()}
+        disabled={generating} accessibilityState={{ busy: generating }} testID="generate-post-button" variant="primary">
+        {generating ? <ActivityIndicator size="small" color={colors.text} />
+          : <Sparkles size={19} strokeWidth={1.8} color={colors.text} />}
+      </IconButton>
+      <IconButton label="刷新帖子列表" onPress={() => void refresh()} testID="refresh-posts-button">
+        <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
+      </IconButton>
+    </View>} />
     {error ? <View style={styles.notice}>
       <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
       <TextButton label="重试读取帖子" onPress={() => void refresh()}><Text style={styles.button}>重试</Text></TextButton>
@@ -74,6 +120,7 @@ export function PostsScreen({ topInset, bottomInset, onPreview }: {
   </Screen>;
 }
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   card: { alignItems: "stretch", padding: 16, gap: 10, borderRadius: radii.card },
   date: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   title: { color: colors.text, fontSize: 17, lineHeight: 24, fontWeight: "600" },
