@@ -27,7 +27,6 @@ export function FloatingPanel({
   onClose,
   closeLabel,
   children,
-  headerActions,
   footer,
   overlay,
   contentKey,
@@ -40,7 +39,6 @@ export function FloatingPanel({
   onClose: () => void;
   closeLabel: string;
   children?: ReactNode;
-  headerActions?: ReactNode;
   footer?: ReactNode;
   /** A same-size layer that covers the panel content without replacing it. */
   overlay?: ReactNode;
@@ -104,7 +102,6 @@ export function FloatingPanel({
           <View style={[styles.header, !title && styles.untitledHeader]}>
             {title ? <Text numberOfLines={1} style={styles.title}>{title}</Text> : null}
             <View style={styles.headerActions}>
-              {headerActions}
               <IconButton label={closeLabel} onPress={onClose}>
                 <X size={20} strokeWidth={1.8} color={colors.text} />
               </IconButton>

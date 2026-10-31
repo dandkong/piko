@@ -144,7 +144,7 @@ export function MainScreen() {
             onClose={() => setSettingsOpen(false)}
             onToast={showToast}
           />
-          <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} onDeleted={onPostDeleted} />
+          <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} />
           <TaskExecutionPreviewPanel target={executionPreview} onClose={() => setExecutionPreview(undefined)} />
           <ArtifactPreviewPanel
             file={artifactPreview}
