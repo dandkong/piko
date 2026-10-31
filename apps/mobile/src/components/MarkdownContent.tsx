@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Image, Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import Markdown, {
   AstRenderer,
@@ -94,6 +94,16 @@ const ui = StyleSheet.create({
 function MarkdownImage({ source, alt, availableWidth }: { source?: string; alt: string; availableWidth: number }) {
   const [aspectRatio, setAspectRatio] = useState(DEFAULT_IMAGE_ASPECT_RATIO);
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!source) return;
+    let active = true;
+    // Use the cross-platform API: Web's delayed load event may no longer have
+    // a target, and its nativeEvent does not contain React Native's source size.
+    Image.getSize(source, (width, height) => {
+      if (active && width > 0 && height > 0) setAspectRatio(width / height);
+    }, () => {}); // The displayed Image owns the error/alt-text fallback.
+    return () => { active = false; };
+  }, [source]);
   if (!source || failed || availableWidth <= 0) {
     return <Text style={ui.imageAlt}>{`[${alt || "Image"}]`}</Text>;
   }
@@ -107,15 +117,6 @@ function MarkdownImage({ source, alt, availableWidth }: { source?: string; alt: 
     accessibilityLabel={alt || undefined}
     resizeMode="contain"
     style={[ui.image, { width, height, maxWidth: availableWidth }]}
-    onLoad={event => {
-      const nativeEvent = event.nativeEvent as unknown as {
-        source?: { width?: number; height?: number };
-        target?: { naturalWidth?: number; naturalHeight?: number };
-      };
-      const imageWidth = nativeEvent.source?.width ?? nativeEvent.target?.naturalWidth;
-      const imageHeight = nativeEvent.source?.height ?? nativeEvent.target?.naturalHeight;
-      if (imageWidth && imageHeight) setAspectRatio(imageWidth / imageHeight);
-    }}
     onError={() => setFailed(true)}
   />;
 }
