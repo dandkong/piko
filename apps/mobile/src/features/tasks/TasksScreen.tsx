@@ -21,6 +21,7 @@ import { TextButton } from "../../components/TextButton";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import type { TaskExecutionPreviewTarget } from "./TaskExecutionPreviewPanel";
 import { useTasks } from "./useTasks";
+import { ErrorNotice } from "../../components/ErrorNotice";
 
 type FinishedExecution = TaskExecution & {
   status: Exclude<TaskExecution["status"], "running">;
@@ -48,10 +49,12 @@ export function TasksScreen({
   topInset,
   bottomInset,
   onPreviewExecution,
+  onToast,
 }: {
   topInset: number;
   bottomInset: number;
   onPreviewExecution: (target: TaskExecutionPreviewTarget) => void;
+  onToast: (message: string) => void;
 }) {
   const {
     tasks,
@@ -65,9 +68,11 @@ export function TasksScreen({
     toggleArchive,
     runTask,
     deleteTask,
-    clearError,
+    deleteError,
+    clearDeleteError,
+    reload,
     toggleSection,
-  } = useTasks();
+  } = useTasks(onToast);
   const [menu, setMenu] = useState<MenuState>();
   const [pendingDelete, setPendingDelete] = useState<AssistantTask>();
   const [deleting, setDeleting] = useState(false);
@@ -85,7 +90,7 @@ export function TasksScreen({
   });
   const confirmDelete = (task: AssistantTask) => {
     setMenu(undefined);
-    clearError();
+    clearDeleteError();
     setPendingDelete(task);
   };
   const remove = async () => {
@@ -192,11 +197,8 @@ export function TasksScreen({
           ) : undefined
         }
       />
-      {!!error && !pendingDelete && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      )}
+      {!!error && <ErrorNotice message={error} actionLabel="重新加载任务" onAction={reload} busy={loading}
+        testID="tasks-load-error" />}
       {loading && (
         <ActivityIndicator
           accessibilityLabel="正在加载"
@@ -204,11 +206,11 @@ export function TasksScreen({
         />
       )}
 
-      {!selected && !loading && (
+      {!selected && (!loading || tasks.length > 0) && (
         <>
           {renderSection("active", "进行中", activeTasks)}
           {renderSection("archived", "已归档", archivedTasks)}
-          {!activeTasks.length && !archivedTasks.length && (
+          {!error && !activeTasks.length && !archivedTasks.length && (
             <Text style={styles.empty}>
               还没有任务。在聊天里告诉 Piko 你想让它做什么。
             </Text>
@@ -302,13 +304,13 @@ export function TasksScreen({
           <ConfirmationDialogContent
             title={`删除「${pendingDelete.title}」？`}
             message="将永久删除任务定义、全部执行记录和专属工作区，无法恢复。"
-            onCancel={() => setPendingDelete(undefined)}
+            onCancel={() => { setPendingDelete(undefined); clearDeleteError(); }}
             onConfirm={() => void remove()}
             confirmLabel="删除"
             cancelLabel="取消"
             busyLabel="删除中…"
             busy={deleting || busy}
-            error={error}
+            error={deleteError}
             testID="task-delete-dialog"
           />
         ) : menu ? (

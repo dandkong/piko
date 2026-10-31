@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { FloatingPanel } from "../../components/FloatingPanel";
-import { TextButton } from "../../components/TextButton";
 import { colors } from "../../theme";
 import type { FeedbackTone } from "../../components/FeedbackToast";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
@@ -9,6 +8,8 @@ import type { ModelSettingsSnapshot, SaveModelSettings } from "../../../../../sh
 import { saveModelSettings } from "./api";
 import { SettingsModelsEditor } from "./SettingsModelsEditor";
 import { useSettings } from "./useSettings";
+import { ErrorNotice } from "../../components/ErrorNotice";
+import { errorMessage } from "../../api/errors";
 
 /** The app edits only model role choices; all provider, tool and environment settings are deployment-managed. */
 export function SettingsSheet({ open, onClose, onToast }: {
@@ -16,6 +17,9 @@ export function SettingsSheet({ open, onClose, onToast }: {
   onClose: () => void;
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
+  const [saveError, setSaveError] = useState("");
+  const openRef = useRef(open);
+  openRef.current = open;
   const writesPending = useRef(false);
   const writer = useRef(false);
   const queuedDraft = useRef<Omit<SaveModelSettings, "baseRevision"> | undefined>(undefined);
@@ -56,7 +60,9 @@ export function SettingsSheet({ open, onClose, onToast }: {
           queuedDraft.current = undefined;
           desired.current = confirmed.current;
           if (confirmed.current) setData(confirmed.current);
-          onToast(cause instanceof Error ? cause.message : "保存模型设置失败，请重试。", "error");
+          const message = `${errorMessage(cause, "暂未确认模型设置保存结果。")} 界面先恢复上次确认的选择，请重新读取核对。`;
+          setSaveError(message);
+          if (!openRef.current) onToast(message, "error");
           refreshAfterFailure = true;
           break;
         }
@@ -88,6 +94,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
     queuedDraft.current = draft;
     setData(next);
     setError("");
+    setSaveError("");
     void flush();
   }, [data, flush, setData, setError]);
 
@@ -104,11 +111,9 @@ export function SettingsSheet({ open, onClose, onToast }: {
         <Text style={{ color: colors.muted, fontSize: 12 }}>正在读取…</Text>
       </View>
     ) : null}
-    {open && error ? <View style={{ marginHorizontal: 20, marginBottom: 12, gap: 8 }}>
-      <Text accessibilityRole="alert" style={{ color: colors.danger, fontSize: 14, lineHeight: 21 }}>{error}</Text>
-      <TextButton label="重试读取模型设置" onPress={() => void refresh()} disabled={loading}>
-        <Text style={{ color: colors.text, fontSize: 14, fontWeight: "500" }}>重试</Text>
-      </TextButton>
+    {open && (saveError || error) ? <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+      <ErrorNotice message={saveError || error} actionLabel="重新读取模型设置" busy={loading}
+        onAction={() => void refresh().then(ok => { if (ok) setSaveError(""); })} testID="settings-error-notice" />
     </View> : null}
     {open && data ? <SettingsModelsEditor
       snapshot={data}

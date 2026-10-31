@@ -8,8 +8,9 @@ import { IconButton } from "../../components/IconButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors } from "../../theme";
 import { deletePost } from "./api";
+import { errorMessage } from "../../api/errors";
 
-/** Card and reader share one menu/confirmation flow, never stack native Modals. */
+/** Card menu and confirmation share one Modal. The reader has no delete actions. */
 export function PostActions({ post, onDeleted, inRow = false }: {
   post: PostSummary; onDeleted: (id: string) => void; inRow?: boolean;
 }) {
@@ -30,7 +31,7 @@ export function PostActions({ post, onDeleted, inRow = false }: {
       setConfirm(false);
       onDeleted(post.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "删除失败，请重试。");
+      setError(errorMessage(cause, "暂未确认删除结果，请重试原操作。"));
     } finally {
       deleting.current = false; setBusy(false);
     }

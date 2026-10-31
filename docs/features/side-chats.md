@@ -14,6 +14,8 @@
 - 共享工具依然使用服务进程本机权限，不构成文件沙箱；不提供任务管理工具/自动记忆整理，不代表 write/edit/bash 无法触及对应文件。
 - 删除是不可恢复的操作，需要确认弹窗；先封住输入和内部回报，停止并等待旁聊及所属后台执行结束，再清理当前存储和缓存。删除当前旁聊后回到主聊天。旁聊不提供归档或恢复 API；保存任务的归档/恢复不受影响。
 
+列表加载错误与创建/标题生成/删除错误分开：读取可原位重试，加载/失败时不显示空态；删除失败只留在确认框，取消后不在抽屉背景报第二次错。详见[错误反馈与恢复](error-feedback.md)。
+
 ## 运行时
 
 `server/runtime/pi.ts` 持有唯一 Storage/Harness 和服务生命周期，`bootstrap.ts` 在 resume 前完成恢复和策略刷新；`side-chat-service.ts` 管旁聊创建、标题生成和删除规则。Reporter 按原生 task 的 conversationId 回到发起会话的接纳线。`conversation-session.ts` 是单会话 facade，`conversation-control.ts` 管输入、停止、维护、删除及内部报告，`conversation-view.ts` 管历史投影和事件观察；控制器不关闭 Harness，观察 Store 不停止或销毁控制器。

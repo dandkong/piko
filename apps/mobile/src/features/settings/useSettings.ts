@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { loadSettings } from "./api";
+import { errorMessage } from "../../api/errors";
 
 /** Fetch only while open, cancel superseded reads, and retain the last snapshot on refresh failure. */
 export function useSettings(open: boolean, writesPending: { current: boolean }) {
@@ -29,11 +30,12 @@ export function useSettings(open: boolean, writesPending: { current: boolean }) 
     try {
       const value = await loadSettings(controller.signal);
       if (enabled.current && !writesPending.current && readGeneration.current === generation &&
-        pending.current === controller && !controller.signal.aborted) setData(value);
+        pending.current === controller && !controller.signal.aborted) { setData(value); return true; }
+      return false;
     } catch (cause) {
       if (enabled.current && readGeneration.current === generation && pending.current === controller &&
         (!controller.signal.aborted || timedOut))
-        setError(timedOut ? "读取设置超时，请重试。" : cause instanceof Error ? cause.message : "无法读取设置，请检查连接后重试。");
+        setError(timedOut ? "读取设置超时，请重试。" : errorMessage(cause, "无法读取设置，请检查连接后重试。"));
     } finally {
       clearTimeout(timer);
       if (pending.current === controller) {

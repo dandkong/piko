@@ -1,23 +1,45 @@
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
+import { ApiError, RequestTimeoutError } from "./errors";
 
 const DEFAULT_API_URL = Platform.OS === "web" && !__DEV__ ? ""
   : Platform.OS === "android" ? "http://10.0.2.2:8787" : "http://127.0.0.1:8787";
 export const API_URL = (process.env.EXPO_PUBLIC_PIKO_API_URL || DEFAULT_API_URL).replace(/\/$/, "");
 
-export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${API_URL}${path}`, init);
+// Keep cancellation and the deadline alive until readJson consumes the body, not just the headers.
+const pendingResponses = new WeakMap<Response, { close: () => void; timedOut: () => boolean }>();
+export async function apiFetch(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
+  const { timeoutMs = 15_000, signal, ...options } = init;
+  // SSE and message submission own their lifetime; preserve their original signal through body reads.
+  if (timeoutMs === 0) return fetch(`${API_URL}${path}`, { ...options, signal });
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  let timedOut = false;
+  const close = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
+  const timer = setTimeout(() => { timedOut = true; abort(); close(); }, timeoutMs);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    const response = await fetch(`${API_URL}${path}`, { ...options, signal: controller.signal });
+    if (response.status === 204 || response.status === 205 || options.method === "HEAD") close();
+    else pendingResponses.set(response, { close, timedOut: () => timedOut });
+    return response;
+  } catch (error) { close(); if (timedOut) throw new RequestTimeoutError(); throw error; }
 }
 
 export async function readJson<T>(response: Response): Promise<T> {
-  const payload: unknown = await response.json();
+  let payload: unknown;
+  const pending = pendingResponses.get(response);
+  try { payload = await response.json(); }
+  catch (error) {
+    if (pending?.timedOut()) throw new RequestTimeoutError();
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ApiError("服务响应异常，请稍后重试。", response.status >= 400 ? response.status : 502);
+  } finally { pending?.close(); pendingResponses.delete(response); }
   if (!response.ok) {
-    const message =
-      typeof payload === "object" && payload !== null && "error" in payload &&
-        typeof payload.error === "string"
-        ? payload.error
-        : `Request failed (${response.status})`;
-    throw new Error(message);
+    const value = payload as { error?: unknown; code?: unknown } | null;
+    throw new ApiError(typeof value?.error === "string" ? value.error : "请求未完成，请稍后重试。",
+      response.status, typeof value?.code === "string" ? value.code : undefined);
   }
   return payload as T;
 }

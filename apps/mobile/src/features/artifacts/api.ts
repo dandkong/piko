@@ -14,7 +14,7 @@ export async function loadArtifactPreview(path: string, signal?: AbortSignal): P
 }
 
 export async function deleteArtifact(path: string): Promise<ArtifactDeletion> {
-  return readJson<ArtifactDeletion>(await apiFetch(`/api/artifacts${pathQuery(path)}`, { method: "DELETE" }));
+  return readJson<ArtifactDeletion>(await apiFetch(`/api/artifacts${pathQuery(path)}`, { method: "DELETE", timeoutMs: 120_000 }));
 }
 
 export function artifactDownloadUrl(path: string) {

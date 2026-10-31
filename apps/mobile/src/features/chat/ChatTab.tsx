@@ -5,13 +5,13 @@ import {
   View,
   type ListRenderItemInfo,
 } from "react-native";
-import { ArrowDown, RotateCcw } from "lucide-react-native";
+import { ArrowDown } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { colors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
-import { TextButton } from "../../components/TextButton";
 import { MarkdownContent } from "../../components/MarkdownContent";
+import { ErrorNotice } from "../../components/ErrorNotice";
 import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
 import { styles } from "./styles";
@@ -26,7 +26,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
   headerHeight: number;
   footerHeight: number;
 }) {
-  const { messages, messageKey, loading, busy, submitting, error, retry, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
+  const { messages, messageKey, loading, submitting, error, errorTone, retryLabel, retryBusy, retry, dismissError, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const scroll = useChatScroll({
     loading,
     submitting,
@@ -106,21 +106,9 @@ export function ChatTab({ headerHeight, footerHeight }: {
           ListFooterComponent={(
             <View>
               {!!error && (
-                <View style={styles.errorNotice}>
-                  <Text style={styles.errorText}>{error}</Text>
-                  {messages.length > 0 && (
-                    <TextButton
-                      disabled={busy}
-                      label="重试"
-                      onPress={retry}
-                      style={styles.retryButtonLayout}
-                      variant="plain"
-                    >
-                      <RotateCcw size={14} color={colors.text} />
-                      <Text style={styles.retryButtonText}>重试</Text>
-                    </TextButton>
-                  )}
-                </View>
+                <View style={{ marginVertical: 10 }}><ErrorNotice message={error} tone={errorTone}
+                  actionLabel={retryLabel} onAction={() => void retry()} busy={retryBusy} onDismiss={dismissError}
+                  testID="chat-error-notice" /></View>
               )}
             </View>
           )}

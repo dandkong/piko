@@ -16,6 +16,7 @@ import { TaskExecutionPreviewPanel, type TaskExecutionPreviewTarget } from "../t
 import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
 import type { FeedbackTone, FeedbackToastMessage } from "../../components/FeedbackToast";
+import { errorMessage } from "../../api/errors";
 
 /** One app shell; keyed chat owners retain data and drafts, not hidden lists. */
 export function MainScreen() {
@@ -54,7 +55,7 @@ export function MainScreen() {
   const showToast = useCallback((message: string, tone: FeedbackTone = "error") => {
     clearTimeout(toastTimer.current);
     setToastMessage({ message, tone });
-    toastTimer.current = setTimeout(() => setToastMessage(undefined), 2800);
+    toastTimer.current = setTimeout(() => setToastMessage(undefined), 5000);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   const selectTab = (value: AppTab) => {
@@ -82,8 +83,8 @@ export function MainScreen() {
     try {
       await sides.generateTitle(id);
       return true;
-    } catch {
-      showToast("标题生成失败，请重试。");
+    } catch (cause) {
+      showToast(errorMessage(cause, "标题生成失败，请重试。"));
       return false;
     }
   }, [sides.generateTitle, showToast]);
@@ -124,12 +125,15 @@ export function MainScreen() {
           onClose={() => setMenuOpen(false)}
           sideChats={sides.items}
           sideChatBusy={sides.busy}
+          sideChatLoading={sides.loading}
           sideChatError={sides.error}
           onRefreshSideChats={() => void sides.refresh()}
           onSelectSideChat={selectChat}
           onCreateSideChat={async () => {
-            const value = await sides.create();
-            if (value) selectChat(value.id);
+            try {
+              const value = await sides.create();
+              if (value) selectChat(value.id);
+            } catch (cause) { showToast(errorMessage(cause, "暂未确认旁聊创建结果，请重试原操作。")); }
           }}
           onGenerateSideChatTitle={generateSideChatTitle}
           onDeleteSideChat={removeChat}
@@ -268,8 +272,8 @@ function TabPanel({
       return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} onToast={onToast}
         revision={postsRevision} onDeleted={onPostDeleted} />;
     case "Artifacts":
-      return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
+      return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} onToast={onToast} />;
     case "Tasks":
-      return <TasksScreen topInset={topInset} bottomInset={bottomInset} onPreviewExecution={onExecutionPreview} />;
+      return <TasksScreen topInset={topInset} bottomInset={bottomInset} onPreviewExecution={onExecutionPreview} onToast={onToast} />;
   }
 }

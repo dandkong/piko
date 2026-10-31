@@ -5,30 +5,26 @@ import type {
   GenerateSideChatTitle,
 } from "../../../../../shared/side-chats";
 import { apiFetch, readJson } from "../../api/client";
+import { errorMessage } from "../../api/errors";
 import { createUuidV4 } from "../../utils/uuid";
 
 async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST", timeoutMs = 10000): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
     const response = await apiFetch(path, {
         method,
-        signal: controller.signal,
+        timeoutMs,
         ...(value !== undefined && {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(value),
         }),
       });
     if (response.status === 204) return undefined as T;
-    return await readJson<T>(response);
-  } finally {
-    clearTimeout(timer);
-  }
+    return readJson<T>(response);
 }
 export function useSideChats(open: boolean) {
   const [items, setItems] = useState<SideChat[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const locked = useRef(false);
   const version = useRef(0);
   const mounted = useRef(true);
@@ -42,6 +38,7 @@ export function useSideChats(open: boolean) {
   }, []);
   const refresh = useCallback(async () => {
     const current = ++version.current;
+    setLoading(true);
     try {
       const value = await request<SideChat[]>("/api/side-chats");
       if (mounted.current && current === version.current) {
@@ -50,9 +47,9 @@ export function useSideChats(open: boolean) {
       }
     } catch (cause) {
       if (mounted.current && current === version.current)
-        setError(
-          cause instanceof Error ? cause.message : "无法加载旁聊。",
-        );
+        setError(errorMessage(cause, "无法加载旁聊。"));
+    } finally {
+      if (mounted.current && current === version.current) setLoading(false);
     }
   }, []);
   useEffect(() => {
@@ -70,12 +67,13 @@ export function useSideChats(open: boolean) {
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
-    setError("");
+    setLoading(false);
     version.current++;
     try {
       const value = await operation();
       version.current++;
       if (mounted.current) {
+        setLoading(false);
         if ("deletedId" in value) setItems(current => current.filter(item => item.id !== value.deletedId));
         else {
           const chat = value as SideChat;
@@ -83,11 +81,6 @@ export function useSideChats(open: boolean) {
         }
       }
       return value;
-    } catch (cause) {
-      if (mounted.current)
-        setError(
-          cause instanceof Error ? cause.message : "无法保存旁聊。",
-        );
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -104,6 +97,7 @@ export function useSideChats(open: boolean) {
     if (mounted.current) {
       // Invalidate older list reads so a stale refresh cannot revert the generated title.
       version.current++;
+      setLoading(false);
       setItems(current => current.map(item => item.id === result.id ? result : item));
     }
     return result;
@@ -111,6 +105,7 @@ export function useSideChats(open: boolean) {
   return {
     items,
     busy,
+    loading,
     error,
     refresh,
     create: () =>
@@ -122,7 +117,7 @@ export function useSideChats(open: boolean) {
         return result;
       }),
     remove: (id: string) => mutate(async () => {
-      await request<void>(`/api/side-chats/${encodeURIComponent(id)}`, undefined, "DELETE");
+      await request<void>(`/api/side-chats/${encodeURIComponent(id)}`, undefined, "DELETE", 120000);
       return { deletedId: id };
     }),
     generateTitle,

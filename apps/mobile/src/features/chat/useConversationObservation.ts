@@ -46,12 +46,13 @@ export function useConversationObservation(
         const value = await checkHealth();
         if (!active) return;
         setModelReady(value.modelReady);
-        setConnected(value.modelReady);
+        setConnected(true);
         checkedHealth = true;
       } catch {
         if (active) {
           checkedHealth = false;
           setConnected(false);
+          onError("暂时无法连接服务，请重新加载。");
         }
       }
     };

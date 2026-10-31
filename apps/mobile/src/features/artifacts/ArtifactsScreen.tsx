@@ -13,6 +13,8 @@ import { TextButton } from "../../components/TextButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors, controlSizes, radii } from "../../theme";
 import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
+import { ErrorNotice } from "../../components/ErrorNotice";
+import { errorMessage } from "../../api/errors";
 
 import { artifactMetadata, artifactSortOptions, DEFAULT_ARTIFACT_SORT, isArtifactSort, sortArtifacts, type ArtifactSort } from "./presentation";
 
@@ -26,16 +28,18 @@ export function ArtifactsScreen({
   topInset,
   bottomInset,
   onPreview,
+  onToast,
 }: {
   topInset: number;
   bottomInset: number;
   onPreview: (file: ArtifactEntry) => void;
+  onToast: (message: string) => void;
 }) {
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<ArtifactEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [downloadError, setDownloadError] = useState("");
+  const loadedPath = useRef<string | undefined>(undefined);
   const [revision, setRevision] = useState(0);
   const [sort, setSort] = useState<ArtifactSort>(DEFAULT_ARTIFACT_SORT);
   const [sortReady, setSortReady] = useState(false);
@@ -49,7 +53,7 @@ export function ArtifactsScreen({
   const scrollRef = useRef<ScrollView>(null);
   const { width, height } = useWindowDimensions();
   const sortedEntries = useMemo(() => sortArtifacts(entries, sort), [entries, sort]);
-  const listLoading = loading || !sortReady;
+  const listLoading = loading && !entries.length || !sortReady;
 
   useEffect(() => {
     let active = true;
@@ -66,14 +70,14 @@ export function ArtifactsScreen({
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    setDownloadError("");
+    if (loadedPath.current !== path) setEntries([]);
     void loadArtifacts(path, controller.signal).then(result => {
       if (controller.signal.aborted) return;
+      loadedPath.current = path;
       setEntries(result.entries);
-    }).catch(() => {
+    }).catch(cause => {
       if (controller.signal.aborted) return;
-      setEntries([]);
-      setError("无法读取产物文件夹，请检查连接后重试。");
+      setError(errorMessage(cause, loadedPath.current === path ? "暂时未能更新文件夹，当前保留上次加载的内容。" : "无法读取产物文件夹，请重新加载。"));
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
@@ -120,9 +124,8 @@ export function ArtifactsScreen({
   };
   const download = (entry: ArtifactEntry) => {
     setMenu(undefined);
-    setDownloadError("");
     void Linking.openURL(artifactDownloadUrl(entry.path)).catch(() => {
-      setDownloadError("无法开始下载，请检查连接后重试。");
+      onToast("无法开始下载，请检查连接后重试。");
     });
   };
   const confirmDelete = (entry: ArtifactEntry) => {
@@ -139,8 +142,8 @@ export function ArtifactsScreen({
       await deleteArtifact(pendingDelete.path);
       setPendingDelete(undefined);
       refresh();
-    } catch {
-      setDeleteError("删除失败，请重试。");
+    } catch (cause) {
+      setDeleteError(errorMessage(cause, "暂未确认删除结果，请重试原操作。"));
     } finally {
       deletingRef.current = false;
       setDeleting(false);
@@ -203,22 +206,15 @@ export function ArtifactsScreen({
         </IconButton>
       </View>
 
-      {!!downloadError && <Text accessibilityRole="alert" style={styles.error}>{downloadError}</Text>}
-      {!!error && (
-        <View style={styles.notice}>
-          <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
-          <TextButton label="重试读取产物" onPress={refresh}>
-            <Text style={styles.buttonText}>重试</Text>
-          </TextButton>
-        </View>
-      )}
+      {!!error && <ErrorNotice message={error} actionLabel="重新加载文件夹" onAction={refresh} busy={loading}
+        testID="artifacts-load-error" />}
       {listLoading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.muted} />}
       {!listLoading && !error && !entries.length && (
         <Text style={styles.empty}>
           {path ? "这个文件夹还没有内容。" : "产物文件夹还没有内容。你可以让 Piko 把文件保存到 artifacts/。"}
         </Text>
       )}
-      {!listLoading && !error && sortedEntries.map(entry => (
+      {!listLoading && sortedEntries.map(entry => (
         <TactileListRow key={entry.path} surfaceVariant="card" style={styles.rowCard}>
           <TactilePressable
             accessibilityRole="button"

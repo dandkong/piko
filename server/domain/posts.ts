@@ -2,7 +2,7 @@ import type { PostContent } from "../../shared/posts";
 import { PREVIEW_EXCERPT_MAX_CHARS } from "./text-limits";
 
 export class PostError extends Error {
-  constructor(message: string, readonly status = 422) { super(message); }
+  constructor(message: string, readonly status = 422, readonly code = "post_request_failed") { super(message); }
 }
 
 export function postId(value: string): number {

@@ -35,11 +35,6 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
-  retryButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
   timeDivider: {
     alignSelf: "center",
     color: colors.muted,
@@ -64,21 +59,6 @@ export const styles = StyleSheet.create({
     maxWidth: "95%",
     backgroundColor: stateColors.soft,
     borderBottomLeftRadius: radii.control,
-  },
-  errorNotice: {
-    padding: 16,
-    borderRadius: radii.control,
-    backgroundColor: colors.dangerSurface,
-    marginVertical: 10,
-    gap: 12,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  retryButtonLayout: {
-    alignSelf: "flex-start",
   },
   latestButtonOverlay: {
     position: "absolute",

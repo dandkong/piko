@@ -49,7 +49,7 @@ export class PostsService {
       let cursor;
       do {
         const page = await tx.scanTasks({ conversationId: ROOT_CONVERSATION_ID, kind: POSTS_GENERATION_KIND }, 100, cursor);
-        if (page.items.some(row => row.state.status !== "terminal")) throw new PostError("已有帖子正在生成，请稍后重试。", 409);
+        if (page.items.some(row => row.state.status !== "terminal")) throw new PostError("已有帖子正在生成，请稍后重试。", 409, "post_generation_busy");
         cursor = page.next;
       } while (cursor);
       const taskId = await tx.createTask(this.task, { topic },

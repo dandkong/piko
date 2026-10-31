@@ -2,22 +2,23 @@ import { Trash2, MoreVertical, RefreshCw } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { DEFAULT_SIDE_CHAT_TITLE, type SideChat } from "../../../../../shared/side-chats";
-import { TextButton } from "../../components/TextButton";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { colors, controlSizes, radii } from "../../theme";
+import { ErrorNotice } from "../../components/ErrorNotice";
+import { errorMessage } from "../../api/errors";
 
 export type SideChatActions = {
-  sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatError?: string;
+  sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatLoading?: boolean; sideChatError?: string;
   onRefreshSideChats?: () => void; onSelectSideChat?: (id: string) => void;
   onCreateSideChat?: () => Promise<void>;
   onGenerateSideChatTitle?: (id: string) => Promise<boolean>;
   onDeleteSideChat?: (id: string) => Promise<boolean>;
 };
-export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatError,
+export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatLoading, sideChatError,
   onRefreshSideChats, onSelectSideChat, onGenerateSideChatTitle, onDeleteSideChat }: SideChatActions) {
   const [menu, setMenu] = useState<{ chat: SideChat; left: number; top: number }>();
   const [deleting, setDeleting] = useState<SideChat>();
@@ -42,18 +43,16 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     try {
       if (await onDeleteSideChat?.(deleting.id)) setDeleting(undefined);
       else setDeleteError("删除失败，请重试。");
-    } catch { setDeleteError("删除失败，请重试。"); }
+    } catch (cause) { setDeleteError(errorMessage(cause, "暂未确认删除结果，请重试原操作。")); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const openMenu = (chat: SideChat) => anchors.current.get(chat.id)?.measureInWindow((x, y, w, h) => {
     setMenu({ chat, left: Math.max(10, Math.min(width - 186, x + w - 176)), top: Math.max(10, Math.min(height - 126, y + h + 4)) });
   });
   return <View style={styles.list}>
-    {sideChatError ? <View>
-      <Text accessibilityLiveRegion="polite" style={styles.error}>{sideChatError}</Text>
-      <TextButton label="重新加载旁聊" disabled={sideChatBusy} onPress={onRefreshSideChats}><Text style={styles.muted}>重试</Text></TextButton>
-    </View> : null}
-    {!visible.length && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
+    {sideChatError ? <ErrorNotice message={sideChatError} actionLabel="重新加载旁聊" onAction={onRefreshSideChats}
+      busy={sideChatBusy || sideChatLoading} testID="side-chat-load-error" /> : null}
+    {!visible.length && !sideChatError && !sideChatLoading && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
     {visible.map(chat => {
       const title = chat.title.trim() || DEFAULT_SIDE_CHAT_TITLE;
       const active = activeSideChatId === chat.id;

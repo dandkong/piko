@@ -129,7 +129,8 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `ContentPreviewPanel` | `apps/mobile/src/components/ContentPreviewPanel.tsx` | 产物、帖子和执行结果共用的 Markdown/文本阅读器；标题可选，功能层各自加载内容与提供业务 fallback |
 | `MarkdownContent` | `apps/mobile/src/components/MarkdownContent.tsx` | 聊天和阅读器共用的 Markdown 渲染；仅流式内容进行显示补全，HTTPS 图片按宽高比自适应，非 HTTPS 或加载失败显示替代文字 |
 | `AppScrollView` | `apps/mobile/src/components/AppScrollView.tsx` | 需要显示滚动条的纵向滚动共用指示器配置；用于长内容和可滚动菜单 |
-| `FeedbackToast` | `apps/mobile/src/components/FeedbackToast.tsx` | 应用级短暂反馈，统一承载 info / warning / error |
+| `FeedbackToast` | `apps/mobile/src/components/FeedbackToast.tsx` | 应用级 5 秒短暂反馈，统一承载 info / warning / error |
+| `ErrorNotice` | `apps/mobile/src/components/ErrorNotice.tsx` | 所属页面、会话或预览的持续提示；具体恢复动作、可选关闭与 error / info 语义 |
 | 令牌 | `apps/mobile/src/theme.ts` | `colors`、`radii`、`controlSizes`、`motion`、`stateColors` |
 
 组件表现：
@@ -138,7 +139,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 普通可展开项（设置供应商行等）是 disclosure row：整行透明、hover/按压显示浅灰，展开不是选中态，读屏暴露 `expanded`。
 - 模型思考强度使用横向单选分段控件；轨道透明并使用现有细分割线描边，选中项使用现有中性灰，单项高度至少 44px，显示中文等级名称。
 - 文件预览和可滚动菜单共用 `AppScrollView`；滚动条采用平台默认样式，只有内容超出可视区域时才显示，并在平台支持时保持显示。共享 Markdown 表格至少铺满内容容器宽度，各列等宽且单列最小 160dp；列数过多时表格保留最小列宽并横向滚动。
-- 操作后的短暂 info / warning / error 使用应用级 `FeedbackToast`；成功保存不提示。需要持续处理或重试的阻塞错误留在对应操作上下文中。
+- 操作后的短暂 info / warning / error 使用应用级 `FeedbackToast`；成功保存不提示。需要持续处理或重试的错误留在所属上下文，复用 `ErrorNotice` 或确认框/表单错误。同一失败只设一个主要反馈位置；列表失败不同时显示空态，恢复按钮写明具体动作，不用通用“重试”替代重新执行确认。规则与限制见[错误反馈与恢复](features/error-feedback.md)。
 - 旁聊、任务和产物等含多个操作的列表行用 `TactileListRow`；`surfaceVariant="compact"` 用于紧凑导航行，`surfaceVariant="card"` 用于带边框卡片行。行面独占 hover/按压/选中背景，行内按钮保留自己的命中区但不重复铺背景。
 - 内容卡片和复合卡片行用白底、细分割线和 18px 圆角；模型下拉触发框用 12px 控件圆角，选项菜单用 18px 卡片圆角，选中背景铺满整行并由外框裁切；浮层面板用 30px 顶角。
 - 自己发送的聊天气泡使用现有浅蓝，助手气泡使用中性灰；聊天输入区用 30px 圆角，聚焦使用较浅的现有强分割线描边，并显示同色细键盘焦点环。
@@ -174,7 +175,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 旁聊删除必须先显示确认弹窗，说明不可恢复及不清理附件、工作区文件和历史备份。取消不发送 DELETE，提交期间禁用重复点击和关闭，失败保留确认框与重试；删除当前旁聊返回主会话。在线 deleted 通知或旧旁聊 404 会清空对应客户端状态并停止重连，不能把“断线重试”用于复活已删除会话。
 - 聊天输入区与底部导航是共用容器，其实测高度只保存一份，供消息列表留白、底部渐隐和“最新消息”按钮共用，不按会话缓存；切换会话但容器尺寸不变时，不能依赖新的 onLayout 通知补高度。
 - 触屏命中区域不足 44×44 时，用 `hitSlop` 扩大，不改变视觉尺寸。
-- 模型设置立即反映选择，后台按修订号串行保存；保存期间仍可继续修改或关闭面板，失败时恢复到最近一次已保存状态并显示全局 Toast。
+- 模型设置立即反映选择，后台按修订号串行保存；保存期间仍可继续修改或关闭面板。失败先恢复上次确认的选择：面板仍开着时在内部说明并提供重新读取，已关闭时才显示全局 Toast。响应丢失不能据此宣称服务端未保存。
 
 ## 9. 可访问性
 

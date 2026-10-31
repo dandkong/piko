@@ -1,55 +1,46 @@
 import { useCallback, useRef, useState, type RefObject } from "react";
-import {
-  MAX_ATTACHMENTS,
-  type MessageAttachment,
-} from "../../../../../shared/chat";
-import { uploadAttachment } from "./api";
+import { MAX_ATTACHMENTS, type MessageAttachment } from "../../../../../shared/chat";
+import { errorMessage } from "../../api/errors";
+import { uploadAttachment, type PickedFile } from "./api";
 import { pickAttachments } from "./pickAttachments";
 
 export type PendingAttachment = MessageAttachment & { name: string };
 
-/** Per-chat pending uploads. Stored attachment identities remain server-owned. */
-export function useChatAttachments(
-  loading: boolean,
-  sending: RefObject<boolean>,
-  mounted: RefObject<boolean>,
-  onError: (error: string) => void,
-) {
+/** Completed uploads stay attached; retries only upload the remaining selected files. */
+export function useChatAttachments(loading: boolean, sending: RefObject<boolean>, mounted: RefObject<boolean>, onError: (error: string) => void) {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const locked = useRef(false);
-  const attach = useCallback(async () => {
+  const remaining = useRef<PickedFile[]>([]);
+  const run = useCallback(async (retry: boolean) => {
     if (sending.current || loading || locked.current) return;
     locked.current = true;
     onError("");
     try {
-      const files = await pickAttachments();
-      if (!mounted.current || !files.length) return;
+      if (!retry || !remaining.current.length) {
+        const files = await pickAttachments();
+        if (!mounted.current || !files.length) return;
+        const room = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+        if (files.length > room) onError(`每条消息最多附加 ${MAX_ATTACHMENTS} 个文件。`);
+        remaining.current = files.slice(0, room);
+      }
       setAttaching(true);
-      const room = Math.max(0, MAX_ATTACHMENTS - attachments.length);
-      if (files.length > room)
-        onError(`Up to ${MAX_ATTACHMENTS} attachments per message.`);
-      for (const file of files.slice(0, room)) {
+      while (remaining.current.length) {
+        const file = remaining.current[0]!;
         const stored = await uploadAttachment(file);
         if (!mounted.current) return;
-        setAttachments((current) =>
-          current.length >= MAX_ATTACHMENTS
-            ? current
-            : [...current, { ...stored, name: file.name }],
-        );
+        remaining.current.shift();
+        setAttachments(current => current.length >= MAX_ATTACHMENTS ? current : [...current, { ...stored, name: file.name }]);
       }
     } catch (cause) {
-      if (mounted.current)
-        onError(
-          cause instanceof Error ? cause.message : "无法附加文件。",
-        );
+      if (mounted.current) onError(errorMessage(cause, "附件上传未完成，已成功上传的文件仍保留。"));
     } finally {
       locked.current = false;
       if (mounted.current) setAttaching(false);
     }
   }, [attachments.length, loading, sending, mounted, onError]);
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((item) => item.id !== id));
-  }, []);
-  return { attachments, setAttachments, attaching, attach, removeAttachment };
+  const attach = useCallback(() => run(false), [run]);
+  const retryUpload = useCallback(() => run(true), [run]);
+  const removeAttachment = useCallback((id: string) => setAttachments(current => current.filter(item => item.id !== id)), []);
+  return { attachments, setAttachments, attaching, attach, retryUpload, removeAttachment };
 }

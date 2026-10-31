@@ -7,6 +7,7 @@ import type {
   AssistantTaskDetail,
 } from "../../../../../shared/tasks";
 import { loadTask, loadTasks, sendCommand } from "./api";
+import { errorMessage } from "../../api/errors";
 
 type Command = AssistantTaskCommand extends infer T
   ? T extends AssistantTaskCommand
@@ -15,13 +16,14 @@ type Command = AssistantTaskCommand extends infer T
   : never;
 
 /** Task-page query and command state; request identities survive uncertain retries. */
-export function useTasks() {
+export function useTasks(onToast: (message: string) => void) {
   const [tasks, setTasks] = useState<AssistantTask[]>([]);
   const [selected, setSelected] = useState<string>();
   const [detail, setDetail] = useState<AssistantTaskDetail>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [openSections, setOpenSections] = useState({
     active: true,
@@ -44,6 +46,7 @@ export function useTasks() {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    setLoading(true);
     void (async () => {
       try {
         const [list, current] = await Promise.all([
@@ -54,8 +57,8 @@ export function useTasks() {
         setTasks(list.tasks);
         setDetail(current);
         setError("");
-      } catch {
-        if (active) setError("暂时加载不了任务。");
+      } catch (cause) {
+        if (active) setError(errorMessage(cause, "暂时加载不了任务。已有内容仍保留，请重新加载。"));
       } finally {
         if (active) setLoading(false);
       }
@@ -82,7 +85,7 @@ export function useTasks() {
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
-    setError("");
+    if (body.action === "delete") setDeleteError("");
     const signature = JSON.stringify(body);
     if (pending.current?.signature !== signature)
       pending.current = {
@@ -96,8 +99,11 @@ export function useTasks() {
       setRefresh((count) => count + 1);
       return true;
     } catch (failure) {
-      if (mounted.current)
-        setError(failure instanceof Error ? failure.message : "操作没有成功，请稍后再试。");
+      if (mounted.current) {
+        const message = errorMessage(failure, "暂未确认操作结果，请重试原操作。");
+        if (body.action === "delete") setDeleteError(message);
+        else onToast(message);
+      }
       return false;
     } finally {
       sending.current = false;
@@ -133,7 +139,9 @@ export function useTasks() {
     toggleArchive,
     runTask,
     deleteTask,
-    clearError: () => setError(""),
+    deleteError,
+    clearDeleteError: () => setDeleteError(""),
+    reload: () => setRefresh(count => count + 1),
     toggleSection,
   };
 }

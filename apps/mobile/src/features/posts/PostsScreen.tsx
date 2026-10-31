@@ -10,7 +10,10 @@ import { PostActions } from "./PostActions";
 import { TextButton } from "../../components/TextButton";
 import { colors, radii } from "../../theme";
 import type { FeedbackTone } from "../../components/FeedbackToast";
-import { generatePost, loadPosts } from "./api";
+import { generatePost, loadPosts, loadPostGeneration } from "./api";
+import { ErrorNotice } from "../../components/ErrorNotice";
+import { ApiError, errorMessage } from "../../api/errors";
+import { createUuidV4 } from "../../utils/uuid";
 
 const dayTime = (value: number) => new Date(value).toLocaleString("zh-CN", {
   month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
@@ -26,6 +29,10 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
   const [before, setBefore] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [moreError, setMoreError] = useState("");
+  const [generationNotice, setGenerationNotice] = useState<{ message: string; tone: "error" | "info" }>();
+  const activeGeneration = useRef<string | undefined>(undefined);
+  const pendingGenerationRequest = useRef<string | undefined>(undefined);
   const request = useRef<AbortController | undefined>(undefined);
   const generationRequest = useRef<AbortController | undefined>(undefined);
   const [generating, setGenerating] = useState(false);
@@ -35,14 +42,29 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setLoading(true); setError("");
+    setLoading(true);
+    if (more) setMoreError(""); else { setError(""); setMoreError(""); }
     try {
+      if (!more && activeGeneration.current) {
+        try {
+          const generation = await loadPostGeneration(activeGeneration.current, controller.signal);
+          if (controller.signal.aborted) return;
+          if (generation.status !== "running" && generation.status !== "stopping") {
+            activeGeneration.current = undefined;
+            setGenerationNotice({ tone: generation.status === "failed" ? "error" : "info",
+              message: generation.status === "completed" ? "帖子已生成。" : generation.reason || "本次未生成新帖子。" });
+          }
+        } catch (cause) {
+          if (!controller.signal.aborted) setGenerationNotice({ tone: "error", message: errorMessage(cause, "暂时无法核对生成状态，请刷新重试。") });
+        }
+      }
       const result = await loadPosts(more ? moreBefore.current : undefined, controller.signal);
       if (controller.signal.aborted) return;
       setPosts(current => more ? [...current, ...result.posts.filter(post => !current.some(item => item.id === post.id))] : result.posts);
       setBefore(result.nextBefore); moreBefore.current = result.nextBefore;
-    } catch {
-      if (!controller.signal.aborted) setError("无法读取帖子，请检查连接后重试。");
+    } catch (cause) {
+      if (!controller.signal.aborted) (more ? setMoreError : setError)(errorMessage(cause,
+        more ? "未能加载更多帖子，已有内容仍保留。" : "暂时无法读取帖子，已有内容仍保留。"));
     } finally {
       if (!controller.signal.aborted) { setLoading(false); request.current = undefined; }
     }
@@ -53,22 +75,29 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
     generationRequest.current = controller;
     setGenerating(true);
     try {
-      const result = await generatePost(controller.signal);
+      pendingGenerationRequest.current ??= createUuidV4();
+      const result = await generatePost(controller.signal, pendingGenerationRequest.current);
+      pendingGenerationRequest.current = undefined;
       if (controller.signal.aborted) return;
+      activeGeneration.current = result.status === "running" || result.status === "stopping" ? result.id : undefined;
+      setGenerationNotice(undefined);
       if (result.status === "completed") {
         await refresh();
         onToast("帖子已生成。", "info");
       } else if (result.status === "skipped") {
         onToast(result.reason || "本次没有生成新帖子。", "info");
       } else if (result.status === "failed" || result.status === "stopped") {
-        onToast(result.reason || "帖子生成未完成。", "error");
+        setGenerationNotice({ message: result.reason || "帖子生成未完成。", tone: "error" });
       } else {
+        setGenerationNotice({ tone: "info", message: "帖子正在生成，刷新或返回前台时会核对结果。" });
         onToast("已开始生成帖子，完成后可刷新查看。", "info");
       }
     } catch (cause) {
       if (!controller.signal.aborted) {
-        const message = cause instanceof Error ? cause.message : "启动帖子生成失败，请重试。";
-        onToast(message, message.includes("已有帖子正在生成") ? "warning" : "error");
+        if (cause instanceof ApiError && cause.status < 500) pendingGenerationRequest.current = undefined;
+        const message = errorMessage(cause, "暂未确认生成请求，请重试原操作。");
+        if (cause instanceof ApiError && cause.code === "post_generation_busy") onToast(message, "warning");
+        else setGenerationNotice({ message, tone: "error" });
       }
     } finally {
       if (generationRequest.current === controller) {
@@ -99,10 +128,12 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
         <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
       </IconButton>
     </View>} />
-    {error ? <View style={styles.notice}>
-      <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
-      <TextButton label="重试读取帖子" onPress={() => void refresh()}><Text style={styles.button}>重试</Text></TextButton>
-    </View> : null}
+    {generationNotice ? <ErrorNotice message={generationNotice.message} tone={generationNotice.tone}
+      actionLabel={pendingGenerationRequest.current ? "重试生成请求" : activeGeneration.current ? "刷新并核对" : "重新生成帖子"}
+      onAction={() => void (pendingGenerationRequest.current || !activeGeneration.current ? startGeneration() : refresh())} busy={loading || generating}
+      onDismiss={() => setGenerationNotice(undefined)} testID="post-generation-notice" /> : null}
+    {error ? <ErrorNotice message={error} actionLabel="重新加载帖子" onAction={() => void refresh()} busy={loading}
+      testID="posts-load-error" /> : null}
     {!loading && !error && !posts.length ? <Text style={styles.empty}>还没有帖子。</Text> : null}
     {posts.map(post => <TactileListRow key={post.id} surfaceVariant="card" style={styles.cardRow}>
       <TactilePressable variant="plain" stateFill={false} scaleTo={1} style={styles.cardHit}
@@ -120,7 +151,9 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
       <View style={styles.menuSlot}><PostActions post={post} onDeleted={onDeleted} inRow /></View>
     </TactileListRow>)}
     {loading ? <ActivityIndicator accessibilityLabel="正在读取帖子" color={colors.muted} /> : null}
-    {before && !loading ? <TextButton label="加载更多帖子" onPress={() => void refresh(true)}>
+    {moreError ? <ErrorNotice message={moreError} actionLabel="重试加载更多" onAction={() => void refresh(true)} busy={loading}
+      testID="posts-more-error" /> : null}
+    {before && !loading && !moreError ? <TextButton label="加载更多帖子" onPress={() => void refresh(true)}>
       <Text style={styles.button}>加载更多</Text>
     </TextButton> : null}
   </Screen>;
@@ -137,8 +170,6 @@ const styles = StyleSheet.create({
   reasonBlock: { gap: 3 },
   reasonLabel: { color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "500" },
   reason: { color: colors.muted, fontSize: 13, lineHeight: 20 },
-  notice: { alignItems: "flex-start", gap: 8 },
-  error: { color: colors.danger, fontSize: 14, lineHeight: 21 },
   empty: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   button: { color: colors.text, fontSize: 14, fontWeight: "500" },
 });

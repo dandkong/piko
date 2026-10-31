@@ -21,7 +21,10 @@ import {
   prependHistoryPage,
 } from "../../../../../shared/history";
 import { applyMessageEvent } from "../../../../../shared/messages";
-import { HttpStreamError } from "./transport";
+import { ApiError, errorMessage } from "../../api/errors";
+
+type OperationError = { kind: "send" | "stop" | "upload" | "refresh"; message: string };
+type ExecutionNotice = { key: string; message: string; tone: "error" | "info" };
 import { useConversationObservation } from "./useConversationObservation";
 import { assistantLiveStatus } from "./tool-status";
 import {
@@ -56,7 +59,11 @@ export function useChat(
   const [activity, setActivity] = useState<ConversationActivity>({ kind: "idle" });
   const [stopping, setStopping] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState(false);
+  const checking = useRef(false);
+  const [operationError, setOperationError] = useState<OperationError>();
+  const [executionNotice, setExecutionNotice] = useState<ExecutionNotice>();
+  const dismissedExecution = useRef("");
   const mounted = useRef(true);
   const pending = useRef<{
     id: string;
@@ -66,7 +73,6 @@ export function useChat(
   } | null>(null);
   const sending = useRef(false);
   const submitController = useRef<AbortController | undefined>(undefined);
-  const lastMessage = useRef("");
   const stopId = useRef<string | undefined>(undefined);
   const apply = useCallback((snapshot: ConversationResponse) => {
     if (!mounted.current || deletedRef.current) return;
@@ -102,12 +108,14 @@ export function useChat(
     setBusy(snapshot.busy);
     setActivity(snapshot.activity);
     setLoading(false);
-    setError(
-      snapshot.latest?.status === "unanswered" &&
-        snapshot.latest.error !== "aborted"
-        ? (snapshot.latest.error ?? "回复失败。")
-        : (snapshot.interruption ?? ""),
-    );
+    setOperationError(current => current?.kind === "refresh" || current?.kind === "send" && input && !remaining ? undefined : current);
+    const failed = snapshot.latest?.status === "unanswered" && snapshot.latest.error !== "aborted";
+    const key = failed ? `failed:${snapshot.latest?.id}` : snapshot.interruption ? `interrupted:${snapshot.latest?.id ?? ""}` : "";
+    setExecutionNotice(!key || key === dismissedExecution.current ? undefined : {
+      key, tone: failed ? "error" : "info",
+      message: failed ? "本次回复未完成，已保存的内容仍保留。如需重新执行，请确认后重新发送。"
+        : "上次工作被服务重启中断，已保存的内容仍保留。请按需继续。",
+    });
   }, []);
   const onMessage = useCallback(
     (event: Extract<StreamEvent, { type: "message" }>) => {
@@ -128,8 +136,16 @@ export function useChat(
       .map(item => item.requestId!);
     if (requestIds.length) onSideChatRunEnd?.(conversationId, requestIds);
   }, [conversationId, onSideChatRunEnd]);
-  const { attachments, setAttachments, attaching, attach, removeAttachment } =
-    useChatAttachments(loading, sending, mounted, setError);
+  const onAttachmentError = useCallback((message: string) => {
+    setOperationError(current => message ? { kind: "upload", message } : current?.kind === "upload" ? undefined : current);
+  }, []);
+  const onObservationError = useCallback((_message: string) => {
+    setLoading(false);
+    setOperationError(current => current && current.kind !== "refresh" ? current
+      : { kind: "refresh", message: "对话更新暂时不可用，请重新加载。" });
+  }, []);
+  const { attachments, setAttachments, attaching, attach, retryUpload, removeAttachment } =
+    useChatAttachments(loading, sending, mounted, onAttachmentError);
   const onDeleted = useCallback(() => {
     deletedRef.current = true;
     pending.current = null;
@@ -141,11 +157,14 @@ export function useChat(
     setAttachments([]);
     setBusy(false);
     setLoading(false);
+    setOperationError(undefined);
+    setExecutionNotice(undefined);
     setDeleted(true);
   }, [setAttachments]);
   const {
     connected,
     reconnecting,
+    modelReady,
     version: observedVersion,
   } = useConversationObservation(
     conversationId,
@@ -154,7 +173,7 @@ export function useChat(
     onMessage,
     setActivity,
     onRunEnd,
-    setError,
+    onObservationError,
     onDeleted,
   );
   useEffect(() => {
@@ -194,11 +213,7 @@ export function useChat(
           !isAbortError(cause) &&
           historyRef.current.nextBefore === before
         )
-          setOlderError(
-            cause instanceof Error
-              ? cause.message
-              : "无法加载更早的消息。",
-          );
+          setOlderError(errorMessage(cause, "无法加载更早的消息。"));
       } finally {
         olderController.current = undefined;
         if (mounted.current) setLoadingOlder(false);
@@ -227,13 +242,15 @@ export function useChat(
         attaching
       )
         return;
+      if (!retry && pending.current) {
+        setOperationError({ kind: "send", message: "上一条消息的发送结果尚未确认，请先核对并重试原请求。" });
+        return;
+      }
       pending.current = input;
-      lastMessage.current = input.message;
       sending.current = true;
       setSubmitting(true);
-      setDraft("");
-      setAttachments([]);
-      setError("");
+      if (!retry) { setDraft(""); setAttachments([]); }
+      setOperationError(undefined);
       setHistory((current) => ({
         ...current,
         messages: [
@@ -250,6 +267,7 @@ export function useChat(
       }));
       const controller = new AbortController();
       submitController.current = controller;
+      let accepted = false;
       try {
         await submit(
           input.message,
@@ -258,10 +276,17 @@ export function useChat(
           input.attachments.map((item) => item.id),
           conversationId,
         );
+        accepted = true;
+        if (pending.current?.id === input.id) pending.current = null;
         if (mounted.current) await refresh();
       } catch (cause) {
-        if (!mounted.current || isAbortError(cause)) return;
-        if (cause instanceof HttpStreamError && cause.status < 500) {
+        if (!mounted.current || controller.signal.aborted) return;
+        if (accepted) {
+          setOperationError({ kind: "refresh", message: "消息已接纳，但暂时无法更新对话。请重新加载，不必再次发送。" });
+          return;
+        }
+        if (!pending.current) return; // SSE already confirmed the same submission.
+        if (cause instanceof ApiError && cause.status < 500) {
           pending.current = null;
           setDraft(input.message);
           setAttachments(input.attachments);
@@ -272,13 +297,12 @@ export function useChat(
             ),
           }));
         }
-        const modelSetupError = cause instanceof HttpStreamError && cause.status === 409 &&
-          (cause.message.startsWith("尚未选择主模型") || cause.message.startsWith("主模型当前不可用"));
-        if (modelSetupError) {
+        if (cause instanceof ApiError && cause.code === "model_unavailable") {
           onToast?.(cause.message);
-          setError("");
+          setOperationError(undefined);
         } else {
-          setError(cause instanceof Error ? cause.message : "发送失败。");
+          setOperationError({ kind: "send", message: errorMessage(cause,
+            "暂未确认发送结果，请核对并重试原请求。") });
         }
       } finally {
         sending.current = false;
@@ -290,33 +314,50 @@ export function useChat(
   const stop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
+    setOperationError(current => current?.kind === "stop" ? undefined : current);
     stopId.current ??= createUuidV4();
+    let accepted = false;
     try {
       await stopConversation(stopId.current, conversationId);
+      accepted = true;
       stopId.current = undefined;
       await refresh();
     } catch (cause) {
       if (mounted.current)
-        setError(
-          cause instanceof Error ? cause.message : "停止失败。",
-        );
+        setOperationError({ kind: accepted ? "refresh" : "stop", message: accepted
+          ? "停止请求已完成，但暂时无法更新会话。请重新加载。"
+          : errorMessage(cause, "暂未确认是否已停止，请重试停止或核对会话。") });
     } finally {
       if (mounted.current) setStopping(false);
     }
   }, [stopping, refresh, conversationId]);
   const retry = useCallback(async () => {
-    if (submitting || stopping) return;
-    if (pending.current) await send(pending.current.message, true);
-    else if (lastMessage.current && error && !busy)
-      await send(lastMessage.current);
-    else {
-      try {
-        await refresh();
-      } catch (cause) {
-        setError(String(cause));
-      }
+    if (submitting || stopping || attaching || checking.current) return;
+    checking.current = true;
+    setRetrying(true);
+    try {
+      if (operationError?.kind === "stop") { await stop(); return; }
+      if (operationError?.kind === "upload") { await retryUpload(); return; }
+      if (operationError?.kind === "send" && !pending.current) { setOperationError(undefined); return; }
+      await refresh();
+      if (operationError?.kind === "send" && pending.current) await send(pending.current.message, true);
+    } catch (cause) {
+      setOperationError({ kind: operationError?.kind === "send" ? "send" : "refresh",
+        message: errorMessage(cause, "暂时无法核对会话，请稍后重试。") });
+    } finally {
+      checking.current = false;
+      if (mounted.current) setRetrying(false);
     }
-  }, [send, refresh, submitting, stopping, busy, error]);
+  }, [operationError?.kind, send, stop, retryUpload, refresh, submitting, stopping, attaching]);
+  const dismissError = useCallback(() => {
+    setOperationError(undefined);
+    if (executionNotice) dismissedExecution.current = executionNotice.key;
+    setExecutionNotice(undefined);
+  }, [executionNotice]);
+  const error = operationError?.message ?? executionNotice?.message ?? "";
+  const retryLabel = operationError?.kind === "stop" ? "重试停止"
+    : operationError?.kind === "upload" ? "重试上传" : operationError?.kind === "send"
+      ? pending.current ? "核对并重试发送" : "继续编辑" : "重新加载对话";
   const busyStatus = assistantLiveStatus(activity);
   const status = loading
     ? "连接中…"
@@ -329,7 +370,7 @@ export function useChat(
           : busy
             ? busyStatus
             : connected
-              ? ""
+              ? modelReady ? "" : "尚未选择可用主模型"
               : "等待连接";
   return {
     deleted,
@@ -341,6 +382,10 @@ export function useChat(
     busy,
     submitting,
     error,
+    errorTone: operationError ? "error" as const : executionNotice?.tone ?? "error" as const,
+    retryLabel,
+    retryBusy: retrying || submitting || stopping || attaching,
+    dismissError,
     status,
     send,
     stop,

@@ -3,10 +3,11 @@ import { ActivityIndicator, Platform, StyleSheet, Text, View, type TextStyle } f
 import { FloatingPanel } from "./FloatingPanel";
 import { MarkdownContent } from "./MarkdownContent";
 import { colors } from "../theme";
+import { ErrorNotice } from "./ErrorNotice";
 
 /** Shared reader for loaded text. Feature owners handle fetching and business-specific fallback content. */
 export function ContentPreviewPanel({ open, title, onClose, closeLabel, content, format, loading = false, error = "", fallback,
-  testID, scrollTestID, markdownTestID, textTestID }: {
+  testID, scrollTestID, markdownTestID, textTestID, onRetry }: {
   open: boolean;
   title?: string;
   onClose: () => void;
@@ -15,6 +16,7 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
   format: "markdown" | "text";
   loading?: boolean;
   error?: string;
+  onRetry?: () => void;
   fallback?: ReactNode;
   testID: string;
   scrollTestID?: string;
@@ -25,10 +27,8 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
     testID={testID} scrollTestID={scrollTestID} showScrollbar>
     {open && <View style={styles.content}>
       {loading ? <ActivityIndicator accessibilityLabel="正在加载预览" color={colors.muted} />
-        : error ? <View style={styles.error} testID={`${testID.replace(/-panel$/, "")}-error`}>
-          <Text style={styles.messageTitle}>无法加载内容</Text>
-          <Text accessibilityRole="alert" style={styles.description}>{error}</Text>
-        </View> : fallback ?? (format === "markdown" ? <View testID={markdownTestID}><MarkdownContent content={content} /></View>
+        : error ? <ErrorNotice title="无法加载内容" message={error} onAction={onRetry}
+          actionLabel="重新加载内容" testID={`${testID.replace(/-panel$/, "")}-error`} /> : fallback ?? (format === "markdown" ? <View testID={markdownTestID}><MarkdownContent content={content} /></View>
           : <Text selectable style={[styles.text, Platform.OS === "web" && { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as TextStyle]}
             testID={textTestID}>{content}</Text>)}
     </View>}
@@ -37,7 +37,4 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
   text: { color: colors.text, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 14, lineHeight: 21 },
-  error: { alignItems: "flex-start", gap: 10, paddingVertical: 16 },
-  messageTitle: { color: colors.text, fontSize: 17, fontWeight: "600" },
-  description: { color: colors.muted, fontSize: 14, lineHeight: 21 },
 });

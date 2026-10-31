@@ -5,9 +5,11 @@ import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { ContentPreviewPanel } from "../../components/ContentPreviewPanel";
 import { colors } from "../../theme";
 import { loadArtifactPreview } from "./api";
+import { ApiError, errorMessage } from "../../api/errors";
 
 /** File loading, unsupported types and size errors belong to Artifacts, not the shared reader. */
 export function ArtifactPreviewPanel({ file, onClose }: { file?: ArtifactEntry; onClose: () => void }) {
+  const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ path: string; content?: string; error?: string }>();
   useEffect(() => {
     setResult(undefined);
@@ -17,11 +19,11 @@ export function ArtifactPreviewPanel({ file, onClose }: { file?: ArtifactEntry; 
       if (!controller.signal.aborted) setResult({ path: file.path, content: value.content });
     }).catch(value => {
       if (controller.signal.aborted) return;
-      const message = value instanceof Error ? value.message.toLowerCase() : "";
-      setResult({ path: file.path, error: message.includes("too large") ? "文件超过 1 MiB 的内置预览限制。" : "无法读取这个文件。" });
+      setResult({ path: file.path, error: value instanceof ApiError && value.status === 413 ? "文件超过 1 MiB 的内置预览限制。"
+        : value instanceof ApiError && value.status === 404 ? "这个文件已不存在。请关闭预览并刷新列表。" : errorMessage(value, "无法读取这个文件，请重新加载。") });
     });
     return () => controller.abort();
-  }, [file?.path, file?.preview]);
+  }, [file?.path, file?.preview, revision]);
   const current = result?.path === file?.path ? result : undefined;
   const unsupported = file && !file.preview ? <View style={styles.unsupported} testID="artifact-preview-unsupported">
     <FileText size={28} strokeWidth={1.6} color={colors.muted} />
@@ -29,7 +31,7 @@ export function ArtifactPreviewPanel({ file, onClose }: { file?: ArtifactEntry; 
   </View> : undefined;
   return <ContentPreviewPanel open={!!file} title={file?.name} onClose={onClose} closeLabel="关闭产物预览"
     content={current?.content ?? ""} format={file?.preview ?? "text"} loading={!!file?.preview && !current}
-    error={current?.error} fallback={unsupported} testID="artifact-preview-panel"
+    error={current?.error} onRetry={() => setRevision(value => value + 1)} fallback={unsupported} testID="artifact-preview-panel"
     scrollTestID="artifact-preview-scroll" markdownTestID="artifact-markdown-preview" textTestID="artifact-text-preview" />;
 }
 const styles = StyleSheet.create({

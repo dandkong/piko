@@ -108,12 +108,14 @@ export function createApp({
           : error instanceof RuntimeBusyError
             ? 409
             : 503;
-      return finish(
-        json(
-          { error: error instanceof Error ? error.message : "Request failed." },
-          status,
-        ),
-      );
+      const code = error instanceof ModelConfigurationError ? "model_unavailable"
+        : error instanceof RuntimeBusyError ? "runtime_busy"
+          : error instanceof PostError ? error.code
+            : error instanceof StorageDeletionBlocked ? "deletion_blocked" : undefined;
+      return finish(json({
+        error: status >= 500 ? "服务暂时不可用，请稍后重试。" : error instanceof Error ? error.message : "请求未完成。",
+        ...(code && { code }),
+      }, status));
     }
   };
 }

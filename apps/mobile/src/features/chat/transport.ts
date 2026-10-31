@@ -1,6 +1,7 @@
 import { consumeSse } from "../../../../../shared/sse";
 import type { StreamEvent } from "../../../../../shared/chat";
-export class HttpStreamError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+import { ApiError, RequestTimeoutError } from "../../api/errors";
+export class HttpStreamError extends ApiError {}
 export function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(new DOMException("Aborted", "AbortError")); };
@@ -51,15 +52,20 @@ export async function submitMessage(message: string, requestId: string, signal: 
   attachmentIds?: string[], path = "/api/chat") {
   for (let attempt = 0; ; attempt++) {
     const controller = new AbortController(); const abort = () => controller.abort();
-    const timer = setTimeout(abort, 10000); signal.addEventListener("abort", abort, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; abort(); }, 10000); signal.addEventListener("abort", abort, { once: true });
     try {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
       const response = await transport.fetch(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message, ...(attachmentIds?.length && { attachmentIds }) }) });
-      const result = await response.json();
-      if (!response.ok) throw new HttpStreamError(result.error ?? "发送失败。", response.status);
+      let result;
+      try { result = await response.json(); }
+      catch { throw new HttpStreamError("暂未确认发送结果，请核对后重试。", response.status >= 400 ? response.status : 502); }
+      if (!response.ok) throw new HttpStreamError(result.error ?? "发送失败。", response.status, result.code);
       return result;
     } catch (error) {
-      if (signal.aborted || error instanceof HttpStreamError && error.status < 500 || attempt >= 2) throw error;
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      if (error instanceof ApiError && error.status < 500 || attempt >= 2)
+        throw timedOut ? new RequestTimeoutError() : error;
     } finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
     await (transport.wait ?? waitForRetry)(500 * 2 ** attempt, signal);
   }
