@@ -26,5 +26,10 @@ export async function postRequest(request: Request, runtime: ChatRuntime, maxByt
     return json(await (await runtime.posts()).list(before, limit));
   }
   if (request.method === "GET" && parts.length === 1) return json(await (await runtime.posts()).read(parts[0]!));
+  if (request.method === "DELETE" && parts.length === 1 && parts[0] !== "generations") {
+    postId(parts[0]!);
+    await (await runtime.posts()).remove(parts[0]!);
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }
   return json({ error: "Not found." }, 404);
 }

@@ -57,7 +57,7 @@ type AssistantTaskDraft = {
 
 任务 ID 是 UUID，执行 ID 使用原生子 conversation ID，跨端视为不透明字符串。定义/调度游标和请求回执保存在原生 doc，状态从原生 Reporter、submission、LiveDoc 投影；不建立 Run 表、状态副本或第二套消息正文。
 
-任务定义、命令回执和上下文游标使用固定原生文档 `piko.tasks`、`piko.task-command`、`piko.task-context`，任务绑定字段为 `taskId`，任务目录为 `tasks/<id>/`。删除使用原生 `piko.task-deletion` 暂存可恢复的清理意图；意图在启动恢复完成前不会重新开放 Harness。执行记录、所属 Durable task/conversation 与文档先退休再物理清理，随后删除专属目录并压缩 SQLite。命令幂等回执保留删除请求自身的一条轻量记录；其它该任务命令回执一并清理。已进入主会话历史的汇总消息、附件、备份和外部副作用不随任务删除。
+任务定义、命令回执和上下文游标使用固定原生文档 `piko.tasks`、`piko.task-command`、`piko.task-context`，任务绑定字段为 `taskId`，任务目录为 `tasks/<id>/`。删除使用原生 `piko.task-deletion` 暂存可恢复的清理意图；意图在启动恢复完成前不会重新开放 Harness。执行记录、所属 Durable task/conversation 与文档先退休再物理清理，随后删除专属目录并压缩 SQLite。执行树的遍历、退休、物理删除和可恢复意图复用[共用删除协议](../operations/storage.md#共用删除协议)。保存任务的历史执行随任务保留，不套无业务归属临时工作的 7 天 TTL。命令幂等回执保留删除请求自身的一条轻量记录；其它该任务命令回执一并清理。已进入主会话历史的汇总消息、附件、备份和外部副作用不随任务删除。
 
 ```text
 workspace/tasks/<任务ID>/

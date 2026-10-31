@@ -6,9 +6,10 @@ import { colors } from "../theme";
 
 /** Shared reader for loaded text. Feature owners handle fetching and business-specific fallback content. */
 export function ContentPreviewPanel({ open, title, onClose, closeLabel, content, format, loading = false, error = "", fallback,
-  testID, scrollTestID, markdownTestID, textTestID }: {
+  testID, scrollTestID, markdownTestID, textTestID, headerActions }: {
   open: boolean;
   title?: string;
+  headerActions?: ReactNode;
   onClose: () => void;
   closeLabel: string;
   content: string;
@@ -22,7 +23,7 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
   textTestID?: string;
 }) {
   return <FloatingPanel open={open} title={title} onClose={onClose} closeLabel={closeLabel}
-    testID={testID} scrollTestID={scrollTestID} showScrollbar>
+    testID={testID} scrollTestID={scrollTestID} headerActions={headerActions} showScrollbar>
     {open && <View style={styles.content}>
       {loading ? <ActivityIndicator accessibilityLabel="正在加载预览" color={colors.muted} />
         : error ? <View style={styles.error} testID={`${testID.replace(/-panel$/, "")}-error`}>

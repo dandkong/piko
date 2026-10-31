@@ -5,6 +5,8 @@ import type { PostSummary } from "../../../../../shared/posts";
 import { IconButton } from "../../components/IconButton";
 import { Screen, ScreenHeader } from "../../components/Screen";
 import { TactilePressable } from "../../components/TactilePressable";
+import { TactileListRow } from "../../components/TactileListRow";
+import { PostActions } from "./PostActions";
 import { TextButton } from "../../components/TextButton";
 import { colors, radii } from "../../theme";
 import type { FeedbackTone } from "../../components/FeedbackToast";
@@ -15,8 +17,9 @@ const dayTime = (value: number) => new Date(value).toLocaleString("zh-CN", {
 });
 
 /** Private posts use the same card surface and reader as the rest of the app. */
-export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
+export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revision, onDeleted }: {
   topInset: number; bottomInset: number; onPreview: (post: PostSummary) => void;
+  revision: number; onDeleted: (id: string) => void;
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
   const [posts, setPosts] = useState<PostSummary[]>([]);
@@ -83,7 +86,7 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
       generationRequest.current = undefined;
       subscription.remove();
     };
-  }, [refresh]);
+  }, [refresh, revision]);
 
   return <Screen testID="posts-screen" topInset={topInset} bottomInset={bottomInset}>
     <ScreenHeader title="帖子" action={<View style={styles.headerActions}>
@@ -101,7 +104,8 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
       <TextButton label="重试读取帖子" onPress={() => void refresh()}><Text style={styles.button}>重试</Text></TextButton>
     </View> : null}
     {!loading && !error && !posts.length ? <Text style={styles.empty}>还没有帖子。</Text> : null}
-    {posts.map(post => <TactilePressable key={post.id} variant="card" scaleTo={1}
+    {posts.map(post => <TactileListRow key={post.id} surfaceVariant="card" style={styles.cardRow}>
+      <TactilePressable variant="plain" stateFill={false} scaleTo={1} style={styles.cardHit}
       accessibilityRole="button" accessibilityLabel={`阅读帖子：${post.title}`}
       accessibilityHint="使用内置预览器阅读正文" onPress={() => onPreview(post)}
       faceStyle={styles.card} testID="post-card">
@@ -112,7 +116,9 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
         <Text style={styles.reasonLabel}>生成理由</Text>
         <Text numberOfLines={3} style={styles.reason}>{post.reason}</Text>
       </View>
-    </TactilePressable>)}
+      </TactilePressable>
+      <View style={styles.menuSlot}><PostActions post={post} onDeleted={onDeleted} inRow /></View>
+    </TactileListRow>)}
     {loading ? <ActivityIndicator accessibilityLabel="正在读取帖子" color={colors.muted} /> : null}
     {before && !loading ? <TextButton label="加载更多帖子" onPress={() => void refresh(true)}>
       <Text style={styles.button}>加载更多</Text>
@@ -121,8 +127,11 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast }: {
 }
 const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cardRow: { flexDirection: "row", alignItems: "stretch" },
+  cardHit: { flex: 1, minWidth: 0 },
+  menuSlot: { position: "absolute", top: 6, right: 6 },
   card: { alignItems: "stretch", padding: 16, gap: 10, borderRadius: radii.card },
-  date: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  date: { color: colors.muted, fontSize: 12, lineHeight: 18, minHeight: 28, paddingRight: 44 },
   title: { color: colors.text, fontSize: 17, lineHeight: 24, fontWeight: "600" },
   excerpt: { color: colors.text, fontSize: 14, lineHeight: 21 },
   reasonBlock: { gap: 3 },

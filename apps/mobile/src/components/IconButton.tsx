@@ -10,6 +10,7 @@ type Props = {
   variant?: PressableVariant;
   size?: "sm" | "md";
   disabled?: boolean;
+  stateFill?: boolean;
   hint?: string;
   accessibilityState?: AccessibilityState;
   testID?: string;
@@ -24,6 +25,7 @@ export function IconButton({
   variant = "card",
   size = "md",
   disabled = false,
+  stateFill = true,
   hint,
   accessibilityState,
   testID,
@@ -38,6 +40,7 @@ export function IconButton({
       accessibilityHint={hint}
       accessibilityState={accessibilityState}
       disabled={disabled}
+      stateFill={stateFill}
       hitSlop={size === "sm" ? 8 : undefined}
       onPress={onPress}
       scaleTo={variant === "primary" ? 0.95 : 0.94}

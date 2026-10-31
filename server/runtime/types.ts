@@ -23,6 +23,7 @@ export type BackgroundReply = { source: InputSource; knownMessageIds: string[]; 
   /** origin: answer where the work started; all: broadcast to every channel (scheduled work). */
   deliver: "origin" | "all" };
 export class RuntimeBusyError extends Error { constructor() { super("Stop the current reply before changing runtime configuration."); } }
+export class StorageDeletionBlocked extends Error { readonly status = 409; }
 export class ModelConfigurationError extends Error {
   readonly status = 409;
 }
@@ -60,6 +61,7 @@ export type WorkspaceSkillDetail = {
 export interface PostsRuntime {
   list(before?: string, limit?: number): Promise<PostPage>;
   read(id: string): Promise<Post>;
+  remove(id: string): Promise<void>;
   generate(command: GeneratePost): Promise<PostGeneration>;
   generation(id: string): Promise<PostGeneration>;
   stop(id: string): Promise<PostGeneration>;

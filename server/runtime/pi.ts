@@ -49,6 +49,7 @@ import { createPostTools } from "./posts/tools";
 import { PostsService } from "./posts/service";
 import { postHistoryScope } from "./posts/documents";
 import { historyAroundPiMessage, searchPiHistory } from "./pi-history";
+import { StorageRetentionService } from "./storage-retention";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -64,6 +65,7 @@ class PikoRuntime {
   private tasks!: DurableAssistantTasks;
   private posts!: PostsService;
   private memory?: MemoryCurationService;
+  private retention?: StorageRetentionService;
   private main!: DurableChatSession;
   private readonly sessions = new Map<
     ConversationId,
@@ -156,7 +158,7 @@ class PikoRuntime {
     );
     try {
       this.main = await this.session();
-      this.posts = new PostsService(harness, posts.task, background);
+      this.posts = new PostsService(harness, posts.task, background, opened.maintenance, () => this.main.refreshObservation());
       this.tasks = new DurableAssistantTasks(
         harness,
         this.paths.workspace,
@@ -179,6 +181,8 @@ class PikoRuntime {
       harness.resume();
       this.tasks.start();
       await this.memory.start();
+      this.retention = new StorageRetentionService(harness, opened.maintenance);
+      await this.retention.start();
     } catch (error) {
       await this.close();
       throw error;
@@ -336,6 +340,8 @@ class PikoRuntime {
     this.closed = (async () => {
       this.memory?.close();
       try {
+        await this.retention?.close();
+        await this.posts?.close();
         await this.sideChats?.close();
         await this.tasks?.close();
         await Promise.allSettled(

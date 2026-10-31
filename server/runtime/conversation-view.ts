@@ -143,13 +143,18 @@ export class ConversationView {
     this.liveActivity.restore(stream.snapshot);
     this.activity(!!stream.snapshot.run, false);
     this.compactions.sync(stream.snapshot.compactions, true);
-    stream.start((events) => (this.delivery = this.observe(events)));
+    this.startEvents(stream);
     logInfo("conversation.observation.started", {
       conversationId: String(conversation.id),
       historyCount: this.entries.length,
       recoveredRunActive: !!stream.snapshot.run,
     });
+  }
+
+  private startEvents(stream: AgentEventStream) {
+    stream.start((events) => (this.delivery = this.observe(events)));
     void stream.closed.then((end) => {
+      if (end.reason === "stopped" || stream !== this.eventStream) return;
       this.observationError =
         end.reason === "listener_error"
           ? end.error
@@ -158,10 +163,20 @@ export class ConversationView {
             : new Error(`Durable event stream closed: ${end.reason}`);
       if (!this.isClosed())
         logError("conversation.observation.closed", {
-          conversationId: String(conversation.id),
+          conversationId: String(this.conversation.id),
           reason: end.reason,
         });
     });
+  }
+
+  /** Native app-entry deletion has no SDK publication. Drop the mounted view and rebuild
+   * from storage, using the same snapshot recovery as overflow; never stop the conversation. */
+  async refreshObservation(): Promise<void> {
+    await this.eventStream.stop();
+    await this.delivery?.catch(() => {});
+    const stream = this.eventStream = await watchEvents(this.harness, this.conversation.id, ctx);
+    await this.observe([stream.snapshot]);
+    this.startEvents(stream);
   }
 
   get bindings(): ReadonlyMap<number, string> {

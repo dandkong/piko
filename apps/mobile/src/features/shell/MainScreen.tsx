@@ -26,6 +26,11 @@ export function MainScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
   const [postPreview, setPostPreview] = useState<PostSummary>();
+  const [postsRevision, setPostsRevision] = useState(0);
+  const onPostDeleted = useCallback((id: string) => {
+    setPostPreview(current => current?.id === id ? undefined : current);
+    setPostsRevision(current => current + 1);
+  }, []);
   const [executionPreview, setExecutionPreview] = useState<TaskExecutionPreviewTarget>();
   const [toastMessage, setToastMessage] = useState<FeedbackToastMessage>();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -139,7 +144,7 @@ export function MainScreen() {
             onClose={() => setSettingsOpen(false)}
             onToast={showToast}
           />
-          <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} />
+          <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} onDeleted={onPostDeleted} />
           <TaskExecutionPreviewPanel target={executionPreview} onClose={() => setExecutionPreview(undefined)} />
           <ArtifactPreviewPanel
             file={artifactPreview}
@@ -182,6 +187,8 @@ export function MainScreen() {
         bottomInset={footerHeight + MESSAGE_GAP}
         onArtifactPreview={setArtifactPreview}
         onPostPreview={setPostPreview}
+        postsRevision={postsRevision}
+        onPostDeleted={onPostDeleted}
         onExecutionPreview={setExecutionPreview}
         onToast={showToast}
       />
@@ -239,6 +246,8 @@ function TabPanel({
   bottomInset,
   onArtifactPreview,
   onPostPreview,
+  postsRevision,
+  onPostDeleted,
   onExecutionPreview,
   onToast,
 }: {
@@ -247,6 +256,8 @@ function TabPanel({
   bottomInset: number;
   onArtifactPreview: (file: ArtifactEntry) => void;
   onPostPreview: (post: PostSummary) => void;
+  postsRevision: number;
+  onPostDeleted: (id: string) => void;
   onExecutionPreview: (target: TaskExecutionPreviewTarget) => void;
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
@@ -254,7 +265,8 @@ function TabPanel({
     case "Chat":
       return null;
     case "Posts":
-      return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} onToast={onToast} />;
+      return <PostsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onPostPreview} onToast={onToast}
+        revision={postsRevision} onDeleted={onPostDeleted} />;
     case "Artifacts":
       return <ArtifactsScreen topInset={topInset} bottomInset={bottomInset} onPreview={onArtifactPreview} />;
     case "Tasks":

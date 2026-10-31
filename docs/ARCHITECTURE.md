@@ -31,6 +31,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 | server/runtime/subagents/ | 共用执行、原生事实查询和恢复；delegations.ts 承载普通委派业务，tools.ts 为薄入口 |
 | server/runtime/tasks/ | 任务定义、游标、命令幂等、调度及执行查询；agent.ts 组装目录、资源和固定提示词，依赖共用执行，不依赖普通委派工具 |
 | server/runtime/side-chat-service.ts、side-chats.ts | 旁聊业务规则与原生元数据/查询，运行时提供会话接纳和生命周期 |
+| server/runtime/storage-maintenance.ts、storage-deletion.ts、storage-retention.ts | 共用归属删除、ID 计划/并发保护和恢复；每 24 小时回收最后活动满 7 天的无长期业务归属临时执行 |
 | server/settings/http.ts、runtime/settings.ts | 只读写主/后台模型角色选择；供应商、模型目录、工具、通道与凭据由部署管理 |
 | server/resources/ | 核心指导、内建技能与用户模板 |
 | shared/ | 普通跨端契约，不依赖 Pi、Bun 或 React Native |
@@ -69,7 +70,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
         └── MEMORY.md              # 任务总览；执行产物直接写在同一目录
 ```
 
-初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。会话存储固定为 `state/durable/session.sqlite`，使用 Durable 原生 SQLite。清理数据须先停止后端并备份；配置和工作区不属于数据库。
+初始化只补缺失文件，保留用户内容，拒绝类型冲突与越界链接；state 必须在工作区外。会话存储固定为 `state/durable/session.sqlite`，使用 Durable 原生 SQLite。人工维护数据库须先停止后端并备份；应用内删除与 TTL 使用同一连接和 Harness 提交线，见[存储维护](operations/storage.md)。配置和工作区不属于数据库。
 
 ## 模型、资源与内建扩展
 
@@ -106,6 +107,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | piko.memory-curation | 原生文档保存 root 历史游标、闲置时间、活动 整理 task 与重试状态；记忆正文仅保存在工作区 Markdown 文件 |
 | piko.post / piko.posts-generation | 原生应用 entry 保存标题、正式正文与生成理由；原生后台 task 执行研究，不向主聊天或 Telegram 回报 |
 | piko.posts-request / piko.posts-context | 请求去重与研究角色绑定，不复制正文或执行状态 |
+| piko.storage-deletion / piko.storage-retention | 物理删除待处理 ID 与上次 TTL 扫描时间，不复制正文或执行状态 |
 | piko.side-chat / piko.side-chat-creates | 旁聊名称、创建元数据与创建请求回执；不提供归档功能，不复制聊天或执行状态 |
 | StreamEvent | 按会话隔离的当前快照与实时更新；不保存事件重放缓存或传输游标 |
 
@@ -125,6 +127,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 | GET /api/chat/events | 每次连接先发最新快照，随后持续观察，空闲时保持连接 |
 | POST /api/chat/stop | {requestId}，停止当前 conversation，重复请求只处理原目标 |
 | GET /api/posts、GET /api/posts/:id | 帖子卡片分页、标题/正文/理由，见[帖子说明](features/posts.md) |
+| DELETE /api/posts/:id | 确认后永久删除帖子及专属生成过程；不删除主会话或工作区文件 |
 | POST /api/posts/generations、GET /api/posts/generations/:id | 手动生成与原生状态；另提供 stop 请求取消 |
 | GET /api/health | 后端和模型可用状态 |
 | GET /api/settings | 模型选择器所需的可用模型列表与当前主会话模型 |

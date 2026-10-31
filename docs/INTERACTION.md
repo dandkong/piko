@@ -126,7 +126,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `AnchoredMenuContent` | `apps/mobile/src/components/AnchoredMenu.tsx` | 旁聊、产物操作与排序的锚定菜单；所有项提供 selected 时为单选菜单 |
 | `ConfirmationDialogContent` | `apps/mobile/src/components/ConfirmationDialog.tsx` | 旁聊和产物删除共用二次确认内容；只能通过取消/确认按钮关闭 |
 | `FloatingPanel` | `apps/mobile/src/components/FloatingPanel.tsx` | 设置、产物预览等盖在主界面上的上浮面板；统一遮罩、圆角、动效与滚动内容，可点关闭按钮或遮罩关闭；headerLeading 放内部返回，contentKey 只重置滚动内容 |
-| `ContentPreviewPanel` | `apps/mobile/src/components/ContentPreviewPanel.tsx` | 产物、帖子和执行结果共用的 Markdown/文本阅读器；标题可选，功能层各自加载内容与提供业务 fallback |
+| `ContentPreviewPanel` | `apps/mobile/src/components/ContentPreviewPanel.tsx` | 产物、帖子和执行结果共用的 Markdown/文本阅读器；标题及 headerActions 可选，功能层各自加载内容与提供业务 fallback |
 | `MarkdownContent` | `apps/mobile/src/components/MarkdownContent.tsx` | 聊天和阅读器共用的 Markdown 渲染；仅流式内容进行显示补全，HTTPS 图片按宽高比自适应，非 HTTPS 或加载失败显示替代文字 |
 | `AppScrollView` | `apps/mobile/src/components/AppScrollView.tsx` | 需要显示滚动条的纵向滚动共用指示器配置；用于长内容和可滚动菜单 |
 | `FeedbackToast` | `apps/mobile/src/components/FeedbackToast.tsx` | 应用级短暂反馈，统一承载 info / warning / error |
@@ -201,9 +201,9 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 - 聊天附件 chip、附件移除、发送/停止、回到底部、重试。
 - 旁聊、任务、产物列表中的复合行共用整行悬停、按压和选中背景；行内菜单仍是独立操作，但不再绘制与整行竞争的背景。
 - 任务页返回、进行中/已归档常驻折叠标题（进行中默认展开、已归档默认收起，收起时箭头向上）、归档/恢复图标按钮、任务行和执行记录条目；点击已结束记录打开无强制标题的共享预览，不再行内展开。归档使用 Archive、恢复使用 ArchiveRestore，不使用完成勾选；读屏说明未来调度的变化，执行成功仍显示“已完成”。
-- 产物文件夹浏览、面包屑、Markdown/原始文本预览、行菜单下载/删除和统一二次确认；预览使用 `FloatingPanel`。Posts 标题栏以 Sparkles 主按钮手动生成，位于刷新按钮左侧；已有生成任务时通过 warning Toast 反馈。Posts 卡片显示标题、正文摘录与生成理由，点击在 shell 层打开共享 `ContentPreviewPanel` 阅读正文。
+- 产物文件夹浏览、面包屑、Markdown/原始文本预览、行菜单下载/删除和统一二次确认；预览使用 `FloatingPanel`。Posts 标题栏以 Sparkles 主按钮手动生成，位于刷新按钮左侧；已有生成任务时通过 warning Toast 反馈。Posts 卡片显示标题、正文摘录与生成理由，点击在 shell 层打开共享 `ContentPreviewPanel` 阅读正文。卡片及预览右上角三点菜单共用删除确认：只由取消/确认按钮关闭，执行中锁定，失败留在确认框重试；成功刷新列表并关闭对应预览。
 
 当前限制与验证边界：
 
-- 模型设置 API 尚未接入管理鉴权，只开放模型策略读写，不读取或返回供应商凭据；仍不应暴露给不可信网络。Posts 尚无自动调度、通知或编辑/删除；loading、danger、toggle 尚无完整的专用控件变体。
+- 模型设置 API 尚未接入管理鉴权，只开放模型策略读写，不读取或返回供应商凭据；仍不应暴露给不可信网络。Posts 尚无自动调度、通知或编辑；loading、danger、toggle 尚无完整的专用控件变体。
 - 本轮统一的中性焦点色、圆角、聊天灰阶、模型下拉及思考强度分段控件尚未在真实浏览器和原生设备上完成目视验收；平台字体、输入焦点和触感仍需实际设备验证。

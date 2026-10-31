@@ -103,6 +103,9 @@ export class DurableChatSession implements ChatSession {
   init() {
     return this.view.init();
   }
+  refreshObservation() {
+    return this.control.serial(() => this.view.refreshObservation());
+  }
   attachMemory(service: MemoryCurationService) {
     this.memoryCurationService = service;
   }

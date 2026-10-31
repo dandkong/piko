@@ -8,6 +8,10 @@ export async function loadPosts(before?: string, signal?: AbortSignal): Promise<
 export async function loadPost(id: string, signal?: AbortSignal): Promise<Post> {
   return readJson<Post>(await apiFetch(`/api/posts/${encodeURIComponent(id)}`, { signal }));
 }
+export async function deletePost(id: string): Promise<void> {
+  const response = await apiFetch(`/api/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!response.ok) await readJson<never>(response);
+}
 export async function generatePost(signal?: AbortSignal): Promise<PostGeneration> {
   return readJson<PostGeneration>(await apiFetch("/api/posts/generations", {
     method: "POST",

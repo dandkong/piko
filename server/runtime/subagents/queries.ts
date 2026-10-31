@@ -7,6 +7,7 @@ import {
   type Tx,
 } from "@earendil-works/pi-durable";
 import { Recovery } from "../conversation-docs";
+import { backgroundIsDeleting } from "../storage-deletion";
 import {
   JobControl,
   ANCHOR_KIND,
@@ -48,7 +49,8 @@ export async function subagentIds(
         500,
         cursor,
       );
-      result.push(...page.items.map((item) => item.id));
+      for (const item of page.items)
+        if (!(await backgroundIsDeleting(tx, item.id))) result.push(item.id);
       cursor = page.next;
     } while (cursor);
   }

@@ -156,7 +156,7 @@ export class SideChats {
         throw error;
       }
       // Re-plan after cancellation; finalizers may have created task documents.
-      const purge = () => this.maintenance.erase(this.harness, value);
+      const purge = async () => { await this.maintenance.erase(this.harness, value); };
       const id = Number(value) as ConversationId;
       try {
         if (plan.retired) await purge(); // Finish an interrupted physical purge.

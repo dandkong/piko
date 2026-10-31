@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { InputSource } from "../types";
 
-export const JobControl = defineDoc<{ epoch: number; reported: number[] }>({
+export const JobControl = defineDoc<{ epoch: number; reported: number[]; lastActivityAt?: number }>({
   kind: "piko.subagent-control",
   version: 1,
   scope: "conversation",

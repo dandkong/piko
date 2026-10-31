@@ -7,9 +7,25 @@ import { logInfo } from "../../logging";
 import { POSTS_GENERATION_KIND, PostRequests } from "./documents";
 import type { PostGenerationTask, PostGenerationResult } from "./generation";
 import { postPage, readPost } from "./queries";
+import type { StorageMaintenance } from "../storage-maintenance";
 
 export class PostsService {
-  constructor(private readonly harness: Harness, private readonly task: PostGenerationTask, private readonly ensureModel: () => Promise<unknown>) {}
+  private deletionLine: Promise<void> = Promise.resolve();
+  private closing = false;
+  constructor(private readonly harness: Harness, private readonly task: PostGenerationTask, private readonly ensureModel: () => Promise<unknown>,
+    private readonly maintenance: StorageMaintenance, private readonly refreshObservation: () => Promise<void>) {}
+  remove(id: string): Promise<void> {
+    const nativeId = postId(id);
+    if (this.closing) return Promise.reject(new Error("Piko is shutting down."));
+    const deletion = this.deletionLine.catch(() => {}).then(async () => {
+      await this.maintenance.erasePost(this.harness, nativeId);
+      await this.refreshObservation();
+      logInfo("posts.delete.completed", { postId: id });
+    });
+    this.deletionLine = deletion;
+    return deletion;
+  }
+  async close() { this.closing = true; await this.deletionLine.catch(() => {}); }
   list(before?: string, limit = 20) { return this.harness.commit(tx => postPage(tx, before, limit), ctx); }
   read(id: string) { return this.harness.commit(tx => readPost(tx, id), ctx); }
 

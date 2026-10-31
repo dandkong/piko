@@ -1,6 +1,6 @@
 import type { HealthResponse } from "../shared/chat";
 import type { ServerConfig } from "./config";
-import { ModelConfigurationError, RuntimeBusyError, type ChatRuntime } from "./runtime/types";
+import { ModelConfigurationError, RuntimeBusyError, StorageDeletionBlocked, type ChatRuntime } from "./runtime/types";
 import type { ConversationStore } from "./chat/conversations";
 import type { ConversationStores } from "./chat/stores";
 import { SideChatError } from "./runtime/side-chats";
@@ -103,7 +103,7 @@ export function createApp({
       const status =
         error instanceof HttpError ||
         error instanceof AssistantTaskError || error instanceof PostError ||
-        error instanceof SideChatError || error instanceof ModelConfigurationError
+        error instanceof SideChatError || error instanceof ModelConfigurationError || error instanceof StorageDeletionBlocked
           ? error.status
           : error instanceof RuntimeBusyError
             ? 409

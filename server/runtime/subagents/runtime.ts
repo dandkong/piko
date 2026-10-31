@@ -16,6 +16,7 @@ import { InputOrigin, registerInput } from "../input-origin";
 import { entriesFromTransaction, messageText } from "../pi-history";
 import { createChildAgent, type ChildAgentSpec } from "../agents/create";
 import { Recovery } from "../conversation-docs";
+import { backgroundIsDeleting } from "../storage-deletion";
 import {
   JobControl,
   BackgroundJob,
@@ -59,7 +60,14 @@ export function createSubagentRuntime(options: {
   ) {
     await admit(() =>
       api.commit(async (tx) => {
-        for (const child of ids) (await tx.doc(JobControl, child)).epoch++;
+        for (const child of ids) {
+          if (!(await tx.conversation(child)) || await backgroundIsDeleting(tx, child))
+            throw new Error("This background work has been deleted or is being cleaned up.");
+          const control = await tx.doc(JobControl, child);
+          control.epoch++;
+          // Keep expiry from racing the asynchronous native abort after this commit.
+          control.lastActivityAt = Date.now();
+        }
         const inbox = await tx.doc(InboxDoc, conversationId);
         const withdraw: SubmissionId[] = [];
         for (const item of inbox.items)
@@ -394,6 +402,8 @@ export function createSubagentRuntime(options: {
       source: InputSource,
       conversationId = ROOT_CONVERSATION_ID,
     ) {
+      if (!(await tx.conversation(child)) || await backgroundIsDeleting(tx, child))
+        throw new Error("This background work has been deleted or is being cleaned up.");
       if (!(await tx.doc(BackgroundJob, child)).policy?.continuable)
         throw new Error("This background job uses fixed instructions and cannot be continued.");
       const epoch = (await tx.doc(JobControl, child)).epoch;

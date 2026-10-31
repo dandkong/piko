@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import type { PostSummary } from "../../../../../shared/posts";
 import { ContentPreviewPanel } from "../../components/ContentPreviewPanel";
 import { loadPost } from "./api";
+import { PostActions } from "./PostActions";
 
-export function PostPreviewPanel({ post, onClose }: { post?: PostSummary; onClose: () => void }) {
+export function PostPreviewPanel({ post, onClose, onDeleted }: { post?: PostSummary; onClose: () => void; onDeleted: (id: string) => void }) {
   const [result, setResult] = useState<{ id: string; content?: string; error?: string }>();
   useEffect(() => {
     setResult(undefined);
@@ -19,5 +20,6 @@ export function PostPreviewPanel({ post, onClose }: { post?: PostSummary; onClos
   const current = result?.id === post?.id ? result : undefined;
   return <ContentPreviewPanel open={!!post} title={post?.title} closeLabel="关闭帖子预览" onClose={onClose}
     format="markdown" content={current?.content ?? ""} loading={!!post && !current} error={current?.error}
+    headerActions={post && <PostActions key={post.id} post={post} onDeleted={onDeleted} />}
     testID="post-preview-panel" scrollTestID="post-preview-scroll" markdownTestID="post-markdown-preview" />;
 }
