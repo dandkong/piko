@@ -51,8 +51,9 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
           if (controller.signal.aborted) return;
           if (generation.status !== "running" && generation.status !== "stopping") {
             activeGeneration.current = undefined;
-            setGenerationNotice({ tone: generation.status === "failed" ? "error" : "info",
-              message: generation.status === "completed" ? "帖子已生成。" : generation.reason || "本次未生成新帖子。" });
+            setGenerationNotice(generation.status === "failed"
+              ? { tone: "error", message: generation.reason || "帖子生成失败，请重试。" }
+              : undefined);
           }
         } catch (cause) {
           if (!controller.signal.aborted) setGenerationNotice({ tone: "error", message: errorMessage(cause, "暂时无法核对生成状态，请刷新重试。") });
