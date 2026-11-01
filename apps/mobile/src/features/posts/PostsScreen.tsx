@@ -89,7 +89,6 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
       } else if (result.status === "failed" || result.status === "stopped") {
         setGenerationNotice({ message: result.reason || "帖子生成未完成。", tone: "error" });
       } else {
-        setGenerationNotice({ tone: "info", message: "帖子正在生成，刷新或返回前台时会核对结果。" });
         onToast("已开始生成帖子，完成后可刷新查看。", "info");
       }
     } catch (cause) {
