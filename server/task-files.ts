@@ -4,11 +4,21 @@ import { join, resolve } from "node:path";
 import { isWithin } from "./workspace";
 import { AssistantTaskError, taskId } from "./domain/tasks";
 
+const TASK_MEMORY_TEMPLATE = "# Task memory\n\nKeep reusable findings and progress here; save intermediate materials alongside this file.\n";
+
 /** Explicit paths, no title-derived directory names, no symlink traversal in product file APIs. */
 export class TaskFiles {
   constructor(readonly workspace: string) {}
   directory(id: string) {
     return join(this.workspace, "tasks", taskId(id));
+  }
+  /** Best-effort size for prompt guidance; Reporter preflight owns path failures. */
+  async memoryBytes(id: string): Promise<number | undefined> {
+    try { return (await this.checked(join(this.directory(id), "MEMORY.md"), false)).size; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return Buffer.byteLength(TASK_MEMORY_TEMPLATE);
+      return undefined;
+    }
   }
   private async checked(path: string, directory: boolean) {
     const base = await realpath(this.workspace);
@@ -56,9 +66,7 @@ export class TaskFiles {
         0o600,
       );
       try {
-        await file.writeFile(
-          "# Task memory\n\nKeep reusable findings and progress here; save intermediate materials alongside this file.\n",
-        );
+        await file.writeFile(TASK_MEMORY_TEMPLATE);
       } finally {
         await file.close();
       }
