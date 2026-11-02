@@ -1,7 +1,7 @@
 import type { ChatBatchMessage } from "./chat-batch";
 
 /** Soft target for workspace MEMORY.md; prompts report size in Unicode code points. */
-export const MEMORY_FILE_LIMIT_CHARS = 3_000;
+export const MEMORY_FILE_LIMIT_CHARS = 2_500;
 
 /** Prompt for one tool-enabled curator turn; it edits the two workspace files itself. */
 export function buildMemoryCurationPrompt(messages: readonly ChatBatchMessage[], memory: { characters: number; limit?: number }): string {
