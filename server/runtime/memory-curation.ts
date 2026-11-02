@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { defineDoc, defineExtension, defineTask, InboxDoc, LiveDoc, ROOT_CONVERSATION_ID,
@@ -10,6 +10,7 @@ import { collectMainChatBatch, rootHighWater } from "./chat-batch";
 import { buildMemoryCurationPrompt } from "../domain/memory-curation";
 import { curatorTools, type CodingExtension } from "./coding-tools";
 import { logWarn } from "../logging";
+import { codePointLength } from "../text";
 
 export const MEMORY_CURATION_KIND = "piko.memory-curation";
 export const MEMORY_CURATION_IDLE_MS = 30 * 60_000;
@@ -86,8 +87,8 @@ function createCurationTask(workspace: string, bindings: () => ReadonlyMap<numbe
           }
           const child = await runtime.conversation(childId!, ctx);
           if (!child) throw new Error("Memory review conversation is unavailable.");
-          const memoryBytes = await stat(join(workspace, "MEMORY.md")).then(value => value.size).catch(() => 0);
-          const prompt = buildMemoryCurationPrompt(collected!.messages, { bytes: memoryBytes });
+          const memoryCharacters = await readFile(join(workspace, "MEMORY.md"), "utf8").then(codePointLength).catch(() => 0);
+          const prompt = buildMemoryCurationPrompt(collected!.messages, { characters: memoryCharacters });
           const submission = await child.submit({ type: "input", content: prompt, requestId: `piko:memory-curation:${taskRecord.id}`, whenBusy: "reject" }, ctx);
           const settled = await submission.wait(ctx);
           if (settled.status !== "done" || settled.type !== "input") throw new Error("Memory review generation did not complete.");

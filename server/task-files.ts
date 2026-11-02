@@ -1,8 +1,9 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isWithin } from "./workspace";
 import { AssistantTaskError, taskId } from "./domain/tasks";
+import { codePointLength } from "./text";
 
 const TASK_MEMORY_TEMPLATE = "# Task memory\n\nKeep reusable findings and progress here; save intermediate materials alongside this file.\n";
 
@@ -12,11 +13,14 @@ export class TaskFiles {
   directory(id: string) {
     return join(this.workspace, "tasks", taskId(id));
   }
-  /** Best-effort size for prompt guidance; Reporter preflight owns path failures. */
-  async memoryBytes(id: string): Promise<number | undefined> {
-    try { return (await this.checked(join(this.directory(id), "MEMORY.md"), false)).size; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return Buffer.byteLength(TASK_MEMORY_TEMPLATE);
+  /** Best-effort character count for prompt guidance; Reporter preflight owns path failures. */
+  async memoryCharacters(id: string): Promise<number | undefined> {
+    const path = join(this.directory(id), "MEMORY.md");
+    try {
+      await this.checked(path, false);
+      return codePointLength(await readFile(path, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return codePointLength(TASK_MEMORY_TEMPLATE);
       return undefined;
     }
   }

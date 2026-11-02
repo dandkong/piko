@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { Agent, ConversationId, Harness, Tx } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
 import { TaskFiles } from "../../task-files";
-import { MEMORY_FILE_LIMIT_BYTES } from "../../domain/memory-curation";
+import { MEMORY_FILE_LIMIT_CHARS } from "../../domain/memory-curation";
 import { BACKGROUND_AGENT_INSTRUCTIONS, backgroundAgent, childScope, type BackgroundSelection } from "../background";
 import { initializeAgentResources, type AgentResourcePolicy } from "../agents/resources";
 import type { SubagentRuntime } from "../subagents/runtime";
@@ -22,8 +22,8 @@ function policy(binding: TaskBinding, child: ConversationId): BackgroundJobPolic
     },
   };
 }
-function prompt(message: string, binding: TaskBinding, child: ConversationId, directory: string, memoryBytes?: number) {
-  const memory = `Task MEMORY.md: current size ${memoryBytes ?? "unavailable"} bytes; soft limit ${MEMORY_FILE_LIMIT_BYTES} bytes. If it is near or over the limit, update it using the existing memory-maintenance policy: merge or condense entries, remove content that is superseded, duplicated, or no longer useful, and preserve meaningful reusable outcomes; do not truncate blindly.`;
+function prompt(message: string, binding: TaskBinding, child: ConversationId, directory: string, memoryCharacters?: number) {
+  const memory = `Task MEMORY.md: current size ${memoryCharacters ?? "unavailable"} Unicode code points (characters); soft limit ${MEMORY_FILE_LIMIT_CHARS} characters. If it is near or over the limit, update it using the existing memory-maintenance policy: merge or condense entries, remove content that is superseded, duplicated, or no longer useful, and preserve meaningful reusable outcomes; do not truncate blindly.`;
   return `${message}\n\nThis is task ${JSON.stringify(binding.title)} (${binding.taskId}), execution ${child}. ${binding.scheduledAt === null ? "Manually started." : `Scheduled at ${new Date(binding.scheduledAt).toISOString()}.`} Started at ${new Date(binding.startedAt).toISOString()}. Your working directory is the main workspace. Use ${JSON.stringify(directory)} for intermediate materials and retained copies as needed. Keep reusable findings and progress in ${JSON.stringify(join(directory, "MEMORY.md"))}. ${memory}`;
 }
 
@@ -32,7 +32,7 @@ export async function spawnTaskAgent(tx: Tx, children: SubagentRuntime, files: T
   agent: Agent, selection: BackgroundSelection | undefined, owner: ConversationId,
   message: string, binding: TaskBinding, source: InputSource) {
   const model = backgroundAgent(selection, agent);
-  const memoryBytes = await files.memoryBytes(binding.taskId);
+  const memoryCharacters = await files.memoryCharacters(binding.taskId);
   const child = await children.spawn(tx, {
     owner, source,
     agent: {
@@ -40,7 +40,7 @@ export async function spawnTaskAgent(tx: Tx, children: SubagentRuntime, files: T
         ...childScope(agent), instructions: BACKGROUND_AGENT_INSTRUCTIONS },
       resources: resources(files, binding.taskId),
     },
-    message: child => prompt(message, binding, child, files.directory(binding.taskId), memoryBytes),
+    message: child => prompt(message, binding, child, files.directory(binding.taskId), memoryCharacters),
     policy: child => policy(binding, child),
   });
   (await tx.doc(TaskContext, child)).binding = binding;

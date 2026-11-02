@@ -1,10 +1,10 @@
 import type { ChatBatchMessage } from "./chat-batch";
 
-/** Mirrors the workspace MEMORY.md injection budget; the curator is told its current size. */
-export const MEMORY_FILE_LIMIT_BYTES = 4_000;
+/** Soft target for workspace MEMORY.md; prompts report size in Unicode code points. */
+export const MEMORY_FILE_LIMIT_CHARS = 3_000;
 
 /** Prompt for one tool-enabled curator turn; it edits the two workspace files itself. */
-export function buildMemoryCurationPrompt(messages: readonly ChatBatchMessage[], memory: { bytes: number; limit?: number }): string {
+export function buildMemoryCurationPrompt(messages: readonly ChatBatchMessage[], memory: { characters: number; limit?: number }): string {
   const dates = [...new Set(messages.map(message => message.date))];
   const conversation = messages.map(message => `### ${message.date} · ${message.role}\n${message.content}`).join("\n\n");
   return [
@@ -16,7 +16,7 @@ export function buildMemoryCurationPrompt(messages: readonly ChatBatchMessage[],
     "Preserve attribution and status: distinguish user-confirmed information from agent proposals and unverified hypotheses. Record a proposal or hypothesis only if it could materially affect future judgment or action; label it clearly and never write it as a user decision, commitment, fact, task, instruction, or authorization. Do not invent owners, deadlines, reasons, or triggers. Include a concise source/artifact reference or verification caveat when it matters to continuing or checking work; do not copy full reports. Update, merge, and condense existing daily entries in place; consolidate status changes for the same matter while preserving necessary dates and outcomes, rather than leaving outdated and current statuses side by side. Skip chatter, routine tool logs, duplicates, long quotations, and credentials.",
     "## 2. MEMORY.md",
     "Keep only stable, cross-session information useful for future collaboration: (1) user background and long-term goals; (2) explicit communication, work, and decision preferences; (3) standing behavior boundaries and confirmation/authorization requirements; (4) long-term project purposes, key constraints, and reference locations; and (5) verified, reusable experience. Read the existing file and add, merge, or update concise entries in place, superseding outdated information when the user clearly corrects it. Do not duplicate entries or promote temporary states, one-off tasks, unresolved issues, agent proposals, or unverified hypotheses. Promote material from daily notes only after checking the source batch and confirming it is stable and verified. Keep assistant identity and general operating/workflow rules in AGENTS.md; put user-specific preferences and collaboration boundaries in MEMORY.md. MEMORY.md may preserve a standing restriction but never grants one-time permission or replaces explicit confirmation.",
-    `MEMORY.md currently uses ${memory.bytes} of ${memory.limit ?? MEMORY_FILE_LIMIT_BYTES} bytes. If it is near or over the limit, apply the maintenance rules above: merge or condense entries, remove content that is superseded, duplicated, or no longer useful, and preserve meaningful historical outcomes and necessary uncertainty; do not truncate blindly.`,
+    `MEMORY.md currently uses ${memory.characters} of ${memory.limit ?? MEMORY_FILE_LIMIT_CHARS} Unicode code points (characters). If it is near or over the limit, apply the maintenance rules above: merge or condense entries, remove content that is superseded, duplicated, or no longer useful, and preserve meaningful historical outcomes and necessary uncertainty; do not truncate blindly.`,
     "If no information could affect future collaboration, judgment, action, or follow-up, leave the files unchanged. Only edit MEMORY.md and the dated memory files identified by this batch; never edit AGENTS.md, skills, projects, artifacts, or item files. Verify tool results before reporting changed files; otherwise say none.",
     `Dates: ${dates.join(", ") || "none"}`,
     "Conversation, oldest first:", conversation || "(no readable text)",
