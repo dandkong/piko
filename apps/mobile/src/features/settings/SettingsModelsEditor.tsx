@@ -8,7 +8,7 @@ import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtim
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { AppScrollView } from "../../components/AppScrollView";
 import { TactilePressable } from "../../components/TactilePressable";
-import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
+import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: "关闭", minimal: "最少", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高",
@@ -113,28 +113,68 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
   </>;
 }
 
-function ThinkingTabs({ role, model, selected, onSelect }: {
+function ThinkingDropdown({ role, model, selected, onSelect }: {
   role: Role;
   model?: ModelInfo;
   selected?: ThinkingLevel;
   onSelect: (level: ThinkingLevel) => void;
 }) {
+  const { colors } = useTheme();
   const styles = useStyles();
-  if (!model) return <Text style={styles.note}>选择主模型后可设置思考强度。</Text>;
-  const levels = model.thinkingLevels;
-  if (!levels.length) return <Text style={styles.note}>该模型没有思考强度选项。</Text>;
-  return <View accessibilityRole="radiogroup" accessibilityLabel={`${role === "main" ? "主模型" : "后台模型"}思考强度`}
-    testID={`${role}-thinking-tabs`} style={styles.thinkingTabs}>
-    {levels.map(level => {
-      const active = (selected ?? "off") === level;
-      return <TactilePressable key={level} testID={`${role}-thinking-${level}`} accessibilityRole="radio"
-        accessibilityLabel={thinkingLabels[level]} accessibilityState={{ selected: active }} selected={active}
-        onPress={() => onSelect(level)} variant="plain" scaleTo={1}
-        style={styles.thinkingTabPressable} faceStyle={styles.thinkingTab}>
-        <Text style={[styles.thinkingText, active && styles.thinkingTextSelected]}>{thinkingLabels[level]}</Text>
-      </TactilePressable>;
-    })}
-  </View>;
+  const anchor = useRef<ComponentRef<typeof View>>(null);
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [menu, setMenu] = useState<{ left: number; top: number; width: number; height: number }>();
+  const levels = model?.thinkingLevels ?? [];
+  const selectedLevel = selected && levels.includes(selected) ? selected : levels[0];
+  const title = `${role === "main" ? "主模型" : "后台模型"}思维强度`;
+  const value = !model ? "先选择模型" : !levels.length ? "无可选项" : selectedLevel ? thinkingLabels[selectedLevel] : "选择强度";
+
+  const openMenu = () => {
+    anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
+      const menuWidth = Math.min(anchorWidth, width - 32);
+      const menuHeight = Math.min(360, levels.length * 50, height - insets.top - insets.bottom - 32);
+      const left = Math.max(16, Math.min(x, width - menuWidth - 16));
+      const below = y + anchorHeight + 6;
+      const top = below + menuHeight <= height - insets.bottom - 8
+        ? below : Math.max(insets.top + 8, y - menuHeight - 6);
+      setMenu({ left, top, width: menuWidth, height: menuHeight });
+    });
+  };
+
+  return <>
+    <View ref={anchor} collapsable={false}>
+      <TactilePressable testID={`${role}-thinking-dropdown`} accessibilityRole="button"
+        accessibilityLabel={`${title}：${value}`} accessibilityState={{ expanded: !!menu }}
+        disabled={!model || !levels.length} onPress={openMenu} variant="card" scaleTo={1} faceStyle={styles.dropdown}>
+        <Text numberOfLines={1} style={styles.dropdownValue}>{value}</Text>
+        <ChevronDown size={18} strokeWidth={1.8} color={colors.muted} />
+      </TactilePressable>
+    </View>
+    <Modal transparent visible={!!menu} animationType="fade" onRequestClose={() => setMenu(undefined)}>
+      {menu ? <View style={StyleSheet.absoluteFill}>
+        <Pressable accessibilityRole="button" accessibilityLabel="关闭思考强度列表"
+          onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
+        <View accessibilityRole="radiogroup" accessibilityLabel={title} testID={`${role}-thinking-options`}
+          style={[styles.dropdownMenu, menu]}>
+          <AppScrollView keyboardShouldPersistTaps="handled" showScrollbar>
+            {levels.map(level => {
+              const active = selectedLevel === level;
+              return <View key={level}>
+                <TactilePressable testID={`${role}-thinking-option-${level}`} accessibilityRole="radio"
+                  accessibilityLabel={`${title}：${thinkingLabels[level]}`} accessibilityState={{ checked: active }}
+                  selected={active} onPress={() => { setMenu(undefined); onSelect(level); }}
+                  variant="plain" scaleTo={1} faceStyle={styles.dropdownOption}>
+                  <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{thinkingLabels[level]}</Text>
+                  {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : null}
+                </TactilePressable>
+              </View>;
+            })}
+          </AppScrollView>
+        </View>
+      </View> : null}
+    </Modal>
+  </>;
 }
 
 export function SettingsModelsEditor({ snapshot, onChange }: {
@@ -206,9 +246,17 @@ function ModelSection({ title, role, selection, mainModel, models, model, thinki
   return <View style={styles.section} testID={`${role}-model-section`}>
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>
-      <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={role === "main" && models.length === 0}
-        onSelect={value => onModel(value ? models.find(model => model.provider === value.provider && model.id === value.model) ?? null : null)} />
-      <ThinkingTabs role={role} model={model} selected={thinking} onSelect={onThinking} />
+      <View style={styles.controlsRow}>
+        <View style={styles.controlColumn}>
+          <Text style={styles.controlLabel}>模型</Text>
+          <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={role === "main" && models.length === 0}
+            onSelect={value => onModel(value ? models.find(model => model.provider === value.provider && model.id === value.model) ?? null : null)} />
+        </View>
+        <View style={styles.controlColumn}>
+          <Text style={styles.controlLabel}>思维强度</Text>
+          <ThinkingDropdown role={role} model={model} selected={thinking} onSelect={onThinking} />
+        </View>
+      </View>
     </View>
   </View>;
 }
@@ -229,11 +277,9 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
   dropdownOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 14, borderRadius: 0 },
   dropdownOptionText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
   dropdownOptionSelected: { fontWeight: "600" },
-  thinkingTabs: { width: "100%", flexDirection: "row", alignItems: "stretch", gap: 1, padding: 3, backgroundColor: "transparent", borderWidth: 1, borderColor: colors.line, borderRadius: radii.pill },
-  thinkingTabPressable: { flex: 1, minWidth: 0 },
-  thinkingTab: { flex: 1, minWidth: 0, minHeight: controlSizes.md, paddingHorizontal: 1, borderRadius: radii.pill },
-  thinkingText: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: "500" },
-  thinkingTextSelected: { color: colors.text, fontWeight: "600" },
+  controlsRow: { flexDirection: "row", alignItems: "flex-end", gap: 12 },
+  controlColumn: { flex: 1, minWidth: 0, gap: 6 },
+  controlLabel: { color: colors.muted, fontSize: 12, lineHeight: 17, fontWeight: "500" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
   notice: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
   });

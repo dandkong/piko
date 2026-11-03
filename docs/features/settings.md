@@ -5,7 +5,7 @@
 ## 页面
 
 - 设置页首先显示“外观”卡片，提供“跟随设备 / 深色 / 浅色”下拉选择；选择立即应用并保存在当前设备，不写入服务端设置。
-- 随后直接显示“主模型”和“后台模型”两个区块；各自用下拉列表选模型，下面用横向单选分段控件选该模型支持的思考强度。
+- 随后直接显示“主模型”和“后台模型”两个区块；每个区块用左右并排的两个下拉框，分别选择模型和该模型支持的思考强度。未选择模型时，思考强度下拉框禁用。
 - 不为模型选择增加二级菜单。通用 `SettingsDetailPage` 模板保留供未来复用，但当前模型设置不使用它。
 - 模型目录由部署配置提供。若部署没有可用模型，页面只显示部署侧配置提示，不提供供应商或凭据表单。
 - 模型策略选择后立即反映在页面，并按修订号串行写入 `piko.json`、热应用，不需要重启服务；成功不提示。失败先恢复上次确认的选择，面板打开时原位说明并提供重新读取，已关闭时才用 Toast。响应丢失不证明服务端没保存，重新读取成功后才能核对结果。
@@ -36,7 +36,7 @@
 - `server/settings/` 与 `server/runtime/settings.ts`：模型角色配置读写和可用模型摘要。
 - `server/runtime/model-config.ts`、`server/runtime/pi.ts`：主/后台模型策略加载、热应用和动态继承。
 - `apps/mobile/src/features/settings/AppearanceSection.tsx` 与 `apps/mobile/src/theme.ts`：设备本地外观选项、主题色板和系统外观响应。
-- `apps/mobile/src/features/settings/`：一级模型选择下拉与思考强度分段控件。
+- `apps/mobile/src/features/settings/`：一级模型与思考强度下拉控件。
 - `apps/mobile/src/features/shell/AppShell.tsx`、`features/chat/useChat.ts`：主模型缺失 Toast。
 - `server/channels/telegram/channel.ts`：Telegram 原生缺模型提示。
 - `SettingsDetailPage.tsx` 是保留的通用布局模板；当前设置页不调用。

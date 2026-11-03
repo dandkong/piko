@@ -46,7 +46,7 @@ export type ThemeStateColors = {
 export const lightColors: ThemeColors = {
   canvas: "#FCFCFC",
   card: "#FFFFFF",
-  agentCard: "#EAEAEA",
+  agentCard: "#F0F0F0",
   embeddedCard: "#F4F4F5",
   panel: "#FFFFFF",
   text: "#171717",
