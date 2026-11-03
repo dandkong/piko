@@ -71,9 +71,9 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   return StyleSheet.create({
   root: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
   scrim: { backgroundColor: colors.scrim },
-  dialog: { width: "100%", maxWidth: 360, padding: 22, gap: 18, borderRadius: radii.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  dialog: { width: "100%", maxWidth: 360, padding: 22, gap: 18, borderRadius: radii.card, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   title: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  inputField: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, backgroundColor: colors.canvas },
+  inputField: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: radii.control, backgroundColor: colors.panel },
   inputFieldFocused: { borderColor: stateColors.focus },
   inputFieldFocusVisible: { boxShadow: `0 0 0 1px ${stateColors.focus}` } as unknown as ViewStyle,
   input: { minHeight: 46, paddingHorizontal: 12, color: colors.text, fontSize: 15 },

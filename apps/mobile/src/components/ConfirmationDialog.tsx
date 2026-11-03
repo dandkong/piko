@@ -72,7 +72,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
     maxWidth: 380,
     padding: 22,
     gap: 16,
-    backgroundColor: colors.card,
+    backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: radii.card,

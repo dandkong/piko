@@ -148,7 +148,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.panel,
     borderTopLeftRadius: radii.panel,
     borderTopRightRadius: radii.panel,
     overflow: "hidden",
@@ -179,7 +179,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
     paddingBottom: 24,
   },
   scroll: { flex: 1 },
-  footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.canvas },
+  footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.panel },
   panelOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, elevation: 20 },
   });
 }

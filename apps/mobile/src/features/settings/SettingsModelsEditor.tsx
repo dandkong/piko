@@ -225,7 +225,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 14, gap: 14 },
   dropdown: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, borderRadius: radii.control },
   dropdownValue: { flex: 1, minWidth: 0, color: colors.text, fontSize: 14, lineHeight: 20 },
-  dropdownMenu: { position: "absolute", overflow: "hidden", borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, backgroundColor: colors.card, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },
+  dropdownMenu: { position: "absolute", overflow: "hidden", borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, backgroundColor: colors.panel, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },
   dropdownOption: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 14, borderRadius: 0 },
   dropdownOptionText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
   dropdownOptionSelected: { fontWeight: "600" },

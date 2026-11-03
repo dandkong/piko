@@ -16,8 +16,8 @@
       "scope": "/",
       "display": "standalone",
       "orientation": "portrait",
-      "themeColor": "#FCFCFC",
-      "backgroundColor": "#FCFCFC"
+      "themeColor": "#0C0C0C",
+      "backgroundColor": "#0C0C0C"
     },
     "icon": "./assets/capybara.png",
     "orientation": "portrait",

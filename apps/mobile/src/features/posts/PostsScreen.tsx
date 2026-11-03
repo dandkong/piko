@@ -167,7 +167,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
   cardHit: { flex: 1, minWidth: 0 },
   menuSlot: { position: "absolute", top: 6, right: 6 },
   card: { alignItems: "stretch", padding: 16, gap: 10, borderRadius: radii.card },
-  date: { color: colors.muted, fontSize: 12, lineHeight: 18, minHeight: 28, paddingRight: 44 },
+  date: { color: colors.weak, fontSize: 12, lineHeight: 18, minHeight: 28, paddingRight: 44 },
   title: { color: colors.text, fontSize: 17, lineHeight: 24, fontWeight: "600" },
   excerpt: { color: colors.text, fontSize: 14, lineHeight: 21 },
   reasonBlock: { gap: 3 },

@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Piko" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#0C0C0C" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>%WEB_TITLE%</title>
@@ -15,9 +16,16 @@
     <style id="expo-reset">
       :root {
         color-scheme: light dark;
-        --piko-page-background: Canvas;
-        --piko-scrollbar-thumb: GrayText;
-        --piko-scrollbar-thumb-hover: GrayText;
+        --piko-page-background: #FCFCFC;
+        --piko-scrollbar-thumb: rgba(105, 113, 118, 0.42);
+        --piko-scrollbar-thumb-hover: rgba(105, 113, 118, 0.68);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --piko-page-background: #0C0C0C;
+          --piko-scrollbar-thumb: rgba(163, 163, 163, 0.42);
+          --piko-scrollbar-thumb-hover: rgba(163, 163, 163, 0.68);
+        }
       }
       html,
       body {

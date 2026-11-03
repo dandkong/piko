@@ -38,7 +38,7 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   },
   timeDivider: {
     alignSelf: "center",
-    color: colors.muted,
+    color: colors.weak,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
@@ -52,7 +52,7 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   userBubble: {
     alignSelf: "flex-end",
     maxWidth: "85%",
-    backgroundColor: colors.blue,
+    backgroundColor: colors.userBubble,
     borderBottomRightRadius: radii.control,
   },
   assistantBubble: {
@@ -78,7 +78,7 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
     elevation: 3,
   },
   composer: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.panel,
     borderRadius: radii.panel,
     borderWidth: 1,
     borderColor: colors.line,

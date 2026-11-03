@@ -83,7 +83,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: radii.card,
-    backgroundColor: colors.card,
+    backgroundColor: colors.panel,
     shadowColor: colors.text,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
