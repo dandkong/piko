@@ -58,7 +58,7 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   assistantBubble: {
     alignSelf: "flex-start",
     maxWidth: "95%",
-    backgroundColor: stateColors.soft,
+    backgroundColor: colors.agentCard,
     borderBottomLeftRadius: radii.control,
   },
   latestButtonOverlay: {
@@ -90,10 +90,10 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
     elevation: 4,
   },
   composerFocused: {
-    borderColor: colors.lineStrong,
+    borderColor: stateColors.focus,
   },
   composerFocusVisible: {
-    boxShadow: `0 0 0 1px ${colors.lineStrong}`,
+    boxShadow: `0 0 0 1px ${stateColors.focus}`,
   } as unknown as ViewStyle,
   composerAttachment: {
     flexDirection: "row",

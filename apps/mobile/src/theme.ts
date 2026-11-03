@@ -8,6 +8,8 @@ export type ThemeMode = "dark" | "light";
 export type ThemeColors = {
   canvas: string;
   card: string;
+  agentCard: string;
+  embeddedCard: string;
   panel: string;
   text: string;
   muted: string;
@@ -44,31 +46,35 @@ export type ThemeStateColors = {
 export const lightColors: ThemeColors = {
   canvas: "#FCFCFC",
   card: "#FFFFFF",
-  panel: "#FCFCFC",
-  text: "#11191C",
-  muted: "#697176",
-  weak: "#8A9094",
-  line: "#EEEEF0",
-  lineStrong: "#CDD5DC",
+  agentCard: "#EAEAEA",
+  embeddedCard: "#F4F4F5",
+  panel: "#FFFFFF",
+  text: "#171717",
+  muted: "#737373",
+  weak: "#949494",
+  line: "#E5E5E5",
+  lineStrong: "#CCCCCC",
   blue: "#D6E5F7",
-  userBubble: "#DCEBFC",
-  blueDark: "#1473C8",
-  danger: "#AA4A45",
-  dangerSurface: "#FBEFED",
-  codeSurface: "#E2E4E7",
+  userBubble: "#D6E8FC",
+  blueDark: "#267FC2",
+  danger: "#C94F4F",
+  dangerSurface: "#FCEBEC",
+  codeSurface: "#F4F4F5",
   mascot: "#ECF5FA",
-  drawerEdge: "#E3E6E8",
-  desk: "#F2F3F4",
-  scrim: "rgba(17, 25, 28, 0.16)",
+  drawerEdge: "#E5E5E5",
+  desk: "#F4F4F5",
+  scrim: "rgba(23, 23, 23, 0.16)",
 };
 
 export const darkColors: ThemeColors = {
   canvas: "#0C0C0C",
   card: "#161616",
+  agentCard: "#161616",
+  embeddedCard: "#1F1F1F",
   panel: "#202020",
   text: "#F5F5F5",
   muted: "#A3A3A3",
-  weak: "#737373",
+  weak: "#858585",
   line: "#292929",
   lineStrong: "#414141",
   blue: "#174E78",
@@ -76,7 +82,7 @@ export const darkColors: ThemeColors = {
   blueDark: "#72BFFF",
   danger: "#F19A92",
   dangerSurface: "#382020",
-  codeSurface: "#161616",
+  codeSurface: "#101010",
   mascot: "#202020",
   drawerEdge: "#292929",
   desk: "#000000",
@@ -99,18 +105,18 @@ export const motion = {
 
 /** Neutral interaction states stay gray in both palettes; blue is reserved for primary actions. */
 export const lightStateColors: ThemeStateColors = {
-  selected: "#F0F1F2",
-  selectedHover: "#E9EBEC",
-  selectedPressed: "#E4E7E8",
-  hover: "#F8F9FA",
-  pressed: "#ECEEEF",
-  soft: "#F3F5F6",
-  softHover: "#EDF0F2",
-  softPressed: "#E6EAEC",
+  selected: "#EEEFF0",
+  selectedHover: "#E5E7E9",
+  selectedPressed: "#DCDDDF",
+  hover: "#F4F4F5",
+  pressed: "#EEEFF0",
+  soft: "#F4F4F5",
+  softHover: "#EEEFF0",
+  softPressed: "#E5E7E9",
   primaryHover: "#C9DDF4",
   primaryPressed: "#BDD2EA",
   disabledOpacity: 0.4,
-  focus: "#858E92",
+  focus: "#267FC2",
 };
 
 export const darkStateColors: ThemeStateColors = {
@@ -119,13 +125,13 @@ export const darkStateColors: ThemeStateColors = {
   selectedPressed: "#414141",
   hover: "#242424",
   pressed: "#303030",
-  soft: "#161616",
+  soft: "#1F1F1F",
   softHover: "#242424",
   softPressed: "#303030",
   primaryHover: "#205B87",
   primaryPressed: "#124269",
   disabledOpacity: 0.4,
-  focus: "#737373",
+  focus: "#72BFFF",
 };
 
 export type ThemeContextValue = {

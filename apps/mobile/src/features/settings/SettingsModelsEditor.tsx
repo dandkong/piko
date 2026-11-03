@@ -222,7 +222,7 @@ function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
   content: { paddingTop: 4, paddingBottom: 20, gap: 20 },
   section: { marginHorizontal: 20, gap: 8 },
   sectionTitle: { color: colors.muted, fontSize: 13, lineHeight: 19, fontWeight: "500" },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 14, gap: 14 },
+  card: { backgroundColor: colors.embeddedCard, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 14, gap: 14 },
   dropdown: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, borderRadius: radii.control },
   dropdownValue: { flex: 1, minWidth: 0, color: colors.text, fontSize: 14, lineHeight: 20 },
   dropdownMenu: { position: "absolute", overflow: "hidden", borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, backgroundColor: colors.panel, shadowColor: colors.text, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },

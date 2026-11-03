@@ -78,7 +78,7 @@ const ui = StyleSheet.create({
   codeContent: { padding: 12 },
   codeText: { color: colors.text, fontFamily: monospace, fontSize: 14, lineHeight: 21 },
   horizontal: { maxWidth: "100%", flexGrow: 0 },
-  table: { marginBottom: 8, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radii.control, overflow: "hidden" },
+  table: { marginBottom: 8, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radii.control, overflow: "hidden", backgroundColor: colors.embeddedCard },
   row: { flexDirection: "row" },
   cell: { width: 160, flexShrink: 0, padding: 10, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.lineStrong },
   headerCell: { backgroundColor: stateColors.selected },
