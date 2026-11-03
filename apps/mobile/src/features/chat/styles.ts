@@ -1,4 +1,4 @@
-import { StyleSheet, type ViewStyle } from "react-native";
+import { StyleSheet } from "react-native";
 import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
 function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
@@ -89,12 +89,6 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
-  composerFocused: {
-    borderColor: stateColors.focus,
-  },
-  composerFocusVisible: {
-    boxShadow: `0 0 0 1px ${stateColors.focus}`,
-  } as unknown as ViewStyle,
   composerAttachment: {
     flexDirection: "row",
     alignItems: "center",

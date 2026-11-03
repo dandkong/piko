@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from "react";
-import { Platform, Text, TextInput, type TextInputProps, type TextStyle, View } from "react-native";
+import { Platform, Text, TextInput, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
 import { useTheme } from "../../theme";
 import { IconButton } from "../../components/IconButton";
@@ -14,8 +14,6 @@ const webInputStyle =
   Platform.OS === "web"
     ? ({ outlineStyle: "none" } as unknown as TextStyle)
     : undefined;
-type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
-
 type Props = {
   draft: string;
   onChange: (value: string) => void;
@@ -45,8 +43,6 @@ export function ChatComposer({
 }: Props) {
   const { colors } = useTheme();
   const styles = useChatStyles();
-  const [focused, setFocused] = useState(false);
-  const [focusVisible, setFocusVisible] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
@@ -76,7 +72,7 @@ export function ChatComposer({
   }, [draft]);
   const sendDisabled = !showStop && !canSend;
   return (
-    <View style={[styles.composer, focused && styles.composerFocused, focusVisible && styles.composerFocusVisible]}>
+    <View style={styles.composer}>
       {attachments.length > 0 && (
         <View style={styles.composerAttachments}>
           {attachments.map((item) => (
@@ -133,13 +129,6 @@ export function ChatComposer({
           }
           placeholder={loading ? "正在连接…" : "发消息…"}
           placeholderTextColor={colors.muted}
-          selectionColor={colors.blueDark}
-          onFocus={(event: InputFocusEvent) => {
-            setFocused(true);
-            const target = event.currentTarget as unknown as { matches?: (selector: string) => boolean } | null;
-            setFocusVisible(Platform.OS === "web" && (target?.matches ? target.matches(":focus-visible") : true));
-          }}
-          onBlur={() => { setFocused(false); setFocusVisible(false); }}
           style={[styles.input, webInputStyle, { height: inputHeight }]}
           multiline
           editable={!loading}
