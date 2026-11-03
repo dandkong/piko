@@ -33,7 +33,7 @@ export class CompactionObserver {
     const current = this.active.get(id);
     if (this.closed || !current || current.finishing) return;
     current.finishing = true;
-    // Settle the task without blocking watchEvents or inspecting its summary/submission.
+    // Settle the task without blocking the conversation observer or inspecting its summary/submission.
     void compactionResult(this.harness, id).then(result => this.finish(id, result), () => this.finish(id, { status: "failed" }));
   }
   private finish(id: TaskId, result: CompactionResult | { status: "failed" }) {

@@ -5,14 +5,14 @@
 ## 分层与职责
 
 ```text
-Durable watchEvents / LiveDoc / 原始 entries
+Durable observeConversation / observeCommits / LiveDoc / 原始 entries
     ↓ server/runtime/ConversationView
 Piko SessionEvent（运行时事实）
     ├─ ConversationStore → 客户端 StreamEvent → SSE → Web / iOS / Android
     └─ observeRuntime → TelegramConversationOutput → TelegramReply
 ```
 
-- `ConversationView` 是 SDK 适配边界：投影用户/助手文字、工具开始/结束、执行开始/结束、已应用用户输入、压缩和实时活动。
+- `ConversationView` 是 SDK 适配边界：从结构化会话状态投影用户/助手文字、工具开始/结束、执行开始/结束、已应用用户输入、压缩和实时活动；外部 Piko `SessionEvent` 与 RN/TG 协议保持稳定。
 - `SessionEvent` 在 `server/runtime/types.ts` 定义，不包含传输快照和通道呈现指令。`invalidated` 只表示需要重新读取状态，不对外发送。
 - `ConversationStore` 对客户端只投影五类事件，正文更新最多合并 50ms，状态失效时重读原生快照；完整运行时事实只通过 `observeRuntime` 提供给 TG。
 - 客户端与 TG 都不拥有执行生命周期。断线或关闭观察只退订；输入、停止、维护与内部报告仍经过原有接纳线。
@@ -40,9 +40,9 @@ Piko SessionEvent（运行时事实）
 - `replying`：最近一次观察到的活动是正文输出。
 - `tool`：最近一次观察到的活动是工具开始，附工具名，不附参数、路径或输出。
 
-活动采用“最近事件覆盖”而不是精确运行阶段：工具开始或正文输出更新标签；工具结束、单条消息结束、思考块或重试不使标签回退。标签一直保持到下一次明确活动覆盖，原生 `run_end` 才清空。这里的整轮不是工具循环中间的 `turn_end`。并行工具也只显示最后启动的标签，不在完成时切回其他工具。
+活动采用“最近事件覆盖”而不是精确运行阶段：工具开始或正文输出更新标签；工具结束、单条消息结束、思考块或重试不使标签回退。标签一直保持到下一次明确活动覆盖，原生 `pi.live.run` 消失（Piko 投影的执行结束边界）才清空。这里的整轮不是工具循环中间的 `turn_end`。并行工具也只显示最后启动的标签，不在完成时切回其他工具。
 
-`conversation-activity.ts` 负责实时事件投影；同一进程内 HTTP/SSE 快照保留本轮最近一次已知活动，不因工具完成或正文结束而回退。初次观察或原生快照恢复时，可以从 Durable `LiveDoc` 的工具 slots 和 generation 恢复明确的当前工具/正文；无可恢复线索时从思考占位开始。没有另外持久化活动状态，跨后端重启不承诺恢复已经结束的上一项活动。
+`conversation-activity.ts` 负责从 Durable `LiveState` 投影活动；同一进程内 HTTP/SSE 快照保留本轮最近一次已知活动，不因工具完成或正文结束而回退。初次观察或原生状态恢复时，可以从 `pi.live` 的工具 slots 和 generation 恢复明确的当前工具/正文；无可恢复线索时从思考占位开始。没有另外持久化活动状态，跨后端重启不承诺恢复已经结束的上一项活动。
 
 各端头像下方现有状态栏使用同一映射：如“搜索网页”“执行命令”“读取文件”“正在回复”；没有中文映射的工具统一显示“调用工具”。加载、上传、停止和重连状态仍优先。客户端不维护活跃工具 Map，不通过消息 ID 前缀推断头像活动，也不新增聊天气泡。
 

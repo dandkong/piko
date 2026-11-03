@@ -1,16 +1,21 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import type { WatchCall } from "@earendil-works/chord";
 import {
   InboxDoc,
   LiveDoc,
-  watchEvents,
-  type AgentEvent,
-  type AgentEventStream,
   type Conversation,
+  type ConversationView as DurableConversationView,
   type EntryRecord,
+  type Harness,
+  type InboxState,
+  type LiveState,
+  type Observation,
+  type NestedToolSlot,
+  type SubmissionId,
   type SubmissionRecord,
   type Storage,
   type Cursor,
-  type Harness,
+  type ToolSlot,
 } from "@earendil-works/pi-durable";
 import type { ChatUsage } from "../../shared/chat";
 import type { SessionEvent } from "./types";
@@ -52,20 +57,36 @@ export class ConversationView {
   private compactions!: CompactionObserver;
   private entries: EntryRecord[] = [];
   private inputEntries = new Map<number, string>();
+  private readonly pendingBindings = new Map<number, string>();
+  private loadingBindings = false;
+  private entryIds = new Set<number>();
+  private projectedEntryIds = new Set<number>();
   private hiddenEntries = new Set<number>();
   private unsubscribeBindings?: () => void;
-  private eventStream!: AgentEventStream;
+  private viewObservation?: Observation<DurableConversationView>;
   private delivery?: Promise<void>;
+  private readonly pendingViews: DurableConversationView[] = [];
+  private viewReady = false;
+  private observationClosed = false;
+  private drainScheduled = false;
+  private lastLive?: LiveState;
+  private lastInbox?: InboxState;
+  private runActive?: boolean;
+  private activeInputs = new Set<SubmissionId>();
   private output = new PiMessageEvents((event) => this.emit(event));
   private previousIds = new Map<string, string>();
   private readonly contextWindows = new Map<string, number>();
   selected?: { provider: string; modelId: string };
-  private readonly toolCalls = new Map<
-    string,
-    { name: string; summary: string; startedAt: number }
-  >();
+  private readonly toolCalls = new Map<string, {
+    name: string;
+    summary: string;
+    startedAt: number;
+    finished: boolean;
+  }>();
   private runStartedAt?: number;
-  private readonly liveActivity = new ConversationActivityProjection(activity => this.emit({ type: "activity", activity }));
+  private readonly liveActivity = new ConversationActivityProjection(
+    activity => this.emit({ type: "activity", activity }),
+  );
   observationError?: Error;
 
   constructor(
@@ -88,7 +109,7 @@ export class ConversationView {
     return partial?.content.trim() ? [...messages, partial] : messages;
   }
   async init(): Promise<void> {
-    const { harness, storage, conversation } = this;
+    const { harness, conversation } = this;
     this.compactions = new CompactionObserver(
       harness,
       (event) => this.emit(event),
@@ -104,13 +125,35 @@ export class ConversationView {
         `${model.provider}/${model.id}`,
         model.contextWindow,
       );
-    const stream = (this.eventStream = await watchEvents(
-      harness,
-      conversation.id,
-      ctx,
-    ));
+    const observation = harness.observeCommits({
+      advance: (publication) => {
+        let invalidated = false;
+        for (const change of publication.changes) {
+          if (change.type !== "submission") continue;
+          const input = change.value;
+          if (input.conversationId !== conversation.id) continue;
+          if (
+            input.type === "input" &&
+            input.requestId &&
+            input.entry !== undefined
+          ) {
+            this.inputEntries.set(input.entry, input.requestId);
+            if (this.loadingBindings)
+              this.pendingBindings.set(input.entry, input.requestId);
+          }
+          invalidated = true;
+        }
+        if (invalidated)
+          queueMicrotask(() => {
+            if (!this.isClosed()) this.emit({ type: "invalidated" });
+          });
+      },
+      end: () => {},
+    });
+    this.unsubscribeBindings = () => observation.detach();
     this.entries = await readPiEntries(harness, conversation.id);
-    this.inputEntries = await readPiInputs(harness, storage, conversation.id);
+    this.entryIds = new Set(this.entries.map(entry => entry.id));
+    await this.reloadInputBindings();
     this.hiddenEntries = await harness.commit(async (tx) => {
       const hidden = new Set<number>();
       for (const [entry, requestId] of this.inputEntries)
@@ -118,204 +161,370 @@ export class ConversationView {
           hidden.add(entry);
       return hidden;
     }, ctx);
-    this.unsubscribeBindings = harness.subscribeCommits((publication) => {
-      for (const change of publication.changes)
-        if (change.type === "submission") {
-          const input = change.value;
-          if (
-            input.conversationId === conversation.id &&
-            input.type === "input" &&
-            input.requestId &&
-            input.entry !== undefined
-          )
-            this.inputEntries.set(input.entry, input.requestId);
-        }
-    });
-    const through = stream.snapshot.entries.reduce(
-      (latest, entry) => Math.max(latest, entry.id),
-      0,
-    );
-    this.output.restore(
-      this.entries.filter((entry) => entry.id <= through),
-      stream.snapshot,
-      true,
-    );
-    this.liveActivity.restore(stream.snapshot);
-    this.activity(!!stream.snapshot.run, false);
-    this.compactions.sync(stream.snapshot.compactions, true);
-    this.startEvents(stream);
+    await this.attachObservation(true);
     logInfo("conversation.observation.started", {
       conversationId: String(conversation.id),
       historyCount: this.entries.length,
-      recoveredRunActive: !!stream.snapshot.run,
+      recoveredRunActive: !!this.runActive,
     });
   }
 
-  private startEvents(stream: AgentEventStream) {
-    stream.start((events) => (this.delivery = this.observe(events)));
-    void stream.closed.then((end) => {
-      if (end.reason === "stopped" || stream !== this.eventStream) return;
-      this.observationError =
-        end.reason === "listener_error"
-          ? end.error
-          : end.reason === "session_failed"
-            ? new Error("The durable session failed; restart Piko.")
-            : new Error(`Durable event stream closed: ${end.reason}`);
-      if (!this.isClosed())
-        logError("conversation.observation.closed", {
+  private async attachObservation(initial = false) {
+    this.viewReady = false;
+    this.observationClosed = false;
+    this.pendingViews.length = 0;
+    // Synchronous observers run on the Session line; queue immutable views and
+    // project them off-line.
+    const observation = await this.harness.observeConversation(this.conversation.id, {
+      advance: (call: WatchCall<DurableConversationView>) => {
+        if (call.kind === "value") {
+          this.pendingViews.push(call.value);
+          if (this.viewReady) this.scheduleViewDrain();
+        } else {
+          this.observationError = call.error instanceof Error
+            ? call.error
+            : new Error("Durable conversation view is temporarily unavailable.");
+        }
+      },
+      end: (end) => {
+        this.observationClosed = true;
+        const detail = "error" in end ? end.error : undefined;
+        this.observationError = detail instanceof Error
+          ? detail
+          : new Error(end.kind === "failed"
+            ? "The durable session failed; restart Piko."
+            : `Durable conversation view closed: ${end.kind}`);
+        if (!this.isClosed())
+          queueMicrotask(() => logError("conversation.observation.closed", {
+            conversationId: String(this.conversation.id),
+            reason: end.kind,
+          }));
+      },
+    }, ctx);
+    this.viewObservation = observation;
+    await this.observeView(observation.value, initial);
+    while (this.pendingViews.length) {
+      const pending = this.pendingViews.splice(0);
+      for (const view of pending) await this.observeView(view);
+    }
+    if (!this.observationClosed) this.observationError = undefined;
+    this.viewReady = true;
+    if (this.pendingViews.length) this.scheduleViewDrain();
+  }
+
+  private scheduleViewDrain() {
+    if (this.drainScheduled) return;
+    this.drainScheduled = true;
+    queueMicrotask(() => {
+      this.drainScheduled = false;
+      this.delivery = this.drainViews();
+      void this.delivery.catch(error => {
+        this.observationError = error instanceof Error ? error : new Error(String(error));
+        logError("conversation.observation.update_failed", {
           conversationId: String(this.conversation.id),
-          reason: end.reason,
         });
+      });
     });
   }
 
-  /** Native app-entry deletion has no SDK publication. Drop the mounted view and rebuild
-   * from storage, using the same snapshot recovery as overflow; never stop the conversation. */
+  private async drainViews() {
+    while (this.viewReady && this.pendingViews.length) {
+      const pending = this.pendingViews.shift()!;
+      try {
+        await this.observeView(pending);
+      } catch (error) {
+        this.observationError = error instanceof Error ? error : new Error(String(error));
+        logError("conversation.observation.update_failed", {
+          conversationId: String(this.conversation.id),
+        });
+      }
+    }
+  }
+
+  /** Rebuild the raw-entry projection after deletion without stopping the conversation. */
   async refreshObservation(): Promise<void> {
-    await this.eventStream.stop();
+    this.viewReady = false;
+    this.viewObservation?.detach();
+    this.pendingViews.length = 0;
     await this.delivery?.catch(() => {});
-    const stream = this.eventStream = await watchEvents(this.harness, this.conversation.id, ctx);
-    await this.observe([stream.snapshot]);
-    this.startEvents(stream);
+    this.entries = await readPiEntries(this.harness, this.conversation.id);
+    this.entryIds = new Set(this.entries.map(entry => entry.id));
+    this.projectedEntryIds.clear();
+    await this.reloadInputBindings();
+    this.hiddenEntries = await this.harness.commit(async (tx) => {
+      const hidden = new Set<number>();
+      for (const [entry, requestId] of this.inputEntries)
+        if (await internalInput(tx, requestId, this.conversation.id)) hidden.add(entry);
+      return hidden;
+    }, ctx);
+    this.lastLive = undefined;
+    this.lastInbox = undefined;
+    this.runActive = undefined;
+    this.activeInputs.clear();
+    this.toolCalls.clear();
+    await this.attachObservation(true);
+    this.emit({ type: "invalidated" });
   }
 
   get bindings(): ReadonlyMap<number, string> {
     return this.inputEntries;
   }
-  private async observe(events: readonly AgentEvent[]) {
-    for (const event of events) {
-      if (event.type === "snapshot") {
-        this.toolCalls.clear();
-        this.entries = await readPiEntries(this.harness, this.conversation.id);
-        const through = event.entries.reduce(
-          (latest, entry) => Math.max(latest, entry.id),
-          0,
+
+  private async reloadInputBindings() {
+    this.pendingBindings.clear();
+    this.loadingBindings = true;
+    try {
+      const bindings = await readPiInputs(this.harness, this.storage, this.conversation.id);
+      for (const [entry, requestId] of this.pendingBindings) bindings.set(entry, requestId);
+      this.inputEntries = bindings;
+    } finally {
+      this.loadingBindings = false;
+      this.pendingBindings.clear();
+    }
+  }
+
+  private async mergeViewEntries(view: DurableConversationView) {
+    const tail = this.entries.at(-1)?.id;
+    const missedWindow =
+      view.before !== undefined && (tail === undefined || view.before > tail);
+    if (missedWindow) {
+      this.entries = await readPiEntries(this.harness, this.conversation.id);
+      this.entryIds = new Set(this.entries.map(entry => entry.id));
+    }
+    const additions = view.entries.filter(entry => !this.entryIds.has(entry.id));
+    for (const entry of additions) this.entryIds.add(entry.id);
+    if (additions.length) {
+      const currentTail = this.entries.at(-1)?.id;
+      this.entries.push(...additions);
+      if (currentTail !== undefined && additions.some(entry => entry.id <= currentTail))
+        this.entries.sort((a, b) => a.id - b.id);
+    }
+    const through = view.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
+    const candidates = missedWindow
+      ? this.entries.filter(entry => entry.id <= through)
+      : view.entries;
+    return candidates
+      .filter(entry => !this.projectedEntryIds.has(entry.id))
+      .sort((a, b) => a.id - b.id);
+  }
+
+  private async observeView(view: DurableConversationView, initial = false) {
+    const live = (view.docs[LiveDoc.definition.kind] ?? {}) as LiveState;
+    const inbox = (view.docs[InboxDoc.definition.kind] ?? { items: [] }) as InboxState;
+    const liveMessage = live.run ? live.generation?.message : undefined;
+    const added = await this.mergeViewEntries(view);
+    const runActive = !!live.run;
+    const queued = inbox.items.some(item => item.mode !== "write");
+    const busy = runActive || queued;
+    const runStarted = !initial && this.runActive === false && runActive;
+    const runEnded = !initial && this.runActive === true && !runActive;
+    const inboxChanged =
+      !initial && JSON.stringify(this.lastInbox) !== JSON.stringify(inbox);
+
+    if (runStarted) {
+      this.toolCalls.clear();
+      this.activeInputs.clear();
+      this.runStartedAt = Date.now();
+      logInfo("conversation.run.started", {
+        conversationId: String(this.conversation.id),
+      });
+      this.activity(true, true);
+      this.liveActivity.runStarted();
+      this.emit({ type: "run-start" });
+    }
+    if (live.run) for (const id of live.run.inputs) this.activeInputs.add(id);
+
+    this.syncToolCalls(live, initial);
+    if (!initial)
+      for (const entry of added)
+        if (entry.kind === "pi.user") this.emit({ type: "input-applied" });
+    if (initial) {
+      const through = view.entries.reduce((latest, entry) => Math.max(latest, entry.id), 0);
+      const seed = this.entries.filter(entry => entry.id <= through);
+      for (const entry of seed) this.projectedEntryIds.add(entry.id);
+      this.output.sync(seed, liveMessage, true);
+    } else {
+      for (const entry of added) this.projectedEntryIds.add(entry.id);
+      this.output.sync(added, liveMessage);
+    }
+    this.liveActivity.restore(live, busy);
+
+    const previousCompactions = new Map(
+      (this.lastLive?.compactions ?? []).map(item => [item.taskId, item]),
+    );
+    const nativeCompactions = (live.compactions ?? []).map(item => ({
+      taskId: item.taskId,
+      reason: item.trigger,
+    }));
+    for (const item of live.compactions ?? [])
+      if (!previousCompactions.has(item.taskId) && !initial)
+        logInfo("conversation.compaction.started", {
+          conversationId: String(this.conversation.id),
+          reason: item.trigger,
+        });
+    for (const [taskId] of previousCompactions)
+      if (!live.compactions?.some(item => item.taskId === taskId) && !initial)
+        logInfo("conversation.compaction.finished", {
+          conversationId: String(this.conversation.id),
+        });
+    this.compactions.sync(nativeCompactions, initial);
+    this.lastLive = live;
+    this.lastInbox = inbox;
+    this.runActive = runActive;
+
+    if (runEnded) {
+      this.activity(false, true);
+      const inputs = [...this.activeInputs];
+      const submissions = await this.harness.commit(async () => {
+        const records = await Promise.all(
+          inputs.map(id => this.storage.submission(id, ctx)),
         );
-        this.output.restore(
-          this.entries.filter((entry) => entry.id <= through),
-          event,
-        );
-        this.liveActivity.restore(event);
-        this.activity(!!event.run, false);
-        this.compactions.sync(event.compactions);
-        this.emit({ type: "invalidated" });
+        return records
+          .filter((record): record is SubmissionRecord => !!record)
+          .map(submissionReceipt);
+      }, ctx);
+      const durationMs = this.runStartedAt === undefined
+        ? undefined
+        : Date.now() - this.runStartedAt;
+      this.runStartedAt = undefined;
+      this.activeInputs.clear();
+      this.toolCalls.clear();
+      logInfo("conversation.run.completed", {
+        conversationId: String(this.conversation.id),
+        ...(durationMs !== undefined && { durationMs }),
+        submissionCount: submissions.length,
+        unansweredCount: submissions.filter(
+          item => item.status === "unanswered",
+        ).length,
+      });
+      this.emit({ type: "run-end", submissions });
+      if (!queued) this.liveActivity.runEnded();
+      else this.liveActivity.restore(live, busy);
+    } else if (!runStarted || initial) {
+      this.activity(runActive, false);
+    }
+
+    if (!initial && (added.length || inboxChanged || runStarted || runEnded))
+      this.emit({ type: "invalidated" });
+    if (!this.observationClosed) this.observationError = undefined;
+  }
+
+  private syncToolCalls(live: LiveState, initial: boolean) {
+    const slots = new Map<string, ToolSlot | NestedToolSlot>();
+    for (const slot of [...(live.tools ?? []), ...(live.nestedTools ?? [])])
+      slots.set(slot.callId, slot);
+
+    for (const [callId, current] of this.toolCalls) {
+      const slot = slots.get(callId);
+      if (!slot) {
+        if (!current.finished) this.finishTool(callId, current);
+        this.toolCalls.delete(callId);
       } else {
-        if (event.type === "compaction_start") {
-          this.compactions.start(event);
-          logInfo("conversation.compaction.started", {
-            conversationId: String(this.conversation.id),
-            reason: event.reason,
-          });
-        } else if (event.type === "compaction_end") {
-          this.compactions.end(event.taskId);
-          logInfo("conversation.compaction.finished", {
-            conversationId: String(this.conversation.id),
-          });
-        }
-        if (event.type === "tool_execution_start") {
-          const summary = summarizeToolArgs(event.toolName, event.args);
-          this.toolCalls.set(event.toolCallId, {
-            name: event.toolName,
-            summary,
-            startedAt: Date.now(),
-          });
-          logInfo("tool.execution.started", {
-            conversationId: String(this.conversation.id),
-            tool: event.toolName,
-          });
-          this.emit({
-            type: "tool",
-            activity: {
-              callId: event.toolCallId,
-              name: event.toolName,
-              summary,
-              status: "running",
-            },
-          });
-        } else if (event.type === "tool_execution_end") {
-          const call = this.toolCalls.get(event.toolCallId) ?? {
-            name: event.toolName,
-            summary: "",
-            startedAt: Date.now(),
-          };
-          this.toolCalls.delete(event.toolCallId);
-          const result = event.entry?.model?.[0];
-          const durationMs =
-            result &&
-            "durationMs" in result &&
-            typeof result.durationMs === "number"
-              ? result.durationMs
-              : undefined;
-          const failed =
-            result && "isError" in result && result.isError === true;
-          const elapsedMs = durationMs ?? Date.now() - call.startedAt;
-          const toolFields = {
-            conversationId: String(this.conversation.id),
-            tool: call.name,
-            durationMs: elapsedMs,
-          };
-          if (failed) logWarn("tool.execution.failed", toolFields);
-          else logInfo("tool.execution.completed", toolFields);
-          this.emit({
-            type: "tool",
-            activity: {
-              callId: event.toolCallId,
-              name: call.name,
-              summary: call.summary,
-              status: failed ? "error" : "done",
-              ...(durationMs !== undefined && { durationMs }),
-            },
-          });
-        } else if (event.type === "run_end") {
-          this.toolCalls.clear();
-        }
-        if (event.type === "message_end" && event.entry.kind === "pi.user")
-          this.emit({ type: "input-applied" });
-        if (
-          (event.type === "entry_appended" || event.type === "message_end") &&
-          event.entry.id > (this.entries.at(-1)?.id ?? 0)
-        )
-          this.entries.push(event.entry);
-        this.output.apply(event);
-        this.liveActivity.apply(event);
-        if (event.type === "run_start") {
-          this.toolCalls.clear();
-          this.runStartedAt = Date.now();
-          logInfo("conversation.run.started", {
-            conversationId: String(this.conversation.id),
-          });
-          this.activity(true, true);
-          this.emit({ type: "run-start" });
-        }
-        if (event.type === "run_end") {
-          this.activity(false, true);
-          const submissions = await this.harness.commit(async () => {
-            const records = await Promise.all(event.inputs.map(id => this.storage.submission(id, ctx)));
-            return records.filter((record): record is SubmissionRecord => !!record).map(submissionReceipt);
-          }, ctx);
-          const durationMs = this.runStartedAt === undefined
-            ? undefined
-            : Date.now() - this.runStartedAt;
-          this.runStartedAt = undefined;
-          logInfo("conversation.run.completed", {
-            conversationId: String(this.conversation.id),
-            ...(durationMs !== undefined && { durationMs }),
-            submissionCount: submissions.length,
-            unansweredCount: submissions.filter(
-              (item) => item.status === "unanswered",
-            ).length,
-          });
-          this.emit({ type: "run-end", submissions });
-        }
-        if (
-          event.type === "message_end" ||
-          event.type === "run_start" ||
-          event.type === "run_end" ||
-          event.type === "submission"
-        )
-          this.emit({ type: "invalidated" });
+        if (slot.status === "done" && !current.finished)
+          this.finishTool(callId, current, slot);
       }
     }
+
+    for (const slot of slots.values()) {
+      if (slot.status === "pending" || this.toolCalls.has(slot.callId)) continue;
+      const current = this.startTool(slot, !initial);
+      if (slot.status === "done") this.finishTool(slot.callId, current, slot, !initial);
+    }
+  }
+
+  private startTool(slot: ToolSlot | NestedToolSlot, notify = true) {
+    const args = "arguments" in slot ? slot.arguments : this.toolArguments(slot.callId);
+    const current = {
+      name: slot.name,
+      summary: summarizeToolArgs(slot.name, args),
+      startedAt: Date.now(),
+      finished: false,
+    };
+    this.toolCalls.set(slot.callId, current);
+    if (notify) {
+      logInfo("tool.execution.started", {
+        conversationId: String(this.conversation.id),
+        tool: slot.name,
+      });
+      this.liveActivity.toolStarted(slot.name);
+      this.emit({
+        type: "tool",
+        activity: {
+          callId: slot.callId,
+          name: slot.name,
+          summary: current.summary,
+          status: "running",
+        },
+      });
+    }
+    return current;
+  }
+
+  private finishTool(
+    callId: string,
+    current: { name: string; summary: string; startedAt: number; finished: boolean },
+    slot?: ToolSlot | NestedToolSlot,
+    notify = true,
+  ) {
+    if (current.finished) return;
+    current.finished = true;
+    const nested = slot && "summary" in slot ? slot.summary : undefined;
+    const entryId = slot && "entry" in slot ? slot.entry : undefined;
+    const entryResult = entryId === undefined
+      ? undefined
+      : this.entries.find(entry => entry.id === entryId)?.model?.[0];
+    const result = nested ? undefined : entryResult ?? this.toolResult(callId);
+    const resultDuration = result &&
+      "durationMs" in result &&
+      typeof result.durationMs === "number"
+        ? result.durationMs
+        : undefined;
+    const durationMs = nested?.durationMs ?? resultDuration;
+    const resultFailed = result && "isError" in result && result.isError === true;
+    const failed = nested?.isError ?? resultFailed ?? false;
+    if (!notify) return;
+    const fields = {
+      conversationId: String(this.conversation.id),
+      tool: current.name,
+      durationMs: durationMs ?? Date.now() - current.startedAt,
+    };
+    if (failed) logWarn("tool.execution.failed", fields);
+    else logInfo("tool.execution.completed", fields);
+    this.emit({
+      type: "tool",
+      activity: {
+        callId,
+        name: current.name,
+        summary: current.summary,
+        status: failed ? "error" : "done",
+        ...(durationMs !== undefined && { durationMs }),
+      },
+    });
+  }
+
+  private toolArguments(callId: string): unknown {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry.kind !== "pi.assistant") continue;
+      for (const message of entry.model ?? []) {
+        if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+        const toolCall = message.content.find(
+          block => block.type === "toolCall" && block.id === callId,
+        );
+        if (toolCall?.type === "toolCall") return toolCall.arguments;
+      }
+    }
+    return undefined;
+  }
+
+  private toolResult(callId: string) {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry.kind !== "pi.tool-result") continue;
+      const result = entry.model?.[0];
+      if (result?.role === "toolResult" && result.toolCallId === callId) return result;
+    }
+    return undefined;
   }
   private emit(event: SessionEvent) {
     if (
@@ -458,13 +667,16 @@ export class ConversationView {
         page,
         running:
           !!live.run || inbox.items.some((item) => item.mode !== "write"),
-        activity: this.liveActivity.snapshot(live, !!live.run || inbox.items.some(item => item.mode !== "write")),
+        activity: this.liveActivity.snapshot(
+          live,
+          !!live.run || inbox.items.some(item => item.mode !== "write"),
+        ),
         queued,
         latest,
         interruption: recovery.interruption,
         nativeCompactions: (live.compactions ?? []).map((item) => ({
           taskId: item.taskId,
-          reason: item.reason,
+          reason: item.trigger,
         })),
       };
     }, ctx);
@@ -476,6 +688,7 @@ export class ConversationView {
       if (partial?.content.trim()) messages = [...messages, partial];
     } else {
       this.entries = state.entries;
+      this.entryIds = new Set(this.entries.map(entry => entry.id));
       for (const [entry, requestId] of state.inputs)
         this.inputEntries.set(entry, requestId);
       this.hiddenEntries = state.hidden;
@@ -486,7 +699,9 @@ export class ConversationView {
       messages: [...messages, ...state.queued],
       ...(state.page && { history: { nextBefore: state.page.nextBefore } }),
       busy: this.isBusy(),
-      activity: this.isBusy() && state.activity.kind === "idle" ? { kind: "thinking" as const } : state.activity,
+      activity: this.isBusy() && state.activity.kind === "idle"
+        ? { kind: "thinking" as const }
+        : state.activity,
       compactions: this.compactions.snapshot(state.nativeCompactions),
       previousIds: Object.fromEntries(this.previousIds),
       ...(state.latest && { latest: submissionReceipt(state.latest) }),
@@ -496,7 +711,9 @@ export class ConversationView {
   }
   async close(): Promise<void> {
     this.compactions?.close();
-    await this.eventStream?.stop();
+    this.viewReady = false;
+    this.viewObservation?.detach();
+    this.pendingViews.length = 0;
     await this.delivery?.catch(() => {});
     this.unsubscribeBindings?.();
   }

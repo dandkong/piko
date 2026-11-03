@@ -1,16 +1,16 @@
 # Durable 配置与运行时
 
-状态：服务端使用 pi-durable / pi-ai / chord 1.4.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 设置只支持全局主模型、后台模型和思考强度。其他模型供应商、目录、凭据、工具、通道及环境变量由部署配置管理。模型设置 API 尚未鉴权，仅提供角色选择读写。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
+状态：服务端使用 pi-durable / pi-ai / chord 1.5.0，通过 Piko HTTP/SSE 与 UI 提供交互。无需 Pi CLI，不读取 `~/.pi/agent`。TG 提供模型/思考强度按钮与压缩命令；RN 设置只支持全局主模型、后台模型和思考强度。其他模型供应商、目录、凭据、工具、通道及环境变量由部署配置管理。模型设置 API 尚未鉴权，仅提供角色选择读写。Durable Extension 仅由 Piko 源码注册，不加载用户提供的插件代码。
 
 原生任务记录提供 startedAt/endedAt，工具结果和模型回复提供 durationMs；Piko 的工具进度与耗时展示尚未接入。当前使用 Durable 原生 SQLite 存储；普通不确定执行在重启时不自动重跑，已完成子任务的报告与可恢复重试阶段会继续执行。存储位置和升级影响见[SQLite 存储](storage.md)。
 
 ## 实时事件与历史
 
-实时监听使用 durable 的 `watchEvents(harness, conversationId, context)`。Pi 适配器把 `message_start/update/end` 转成 Piko 的独立 message 更新，包含消息身份、完整文字、提交标记与临时身份替换关系；SDK 类型与事件只留在 `server/runtime/`。RN 和 TG 按助手消息更新展示，不累计整轮回答。
+实时观察使用 Durable 1.5 的 `Harness.observeConversation()`，将有界 `ConversationView` 的每次状态变更排队交给运行时适配器；已保存的输入/回执绑定与快照失效另由 `Harness.observeCommits()` 维护。Pi 适配器从原生 `pi.live`、新 entries、工具 slots、inbox 与 compaction 状态投影出稳定的 Piko `SessionEvent`，再把助手正文转成带完整文字、final 标记和临时身份替换关系的独立 message 更新。SDK 类型只留在 `server/runtime/`，RN 与 TG 的协议不变，也不累计整轮回答。
 
-初始 snapshot 和事件积压超过原生缓冲上限后收到的 snapshot 都参与校正。原生 snapshot 的 entries 只表示当前有效上下文，不能作为 UI 全量历史；Piko 从完整原生 entries 补齐已完成回复和消息边界，并把投影限制到该 snapshot 的 entry 水位，随后继续消费后续事件，避免重复或提前展示后来提交的消息。输入使用原生 submission 独立结算；会话快照从原生事务读取历史与状态，执行终态由 Durable 原生记录提供。原生已保存的失败尝试遵循历史投影规则，不因 retry 事件自行删除。
+原生 conversation view 的 entries 只是最近窗口，不能作为 UI 全量历史；Piko 从原生 storage 读取完整 entries，按 ID 合并新窗口内容，发现窗口缺口时重新读取原生 entries。更早历史仍通过原生事务分页读取。初始状态和每次变化都由结构化 Durable 状态重建，不再依赖已移除的 `watchEvents()` 事件类型。输入使用原生 submission 独立结算；执行终态仍由 Durable 原生记录提供，不另建永久事件存储。
 
-会话关闭时停止事件订阅；订阅异常会报告并阻止该会话继续接纳新生成，避免静默丢失实时输出。工具、思考、压缩和 usage 事件由 Durable 提供；当前客户端只展示消息与提交状态，不另建永久事件存储。`watchEvents` 协议通过运行时适配器隔离，升级依赖时需要验证事件映射和 snapshot 行为。
+同步 observer 只在回调中记录状态，具体投影在队列中完成；会话关闭时 detach，观察处理异常会报告并阻止该会话继续接纳新生成，避免静默丢失实时输出。Durable 1.5 的 `pi.live` 文档迁移在原生版本化文档读取/提交时执行；SQLite schema 仍为 v2，升级前仍需备份，因为 1.5 写入的数据不保证能由 1.4 回读。
 
 ## 工具输出边界
 
@@ -62,7 +62,7 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 
 `agent.profiles` 只有 `main` 和 `background` 两个固定角色位，不接其他名字，写错即启动报错：`main` 是统一主聊与所有旁聊的全局模型，不是新会话默认值；`background` 供之后新建的委派、任务执行和记忆整理子会话使用。未单独配置 `background` 时动态跟随 `main`；后台思考强度可单独覆盖；省略 `main` 时不会自动选目录首个模型，执行前要求明确配置。后台供应商缺凭据只让该次后台任务失败并报错，不会阻止后端启动。主聊和旁聊的 Durable AgentDoc 在服务启动及下一轮接纳时对齐全局主模型；正在运行的一轮保持原模型。后台 AgentDoc 及专门构建的子 Agent 仍保持各自选择。
 
-上述 ID 来自锁定的 pi-ai 1.4.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 TG `/models` 列表为准：目录中存在模型也须有可用凭据。
+上述 ID 来自锁定的 pi-ai 1.5.0 内建目录。DeepSeek 无需额外定义供应商，`config/models.json` 保持 `{"providers":{}}` 即可。实际可用模型以 TG `/models` 列表为准：目录中存在模型也须有可用凭据。
 
 主模型由设置页或 TG `/models` 统一修改，并写回 `agent.profiles.main`。App 与 Telegram 共用同一选择；新一轮执行前主聊和旁聊会对齐该配置，重启也会重新对齐。AgentDoc 保存实际执行模型，不再提供前台会话级粘性选择。首次未配置时不会自动挑目录首个模型。
 
@@ -124,7 +124,7 @@ HTTP 不提供独立 runtime 管理入口或聊天提交回执查询路由。模
 
 ## 更新的生效时机
 
-当前使用 durable 1.4.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask` 结束，不检查摘要是否新增或等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩使用 Durable 默认策略，手动 compact 由 Piko 提供。
+当前使用 pi-durable 1.5.0。压缩使用原生 `Conversation.compact(instructions, context)`，返回摘要任务的 TaskId；Piko 等待 `Harness.waitForTask` 结束，不检查摘要是否新增或等待结果 submission 落入会话。TG `/compact` 不传额外压缩要求，摘要由当前模型生成。压缩改变模型上下文，完整原生 entries 仍用于聊天历史展示；自动压缩使用 Durable 默认策略，手动 compact 由 Piko 提供。
 
 运行时内部返回 `status: compacted | cancelled`，任务失败报告错误。`compacted` 表示原生压缩任务完成，不额外断言摘要是否新增或已经应用；摘要和 submission 由 Durable 管理。TG 的 `/compact` 负责接纳，开始和完成通过原生生命周期观察呈现，并提供取消/失败提示；主会话的阈值/溢出自动压缩也通知本进程已验证的 TG 私聊。通知不阻塞事件观察；各会话快照附带活动压缩状态。旁聊和后台子会话不向主聊天 TG 通知；生命周期只用于呈现，不写聊天正文或可靠 outbox。
 

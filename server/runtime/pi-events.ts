@@ -1,83 +1,110 @@
-import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { EntryRecord } from "@earendil-works/pi-durable";
 import type { Message, MessageEvent } from "../../shared/chat";
 import { messageText } from "./pi-history";
 
-/** Projects each native assistant message independently; never binds output to an input. */
+type LiveAssistantMessage = Pick<
+  AssistantMessage,
+  "role" | "timestamp" | "content"
+>;
+
+/** Projects persisted entries and the current live message into Piko's stable message protocol. */
 export class PiMessageEvents {
   private current?: Message;
-  private blocks = new Map<number, string>();
+  private currentTimestamp?: number;
   private seen = new Set<number>();
+  private completed = new Set<string>();
+
   constructor(private readonly emit: (event: MessageEvent) => void) {}
 
   partial(entries: readonly EntryRecord[]): Message | undefined {
-    // A history read may run ahead of event delivery and already contain this generation's final entry.
-    if (entries.some(entry => entry.kind === "pi.assistant" && !this.seen.has(entry.id))) return undefined;
+    // A history read may run ahead of view delivery and already contain this
+    // generation's final entry.
+    if (entries.some(
+      entry => entry.kind === "pi.assistant" && !this.seen.has(entry.id),
+    )) return undefined;
     return this.current && { ...this.current };
   }
 
-  apply(event: AgentEvent) {
-    if (event.type === "message_start" && event.message.role === "assistant") {
-      this.start(event.message.timestamp);
-      this.content(event.message.content); this.publish();
-    } else if (event.type === "message_update") {
-      if (!this.current) return;
-      for (const change of event.changes) {
-        if (change.type === "message") this.content(change.message.content);
-        else if (change.type === "block" || change.type === "text_start" || change.type === "thinking_start" || change.type === "toolcall_start") {
-          this.blocks.set(change.contentIndex, change.block.type === "text" ? change.block.text : "");
-        } else if (change.type === "text_delta") {
-          this.blocks.set(change.contentIndex, (this.blocks.get(change.contentIndex) ?? "") + change.delta);
-        }
-      }
-      this.publish();
-    } else if (event.type === "message_end" && event.entry.kind === "pi.assistant") this.complete(event.entry);
-  }
-
-  /** Overflow recovery uses full raw history, including entries omitted by compaction/reset. */
-  restore(entries: readonly EntryRecord[], snapshot?: SnapshotEvent, initial = false) {
+  /** `initial` seeds historical entries without replaying them to current observers. */
+  sync(entries: readonly EntryRecord[], live?: LiveAssistantMessage, initial = false) {
     for (const entry of entries) {
       if (entry.kind !== "pi.assistant") continue;
-      if (initial) this.seen.add(entry.id);
+      if (initial) this.remember(entry);
       else this.complete(entry);
     }
-    const message = snapshot?.run && snapshot.generation?.message;
-    if (message) {
-      if (!this.current) this.start(message.timestamp);
-      this.content(message.content); this.publish();
-    } else if (this.current) {
-      this.emit({ type: "message", message: { ...this.current, content: "" }, final: true });
-      this.current = undefined; this.blocks.clear();
-    }
-  }
 
-  private start(createdAt: number) {
-    this.current ??= { id: `live-${crypto.randomUUID()}`, role: "assistant", content: "", createdAt };
-    this.blocks.clear();
+    if (live?.role === "assistant") {
+      const content = messageText(live.content);
+      const signature = this.signature(live.timestamp, content);
+      if (this.completed.has(signature)) {
+        if (this.currentTimestamp === live.timestamp) this.clearCurrent();
+        return;
+      }
+      if (this.currentTimestamp !== live.timestamp) {
+        this.current = {
+          id: `live-${crypto.randomUUID()}`,
+          role: "assistant",
+          content: "",
+          createdAt: live.timestamp,
+        };
+        this.currentTimestamp = live.timestamp;
+      }
+      if (this.current && content !== this.current.content) {
+        this.current = { ...this.current, content };
+        this.emit({
+          type: "message",
+          message: { ...this.current },
+          final: false,
+        });
+      }
+    } else if (this.current) {
+      // A stream can be interrupted before a persisted assistant entry is visible.
+      this.emit({
+        type: "message",
+        message: { ...this.current, content: "" },
+        final: true,
+      });
+      this.clearCurrent();
+    }
   }
 
   private complete(entry: EntryRecord) {
     if (this.seen.has(entry.id)) return;
     const message = entry.model?.[0];
     if (message?.role !== "assistant") return;
-    this.seen.add(entry.id);
-    this.emit({ type: "message", message: { id: String(entry.id), role: "assistant",
-      content: messageText(message.content), createdAt: message.timestamp }, final: true,
-      ...(this.current && { previousId: this.current.id }) });
-    this.current = undefined; this.blocks.clear();
-  }
-
-  private content(content: unknown) {
-    this.blocks.clear();
-    if (Array.isArray(content)) content.forEach((block, index) => {
-      this.blocks.set(index, block?.type === "text" ? block.text : "");
+    this.remember(entry);
+    const content = messageText(message.content);
+    const previousId = this.currentTimestamp === message.timestamp
+      ? this.current?.id
+      : undefined;
+    this.emit({
+      type: "message",
+      message: {
+        id: String(entry.id),
+        role: "assistant",
+        content,
+        createdAt: message.timestamp,
+      },
+      final: true,
+      ...(previousId && { previousId }),
     });
+    if (previousId) this.clearCurrent();
   }
 
-  private publish() {
-    if (!this.current) return;
-    const content = [...this.blocks].sort(([a], [b]) => a - b).map(([, text]) => text).join("");
-    if (content === this.current.content) return;
-    this.current = { ...this.current, content };
-    this.emit({ type: "message", message: { ...this.current }, final: false });
+  private remember(entry: EntryRecord) {
+    this.seen.add(entry.id);
+    const message = entry.model?.[0];
+    if (message?.role === "assistant")
+      this.completed.add(this.signature(message.timestamp, messageText(message.content)));
+  }
+
+  private signature(timestamp: number, content: string) {
+    return `${timestamp}\u0000${content}`;
+  }
+
+  private clearCurrent() {
+    this.current = undefined;
+    this.currentTimestamp = undefined;
   }
 }

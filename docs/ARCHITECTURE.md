@@ -1,6 +1,6 @@
 # Piko 架构约定
 
-当前 Agent 运行时为 pi-durable 1.4.0，模型适配为 pi-ai 1.4.0。产品范围见[产品说明](PRODUCT.md)，进度见[路线图](../ROADMAP.md)，配置与运行见[Agent 运行时说明](operations/agent-runtime.md)。
+当前 Agent 运行时为 pi-durable / pi-ai / chord 1.5.0。产品范围见[产品说明](PRODUCT.md)，进度见[路线图](../ROADMAP.md)，配置与运行见[Agent 运行时说明](operations/agent-runtime.md)。
 
 ## 当前结构
 
@@ -144,7 +144,7 @@ Agent 构建与后台驱动是两个独立能力：调用者显式提供历史�
 
 停止撤回未应用输入，取消当前原生任务作用域。停止请求在原生事务内记录当时非 background 的任务并撤回当时 inbox，随后取消这些任务；重投只操作原 ID，不误停新工作。执行失败将剩余输入结算为 unanswered 并保留失败原因，再收尾当前作用域；不自动执行尚未应用的补充。Durable 自身配置允许的模型重试仍由运行时处理。
 
-原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，Piko 不复制 SQL 状态或另发执行终态。watchEvents 在 ConversationView 转为运行时事实，客户端只接收 snapshot/message/activity/error/deleted 五类公开事件；SDK 类型与通道呈现指令不进入协议。消息更新最多 50ms 合并，状态失效时发送最近一页 snapshot；实时活动从原生 LiveDoc 恢复，不依赖旧工具事件重放。Telegram 用单个有序呈现队列处理正文、工具、执行边界与手动压缩通知，自动压缩静默，不把临时通知写入历史。具体契约、时序和验证边界见[会话事件与实时活动](features/conversation-events.md)。
+原生 storage 使用 fsync:true，提交和文档协议由 Durable 管理，Piko 不复制 SQL 状态或另发执行终态。`observeConversation` 与 `observeCommits` 在 ConversationView 转为运行时事实，客户端只接收 snapshot/message/activity/error/deleted 五类公开事件；SDK 类型与通道呈现指令不进入协议。消息更新最多 50ms 合并，状态失效时发送最近一页 snapshot；实时活动从原生 `pi.live` 恢复，不依赖已移除的事件类型。Telegram 用单个有序呈现队列处理正文、工具、执行边界与手动压缩通知，自动压缩静默，不把临时通知写入历史。具体契约、时序和验证边界见[会话事件与实时活动](features/conversation-events.md)。
 
 SSE 每次建立连接都先发送最近一页的 authoritative snapshot，再接收实时更新；不维护 epoch/sequence、游标或事件重放缓存，不补齐断线期间的中间流式事件。快照与实时订阅仍在同一发布线上衔接，避免漏掉连接期间的变化。15 秒心跳，客户端 30 秒无数据重连，退避最多 10 秒。断线和退后台只退订，不停止执行；回前台重新观察最近窗口，不重发输入；客户端保留已经加载的连续历史，无交集时回到最新页避免掩盖缺口。RN 根据观察版本丢弃过期 HTTP 刷新，保留草稿及未确认输入。
 

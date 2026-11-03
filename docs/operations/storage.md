@@ -8,7 +8,7 @@ Piko 使用 Durable 原生 SQLite 保存会话、消息、提交、任务和文�
 - SQLite 使用 WAL；运行期间可能同时存在 `-wal` 和 `-shm` 文件。一个状态目录只允许一个后端进程写入。
 - 数据库损坏、目录中包含不受支持的旧格式，或非空目录缺少预期数据库时，后端拒绝启动，不会静默创建空会话或切换存储。
 - 服务端运行日志独立写入 `PIKO_HOME/logs/`，不是 SQLite 内容或会话状态，详见[运行日志](logging.md)。
-- Durable 1.4.0 首次打开 SQLite 时会自动迁移到 schema v2；迁移后数据库不能再由 Durable 1.3.0 或更早版本打开。升级前应备份 PIKO_HOME，并将升级视为不可向旧版回滚的数据库变更。
+- SQLite schema v2 在 Durable 1.4.0 引入；pi-durable 1.5.0 仍使用 schema v2，没有新增 SQL 表结构迁移。1.5 会通过 Durable 原生版本化文档迁移更新旧 `pi.live` 文档（例如 compaction `reason` → `trigger` 与 `run.turns`），无需手工 SQL 转换。schema v2 不能由 Durable 1.3.0 或更早版本打开；1.5 写入的新文档值也不保证能由 1.4 回读。升级前必须备份整个 PIKO_HOME，并把升级视为不可直接回滚的持久化格式变更。
 - 当前没有旧格式导入工具。需要从空白状态开始时，请使用新的 PIKO_HOME；不要直接覆盖或删除现有数据目录。
 
 ## 备份与恢复
