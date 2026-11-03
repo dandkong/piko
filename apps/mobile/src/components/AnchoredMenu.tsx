@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, radii } from "../theme";
+import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TactilePressable } from "./TactilePressable";
 
 export type AnchoredMenuAction = {
@@ -37,6 +37,8 @@ export function AnchoredMenuContent({
   actions: AnchoredMenuAction[];
   testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const singleChoice = actions.length > 0 && actions.every(action => action.selected !== undefined);
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -73,7 +75,8 @@ export function AnchoredMenuContent({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   menu: {
     position: "absolute",
     padding: 6,
@@ -101,4 +104,5 @@ const styles = StyleSheet.create({
   checkSlot: { width: 18, height: 18, alignItems: "center", justifyContent: "center" },
   label: { color: colors.text, fontSize: 15 },
   destructive: { color: colors.danger, fontWeight: "500" },
-});
+  });
+}

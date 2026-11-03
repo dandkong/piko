@@ -13,10 +13,16 @@
     <title>%WEB_TITLE%</title>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
-      /* These styles make the body full-height */
+      :root {
+        color-scheme: light dark;
+        --piko-page-background: Canvas;
+        --piko-scrollbar-thumb: GrayText;
+        --piko-scrollbar-thumb-hover: GrayText;
+      }
       html,
       body {
         height: 100%;
+        background: var(--piko-page-background);
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
@@ -32,7 +38,7 @@
     <style id="piko-preview-scrollbar">
       [data-testid="artifact-preview-scroll"] {
         scrollbar-width: thin;
-        scrollbar-color: rgba(105, 113, 118, 0.42) transparent;
+        scrollbar-color: var(--piko-scrollbar-thumb) transparent;
         scrollbar-gutter: stable;
       }
       [data-testid="artifact-preview-scroll"]::-webkit-scrollbar {
@@ -43,13 +49,13 @@
         background: transparent;
       }
       [data-testid="artifact-preview-scroll"]::-webkit-scrollbar-thumb {
-        background-color: rgba(105, 113, 118, 0.42);
+        background-color: var(--piko-scrollbar-thumb);
         border: 2px solid transparent;
         border-radius: 8px;
         background-clip: content-box;
       }
       [data-testid="artifact-preview-scroll"]::-webkit-scrollbar-thumb:hover {
-        background-color: rgba(105, 113, 118, 0.68);
+        background-color: var(--piko-scrollbar-thumb-hover);
       }
     </style>
   </head>

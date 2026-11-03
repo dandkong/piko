@@ -1,22 +1,24 @@
 import { StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { colors } from "../theme";
+import { useTheme } from "../theme";
 
 export const HEADER_FADE_TAIL = 12;
 export const FOOTER_FADE_OVERHANG = 32;
 
-const canvasRgb = colors.canvas.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
-if (!canvasRgb) throw new Error("Edge fades require a six-digit hex canvas color.");
-const [, red, green, blue] = canvasRgb;
-const canvasWithOpacity = (opacity: number) =>
-  `rgba(${Number.parseInt(red!, 16)}, ${Number.parseInt(green!, 16)}, ${Number.parseInt(blue!, 16)}, ${opacity})`;
+function canvasWithOpacity(canvas: string, opacity: number) {
+  const match = canvas.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+  if (!match) throw new Error("Edge fades require a six-digit hex canvas color.");
+  const [, red, green, blue] = match;
+  return `rgba(${Number.parseInt(red!, 16)}, ${Number.parseInt(green!, 16)}, ${Number.parseInt(blue!, 16)}, ${opacity})`;
+}
 
 /** Native gradient overlay at both edges; decoration never captures list gestures. */
 export function EdgeFade({ edge, height }: { edge: "top" | "bottom"; height: number }) {
+  const { colors } = useTheme();
   const top = edge === "top";
   const gradientColors = top
-    ? [canvasWithOpacity(1), canvasWithOpacity(0.96), canvasWithOpacity(0.45), canvasWithOpacity(0)] as const
-    : [canvasWithOpacity(0), canvasWithOpacity(0.45), canvasWithOpacity(0.96), canvasWithOpacity(1)] as const;
+    ? [canvasWithOpacity(colors.canvas, 1), canvasWithOpacity(colors.canvas, 0.96), canvasWithOpacity(colors.canvas, 0.45), canvasWithOpacity(colors.canvas, 0)] as const
+    : [canvasWithOpacity(colors.canvas, 0), canvasWithOpacity(colors.canvas, 0.45), canvasWithOpacity(colors.canvas, 0.96), canvasWithOpacity(colors.canvas, 1)] as const;
   const locations = top ? [0, 0.35, 0.7, 1] as const : [0, 0.3, 0.65, 1] as const;
 
   return (

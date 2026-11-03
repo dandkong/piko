@@ -1,12 +1,13 @@
 import { StyleSheet, Text, View } from "react-native";
 import { TextButton } from "./TextButton";
-import { colors, radii, stateColors } from "../theme";
+import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
 /** Local feedback, not a global error owner. Retry always belongs to the failed operation. */
 export function ErrorNotice({ message, title, actionLabel, onAction, onDismiss, busy = false, tone = "error", testID }: {
   message: string; title?: string; actionLabel?: string; onAction?: () => void;
   onDismiss?: () => void; busy?: boolean; tone?: "error" | "info"; testID?: string;
 }) {
+  const styles = useThemeStyles(createStyles);
   return <View style={[styles.notice, tone === "info" && styles.info]} testID={testID}>
     {title ? <Text style={styles.title}>{title}</Text> : null}
     <Text accessibilityRole={tone === "error" ? "alert" : "text"} accessibilityLiveRegion="polite"
@@ -21,7 +22,8 @@ export function ErrorNotice({ message, title, actionLabel, onAction, onDismiss, 
     </View> : null}
   </View>;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   notice: { padding: 14, gap: 8, borderRadius: radii.control, backgroundColor: colors.dangerSurface },
   info: { backgroundColor: stateColors.soft },
   title: { color: colors.text, fontSize: 16, fontWeight: "600" },
@@ -30,4 +32,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   button: { color: colors.text, fontSize: 14, fontWeight: "500" },
   muted: { color: colors.muted, fontSize: 14 },
-});
+  });
+}

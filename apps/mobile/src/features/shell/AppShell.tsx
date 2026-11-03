@@ -21,7 +21,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { navigation, type AppTab } from "../../navigation";
-import { colors, motion, radii, stateColors } from "../../theme";
+import { motion, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import {
   EdgeFade,
   FOOTER_FADE_OVERHANG,
@@ -68,6 +68,7 @@ export function AppShell({
   onHeaderHeightChange: (height: number) => void;
   onFooterHeightChange: (height: number) => void;
 }) {
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   // Align every page with the top-left menu button; no width-dependent inset.
@@ -149,6 +150,7 @@ export function AppShell({
 }
 
 function Mascot({ size }: { size: number }) {
+  const { colors } = useTheme();
   return (
     <View style={{ width: size, height: size }}>
       <View
@@ -185,6 +187,8 @@ function AgentHeader({
   onOpenMenu?: () => void;
   onHeightChange: (height: number) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View
       testID="chat-header-overlay"
@@ -227,6 +231,8 @@ function BottomTabs({
   activeTab: AppTab;
   onTabChange?: (tab: AppTab) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const reduceMotion = useReducedMotion();
   const index = Math.max(
     0,
@@ -288,7 +294,12 @@ function BottomTabs({
   );
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  return useThemeStyles(createStyles);
+}
+
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -418,4 +429,5 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: radii.pill,
   },
-});
+  });
+}

@@ -1,10 +1,11 @@
 import { StyleSheet, Text, View } from "react-native";
-import { colors, radii, stateColors } from "../theme";
+import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
 export type FeedbackTone = "info" | "warning" | "error";
 export type FeedbackToastMessage = { message: string; tone: FeedbackTone };
 
 export function FeedbackToast({ feedback, top }: { feedback: FeedbackToastMessage; top: number }) {
+  const styles = useThemeStyles(createStyles);
   const toneStyle = feedback.tone === "error" ? styles.error
     : feedback.tone === "warning" ? styles.warning : styles.info;
 
@@ -16,7 +17,8 @@ export function FeedbackToast({ feedback, top }: { feedback: FeedbackToastMessag
   </View>;
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   toast: {
     position: "absolute",
     alignSelf: "center",
@@ -37,4 +39,5 @@ const styles = StyleSheet.create({
   error: { borderColor: colors.line, backgroundColor: colors.dangerSurface },
   text: { color: colors.text, fontSize: 13, lineHeight: 19, textAlign: "center" },
   errorText: { color: colors.danger },
-});
+  });
+}

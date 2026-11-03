@@ -7,7 +7,7 @@ import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors, controlSizes, radii } from "../../theme";
+import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { errorMessage } from "../../api/errors";
 
@@ -20,6 +20,8 @@ export type SideChatActions = {
 };
 export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatLoading, sideChatError,
   onRefreshSideChats, onSelectSideChat, onGenerateSideChatTitle, onDeleteSideChat }: SideChatActions) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const [menu, setMenu] = useState<{ chat: SideChat; left: number; top: number }>();
   const [deleting, setDeleting] = useState<SideChat>();
   const [deleteError, setDeleteError] = useState("");
@@ -111,7 +113,8 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     </Modal>
   </View>;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   list: { gap: 6 }, row: { minHeight: 52, flexDirection: "row", alignItems: "stretch", gap: 0 },
   titleHit: { flex: 1, minWidth: 0, alignSelf: "stretch" },
   titleRow: { flex: 1, alignSelf: "stretch", minHeight: 52, paddingHorizontal: 12, paddingVertical: 10, alignItems: "flex-start", justifyContent: "center", borderRadius: radii.control },
@@ -119,4 +122,5 @@ const styles = StyleSheet.create({
   menuHit: { flex: 1, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
   menuFace: { width: controlSizes.md, height: controlSizes.md, alignSelf: "center", borderRadius: controlSizes.md / 2, alignItems: "center", justifyContent: "center" },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13, padding: 12 },
-});
+  });
+}

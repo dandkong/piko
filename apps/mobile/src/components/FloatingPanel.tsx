@@ -18,7 +18,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { IconButton } from "./IconButton";
 import { AppScrollView } from "./AppScrollView";
-import { colors, motion, radii } from "../theme";
+import { motion, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
 /** Shared elevated overlay; close from its button or by tapping the scrim. */
 export function FloatingPanel({
@@ -49,6 +49,8 @@ export function FloatingPanel({
   showScrollbar?: boolean;
   scrollTestID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -123,7 +125,8 @@ export function FloatingPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   overlay: {
     position: "absolute",
     top: 0,
@@ -178,4 +181,5 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.canvas },
   panelOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 20, elevation: 20 },
-});
+  });
+}

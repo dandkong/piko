@@ -9,7 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { navigation, type AppTab } from "../../navigation";
-import { colors, drawerLayout, radii } from "../../theme";
+import { drawerLayout, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { SideChatList, type SideChatActions } from "./SideChatList";
@@ -32,6 +32,8 @@ export function NavigationDrawer({
   /** A layer above (settings) owns input and back handling while it is open. */
   covered?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const panelWidth = Math.min(
@@ -133,7 +135,8 @@ export function NavigationDrawer({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   underlay: {
     position: "absolute",
     top: 0,
@@ -233,4 +236,5 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 22,
   },
-});
+  });
+}

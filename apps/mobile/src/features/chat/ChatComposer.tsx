@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Platform, Text, TextInput, type TextInputProps, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
-import { colors, stateColors } from "../../theme";
+import { useTheme } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
-import { styles } from "./styles";
+import { useChatStyles } from "./styles";
 import { handleComposerKeyDown } from "./composerKeyboard";
 import type { PendingAttachment } from "./useChatAttachments";
 
@@ -43,6 +43,8 @@ export function ChatComposer({
   onSend,
   onStop,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useChatStyles();
   const [focused, setFocused] = useState(false);
   const [focusVisible, setFocusVisible] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);

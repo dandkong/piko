@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { colors, radii } from "../theme";
+import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TextButton } from "./TextButton";
 
 type Props = {
@@ -28,6 +28,7 @@ export function ConfirmationDialogContent({
   error,
   testID,
 }: Props) {
+  const styles = useThemeStyles(createStyles);
   return (
     <View style={styles.root}>
       <View pointerEvents="none" style={styles.scrim} />
@@ -54,7 +55,8 @@ export function ConfirmationDialogContent({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   root: {
     flex: 1,
     alignItems: "center",
@@ -81,4 +83,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   secondary: { color: colors.muted, fontSize: 14 },
   danger: { color: colors.danger, fontSize: 14, fontWeight: "600" },
-});
+  });
+}

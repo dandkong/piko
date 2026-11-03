@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { FloatingPanel } from "../../components/FloatingPanel";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
+import { AppearanceSection } from "./AppearanceSection";
 import type { FeedbackTone } from "../../components/FeedbackToast";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
 import type { ModelSettingsSnapshot, SaveModelSettings } from "../../../../../shared/settings";
@@ -17,6 +18,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
   onClose: () => void;
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
+  const { colors } = useTheme();
   const [saveError, setSaveError] = useState("");
   const openRef = useRef(open);
   openRef.current = open;
@@ -103,21 +105,24 @@ export function SettingsSheet({ open, onClose, onToast }: {
     onClose={onClose}
     open={open}
     testID="settings-sheet"
-    title="模型"
+    title="设置"
   >
-    {open && loading && !data ? (
+    {open ? <View style={{ gap: 16 }}>
+    <AppearanceSection />
+    {loading && !data ? (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12 }}>
         <ActivityIndicator accessibilityLabel="正在读取模型设置" color={colors.muted} size="small" />
         <Text style={{ color: colors.muted, fontSize: 12 }}>正在读取…</Text>
       </View>
     ) : null}
-    {open && (saveError || error) ? <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+    {(saveError || error) ? <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
       <ErrorNotice message={saveError || error} actionLabel="重新读取模型设置" busy={loading}
         onAction={() => void refresh().then(ok => { if (ok) setSaveError(""); })} testID="settings-error-notice" />
     </View> : null}
-    {open && data ? <SettingsModelsEditor
+    {data ? <SettingsModelsEditor
       snapshot={data}
       onChange={(main, background, backgroundThinking) => void update(main, background, backgroundThinking)}
     /> : null}
+    </View> : null}
   </FloatingPanel>;
 }

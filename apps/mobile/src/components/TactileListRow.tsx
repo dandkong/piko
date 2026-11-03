@@ -1,6 +1,6 @@
 import { createContext, useEffect, useState, type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, radii, stateColors } from "../theme";
+import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
 export const TactileListRowContext = createContext<((pressed: boolean) => void) | null>(null);
 
@@ -14,6 +14,7 @@ type Props = {
 
 /** One shared hover/press surface for a list row with multiple independent actions. */
 export function TactileListRow({ children, surfaceVariant = "card", selected = false, disabled = false, style }: Props) {
+  const styles = useThemeStyles(createStyles);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -44,7 +45,8 @@ export function TactileListRow({ children, surfaceVariant = "card", selected = f
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   row: {
     alignSelf: "stretch",
     position: "relative",
@@ -81,4 +83,5 @@ const styles = StyleSheet.create({
   selectedPressed: {
     backgroundColor: stateColors.selectedPressed,
   },
-});
+  });
+}

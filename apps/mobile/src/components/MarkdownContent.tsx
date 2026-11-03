@@ -8,14 +8,13 @@ import Markdown, {
   type MarkdownStyles,
   type RenderRules,
 } from "react-native-markdown-renderer";
-import { colors, radii, stateColors } from "../theme";
+import { radii, useTheme, type ThemeColors, type ThemeStateColors } from "../theme";
 import { contentMarkdown, isContentLink, isMarkdownImageUrl, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
 const MIN_TABLE_CELL_WIDTH = 160;
 const MAX_MARKDOWN_IMAGE_HEIGHT = 640;
 const DEFAULT_IMAGE_ASPECT_RATIO = 3 / 2;
-const body = { color: colors.text, fontSize: 16, lineHeight: 24 };
 
 function firstTableRow(node: ASTNode): ASTNode | undefined {
   if (node.type === "tr") return node;
@@ -29,6 +28,15 @@ function firstTableRow(node: ASTNode): ASTNode | undefined {
 function tableColumnCount(node: ASTNode): number {
   return firstTableRow(node)?.children.filter(child => child.type === "th" || child.type === "td").length || 1;
 }
+function stableMarkdownKeys(nodes: ASTNode[], parent = "md") {
+  nodes.forEach((node, index) => {
+    node.key = `${parent}/${index}:${node.type}`;
+    stableMarkdownKeys(node.children, node.key);
+  });
+}
+
+function createMarkdownTheme(colors: ThemeColors, stateColors: ThemeStateColors) {
+const body = { color: colors.text, fontSize: 16, lineHeight: 24 };
 const markdownStyles: MarkdownStyles = {
   root: { flexShrink: 1, minWidth: 0 },
   text: body,
@@ -61,16 +69,6 @@ const resolvedMarkdownStyles: MarkdownStyles = {
   ])),
 };
 
-// The renderer's generated IDs (including its root key) change on every parse.
-// Structural keys retain existing blocks and horizontal code/table scroll state
-// while text grows; a genuine syntax/type change still replaces that node.
-function stableMarkdownKeys(nodes: ASTNode[], parent = "md") {
-  nodes.forEach((node, index) => {
-    node.key = `${parent}/${index}:${node.type}`;
-    stableMarkdownKeys(node.children, node.key);
-  });
-}
-
 const ui = StyleSheet.create({
   container: { minWidth: 0, flexShrink: 1, maxWidth: "100%" },
   // Paragraphs retain spacing between blocks without adding space below a reply.
@@ -90,8 +88,12 @@ const ui = StyleSheet.create({
   image: { alignSelf: "center", marginVertical: 4 },
   error: { fontSize: 13, color: colors.danger, marginTop: 8 },
 });
+return { body, resolvedMarkdownStyles, ui };
+}
 
-function MarkdownImage({ source, alt, availableWidth }: { source?: string; alt: string; availableWidth: number }) {
+type MarkdownUiStyles = ReturnType<typeof createMarkdownTheme>["ui"];
+
+function MarkdownImage({ source, alt, availableWidth, ui }: { source?: string; alt: string; availableWidth: number; ui: MarkdownUiStyles }) {
   const [aspectRatio, setAspectRatio] = useState(DEFAULT_IMAGE_ASPECT_RATIO);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -125,6 +127,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
   content: string;
   streaming?: boolean;
 }) {
+  const { colors, stateColors } = useTheme();
+  const { body, resolvedMarkdownStyles, ui } = useMemo(
+    () => createMarkdownTheme(colors, stateColors), [colors, stateColors],
+  );
   const [linkError, setLinkError] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
   const source = useMemo(() => prepareMarkdown(content, streaming), [content, streaming]);
@@ -198,10 +204,11 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
           source={source}
           alt={node.attributes.alt || node.content || "Image"}
           availableWidth={containerWidth}
+          ui={ui}
         />;
       },
     };
-  }, [containerWidth]);
+  }, [containerWidth, body, ui]);
   const renderMarkdown = useMemo(() => {
     const renderer = new AstRenderer({ ...defaultRules, ...rules }, resolvedMarkdownStyles);
     return (nodes: ASTNode[]) => {
@@ -212,7 +219,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
         </View>
       );
     };
-  }, [rules]);
+  }, [rules, resolvedMarkdownStyles]);
   return (
     <View style={ui.container} onLayout={({ nativeEvent: { layout } }) => {
       setContainerWidth(current => Math.abs(current - layout.width) < 1 ? current : layout.width);

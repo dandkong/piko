@@ -8,7 +8,7 @@ import { TactilePressable } from "../../components/TactilePressable";
 import { TactileListRow } from "../../components/TactileListRow";
 import { PostActions } from "./PostActions";
 import { TextButton } from "../../components/TextButton";
-import { colors, radii } from "../../theme";
+import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import type { FeedbackTone } from "../../components/FeedbackToast";
 import { generatePost, loadPosts, loadPostGeneration } from "./api";
 import { ErrorNotice } from "../../components/ErrorNotice";
@@ -25,6 +25,8 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
   revision: number; onDeleted: (id: string) => void;
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [before, setBefore] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,8 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
     </TextButton> : null}
   </Screen>;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   cardRow: { flexDirection: "row", alignItems: "stretch" },
   cardHit: { flex: 1, minWidth: 0 },
@@ -172,4 +175,5 @@ const styles = StyleSheet.create({
   reason: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   empty: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   button: { color: colors.text, fontSize: 14, fontWeight: "500" },
-});
+  });
+}

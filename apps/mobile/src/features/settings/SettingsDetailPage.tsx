@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { ChevronLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconButton } from "../../components/IconButton";
-import { colors } from "../../theme";
+import { useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
 /** Shared second-level settings layer: circular back control, centered title, and fixed bottom actions. */
 export function SettingsDetailPage({ title, onBack, children, footer, contentKey, testID }: {
@@ -14,6 +14,8 @@ export function SettingsDetailPage({ title, onBack, children, footer, contentKey
   contentKey?: string;
   testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const insets = useSafeAreaInsets();
   return <KeyboardAvoidingView style={styles.layer}
     behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}>
@@ -35,7 +37,8 @@ export function SettingsDetailPage({ title, onBack, children, footer, contentKey
   </KeyboardAvoidingView>;
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   layer: { flex: 1, backgroundColor: colors.canvas },
   header: {
     minHeight: 74,
@@ -52,4 +55,5 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { flexGrow: 1, paddingBottom: 24 },
   footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.canvas },
-});
+  });
+}

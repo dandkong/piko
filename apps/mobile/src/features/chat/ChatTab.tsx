@@ -7,14 +7,14 @@ import {
 } from "react-native";
 import { ArrowDown } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { AttachmentList } from "./AttachmentList";
 import { useChatStore } from "./ChatProvider";
-import { styles } from "./styles";
+import { useChatStyles } from "./styles";
 import { formatTimestamp, shouldShowTimestamp } from "./time-divider";
 import { useChatScroll } from "./useChatScroll";
 
@@ -26,6 +26,8 @@ export function ChatTab({ headerHeight, footerHeight }: {
   headerHeight: number;
   footerHeight: number;
 }) {
+  const { colors } = useTheme();
+  const styles = useChatStyles();
   const { messages, messageKey, loading, submitting, error, errorTone, retryLabel, retryBusy, retry, dismissError, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const scroll = useChatScroll({
     loading,

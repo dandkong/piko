@@ -15,7 +15,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { colors, motion, stateColors } from "../theme";
+import { motion, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TactileListRowContext } from "./TactileListRow";
 
 export type PressableVariant = "card" | "soft" | "plain" | "primary";
@@ -62,6 +62,7 @@ export function TactilePressable({
   style,
   faceStyle,
 }: Props) {
+  const styles = useThemeStyles(createStyles);
   const isDisabled = disabled || !onPress;
   const setListRowPressed = useContext(TactileListRowContext);
   const reduceMotion = useReducedMotion();
@@ -165,7 +166,8 @@ export function TactilePressable({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   face: {
     alignItems: "center",
     justifyContent: "center",
@@ -218,4 +220,5 @@ const styles = StyleSheet.create({
     /** box-shadow follows the face radius in every browser; CSS outlines do not. */
     boxShadow: `0 0 0 2px ${stateColors.focus}`,
   } as unknown as ViewStyle,
-});
+  });
+}

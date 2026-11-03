@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, View, type TextStyle } from "react-native";
 import { FloatingPanel } from "./FloatingPanel";
 import { MarkdownContent } from "./MarkdownContent";
-import { colors } from "../theme";
+import { useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { ErrorNotice } from "./ErrorNotice";
 
 /** Shared reader for loaded text. Feature owners handle fetching and business-specific fallback content. */
@@ -23,6 +23,8 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
   markdownTestID?: string;
   textTestID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   return <FloatingPanel open={open} title={title} onClose={onClose} closeLabel={closeLabel}
     testID={testID} scrollTestID={scrollTestID} showScrollbar>
     {open && <View style={styles.content}>
@@ -34,7 +36,9 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
     </View>}
   </FloatingPanel>;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
   text: { color: colors.text, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 14, lineHeight: 21 },
-});
+  });
+}

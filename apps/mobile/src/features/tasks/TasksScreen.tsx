@@ -13,7 +13,7 @@ import type { TaskExecution, AssistantTask } from "../../../../../shared/tasks";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors, controlSizes, radii } from "../../theme";
+import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { Screen, ScreenCard, ScreenHeader } from "../../components/Screen";
 import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
@@ -56,6 +56,8 @@ export function TasksScreen({
   onPreviewExecution: (target: TaskExecutionPreviewTarget) => void;
   onToast: (message: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const {
     tasks,
     selected,
@@ -360,7 +362,8 @@ export function TasksScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   backText: { fontSize: 14, color: colors.text },
   row: { flexDirection: "row", alignItems: "stretch", gap: 0 },
   entryHit: { width: "100%" },
@@ -424,4 +427,5 @@ const styles = StyleSheet.create({
   },
   empty: { fontSize: 14, color: colors.muted, lineHeight: 22 },
   error: { color: colors.danger, fontSize: 13, lineHeight: 20 },
-});
+  });
+}

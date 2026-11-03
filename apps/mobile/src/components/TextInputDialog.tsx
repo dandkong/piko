@@ -2,7 +2,7 @@ import { useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View,
   type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
 import { useDismissOnBack } from "../hooks/useDismissOnBack";
-import { colors, radii, stateColors } from "../theme";
+import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TextButton } from "./TextButton";
 
 type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
@@ -34,6 +34,8 @@ export function TextInputDialog({ visible, ...props }: TextInputDialogProps & { 
 /** Reuse inside an existing Modal when a menu transitions into an input without stacking native modals. */
 export function TextInputDialogContent({ title, inputLabel = title, value, onChangeText, onConfirm, onCancel,
   busy = false, disabled = false, error, maxLength, placeholder, confirmLabel = "确认", testID }: TextInputDialogProps) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const canConfirm = !busy && !disabled && !!value.trim();
   const [focused, setFocused] = useState(false);
   const [focusVisible, setFocusVisible] = useState(false);
@@ -65,7 +67,8 @@ export function TextInputDialogContent({ title, inputLabel = title, value, onCha
     </View>
   </KeyboardAvoidingView>;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   root: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
   scrim: { backgroundColor: colors.scrim },
   dialog: { width: "100%", maxWidth: 360, padding: 22, gap: 18, borderRadius: radii.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
@@ -76,4 +79,5 @@ const styles = StyleSheet.create({
   input: { minHeight: 46, paddingHorizontal: 12, color: colors.text, fontSize: 15 },
   text: { color: colors.text, fontSize: 15 }, muted: { color: colors.muted, fontSize: 13 }, error: { color: colors.danger, fontSize: 13 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
-});
+  });
+}

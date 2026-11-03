@@ -11,7 +11,7 @@ import { TactileListRow } from "../../components/TactileListRow";
 import { TactilePressable } from "../../components/TactilePressable";
 import { TextButton } from "../../components/TextButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors, controlSizes, radii } from "../../theme";
+import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { errorMessage } from "../../api/errors";
@@ -35,6 +35,8 @@ export function ArtifactsScreen({
   onPreview: (file: ArtifactEntry) => void;
   onToast: (message: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<ArtifactEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -332,7 +334,8 @@ export function ArtifactsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, marginBottom: 4 },
   headerTitle: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   headerTitleHit: { flexShrink: 0 },
@@ -369,4 +372,5 @@ const styles = StyleSheet.create({
   notice: { alignItems: "flex-start", gap: 6 },
   error: { color: colors.danger, fontSize: 14, lineHeight: 21 },
   buttonText: { color: colors.text, fontSize: 14, fontWeight: "500" },
-});
+  });
+}

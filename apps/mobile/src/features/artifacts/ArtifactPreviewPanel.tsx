@@ -3,12 +3,14 @@ import { StyleSheet, Text, View } from "react-native";
 import { FileText } from "lucide-react-native";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { ContentPreviewPanel } from "../../components/ContentPreviewPanel";
-import { colors } from "../../theme";
+import { useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { loadArtifactPreview } from "./api";
 import { ApiError, errorMessage } from "../../api/errors";
 
 /** File loading, unsupported types and size errors belong to Artifacts, not the shared reader. */
 export function ArtifactPreviewPanel({ file, onClose }: { file?: ArtifactEntry; onClose: () => void }) {
+  const { colors } = useTheme();
+  const styles = useThemeStyles(createStyles);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ path: string; content?: string; error?: string }>();
   useEffect(() => {
@@ -34,7 +36,9 @@ export function ArtifactPreviewPanel({ file, onClose }: { file?: ArtifactEntry; 
     error={current?.error} onRetry={() => setRevision(value => value + 1)} fallback={unsupported} testID="artifact-preview-panel"
     scrollTestID="artifact-preview-scroll" markdownTestID="artifact-markdown-preview" textTestID="artifact-text-preview" />;
 }
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   unsupported: { alignItems: "flex-start", gap: 10, paddingVertical: 16 },
   message: { color: colors.text, fontSize: 17, fontWeight: "600" },
-});
+  });
+}

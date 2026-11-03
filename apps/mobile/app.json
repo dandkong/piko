@@ -21,7 +21,7 @@
     },
     "icon": "./assets/capybara.png",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.piko.assistant"

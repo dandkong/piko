@@ -6,7 +6,7 @@ import { AnchoredMenuContent } from "../../components/AnchoredMenu";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
 import { IconButton } from "../../components/IconButton";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
-import { colors } from "../../theme";
+import { useTheme } from "../../theme";
 import { deletePost } from "./api";
 import { errorMessage } from "../../api/errors";
 
@@ -14,6 +14,7 @@ import { errorMessage } from "../../api/errors";
 export function PostActions({ post, onDeleted, inRow = false }: {
   post: PostSummary; onDeleted: (id: string) => void; inRow?: boolean;
 }) {
+  const { colors } = useTheme();
   const anchor = useRef<View>(null);
   const deleting = useRef(false);
   const [menu, setMenu] = useState<{ left: number; top: number }>();

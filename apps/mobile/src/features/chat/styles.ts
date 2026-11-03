@@ -1,7 +1,8 @@
 import { StyleSheet, type ViewStyle } from "react-native";
-import { colors, radii, stateColors } from "../../theme";
+import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
-export const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   main: {
     flex: 1,
     minHeight: 0,
@@ -164,4 +165,9 @@ export const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
   },
-});
+  });
+}
+
+export function useChatStyles() {
+  return useThemeStyles(createStyles);
+}

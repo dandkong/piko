@@ -8,7 +8,7 @@ import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtim
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { AppScrollView } from "../../components/AppScrollView";
 import { TactilePressable } from "../../components/TactilePressable";
-import { colors, controlSizes, radii, stateColors } from "../../theme";
+import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: "关闭", minimal: "最少", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高",
@@ -46,6 +46,8 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
   disabled: boolean;
   onSelect: (selection: ModelSelection | null) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const anchor = useRef<View>(null);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -117,6 +119,7 @@ function ThinkingTabs({ role, model, selected, onSelect }: {
   selected?: ThinkingLevel;
   onSelect: (level: ThinkingLevel) => void;
 }) {
+  const styles = useStyles();
   if (!model) return <Text style={styles.note}>选择主模型后可设置思考强度。</Text>;
   const levels = model.thinkingLevels;
   if (!levels.length) return <Text style={styles.note}>该模型没有思考强度选项。</Text>;
@@ -138,6 +141,7 @@ export function SettingsModelsEditor({ snapshot, onChange }: {
   snapshot: ModelSettingsSnapshot;
   onChange: (mainModel: ModelSelection | null, backgroundModel: ModelSelection | null, backgroundThinking: ThinkingLevel | null) => void;
 }) {
+  const styles = useStyles();
   const mainInfo = selectedInfo(snapshot.mainModel, snapshot.availableModels);
   const explicitBackground = snapshot.backgroundModel;
   const effectiveBackground = explicitBackground ?? snapshot.mainModel;
@@ -198,6 +202,7 @@ function ModelSection({ title, role, selection, mainModel, models, model, thinki
   onModel: (model: ModelInfo | null) => void;
   onThinking: (thinking: ThinkingLevel) => void;
 }) {
+  const styles = useStyles();
   return <View style={styles.section} testID={`${role}-model-section`}>
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>
@@ -208,7 +213,12 @@ function ModelSection({ title, role, selection, mainModel, models, model, thinki
   </View>;
 }
 
-const styles = StyleSheet.create({
+function useStyles() {
+  return useThemeStyles(createStyles);
+}
+
+function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
+  return StyleSheet.create({
   content: { paddingTop: 4, paddingBottom: 20, gap: 20 },
   section: { marginHorizontal: 20, gap: 8 },
   sectionTitle: { color: colors.muted, fontSize: 13, lineHeight: 19, fontWeight: "500" },
@@ -226,4 +236,5 @@ const styles = StyleSheet.create({
   thinkingTextSelected: { color: colors.text, fontWeight: "600" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 19 },
   notice: { marginHorizontal: 20, color: colors.muted, fontSize: 12, lineHeight: 19 },
-});
+  });
+}
