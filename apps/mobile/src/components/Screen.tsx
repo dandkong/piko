@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import type { ComponentRef, ReactNode, Ref } from "react";
 import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
@@ -8,7 +8,7 @@ export function Screen({ children, topInset, bottomInset, testID, scrollRef }: {
   topInset: number;
   bottomInset: number;
   testID?: string;
-  scrollRef?: Ref<ScrollView>;
+  scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
 }) {
   const styles = useStyles();
   return <ScrollView ref={scrollRef} testID={testID} showsVerticalScrollIndicator={false}

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ComponentRef } from "react";
 import { ChevronDown } from "lucide-react-native";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,7 +16,7 @@ const appearanceLabels = {
 export function AppearanceSection() {
   const { appearance, setAppearance, colors } = useTheme();
   const styles = useThemeStyles(createStyles);
-  const anchor = useRef<View>(null);
+  const anchor = useRef<ComponentRef<typeof View>>(null);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [menu, setMenu] = useState<{ left: number; top: number; width: number }>();

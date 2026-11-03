@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { Modal, View, useWindowDimensions } from "react-native";
 import { MoreVertical, Trash2 } from "lucide-react-native";
 import type { PostSummary } from "../../../../../shared/posts";
@@ -15,7 +15,7 @@ export function PostActions({ post, onDeleted, inRow = false }: {
   post: PostSummary; onDeleted: (id: string) => void; inRow?: boolean;
 }) {
   const { colors } = useTheme();
-  const anchor = useRef<View>(null);
+  const anchor = useRef<ComponentRef<typeof View>>(null);
   const deleting = useRef(false);
   const [menu, setMenu] = useState<{ left: number; top: number }>();
   const [confirm, setConfirm] = useState(false);

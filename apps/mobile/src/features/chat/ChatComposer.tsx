@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from "react";
 import { Platform, Text, TextInput, type TextInputProps, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
 import { useTheme } from "../../theme";
@@ -49,7 +49,7 @@ export function ChatComposer({
   const [focusVisible, setFocusVisible] = useState(false);
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const canSend =
     !loading && !submitting && (!!draft.trim() || attachments.length > 0);
   const showStop = busy && !draft.trim() && !attachments.length;

@@ -98,13 +98,13 @@ export function ChatTab({ headerHeight, footerHeight }: {
                 </TactilePressable>
               )}
             </View>
-          ) : null}
+          ) : undefined}
           ListEmptyComponent={loading ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.muted} />
               <Text style={styles.muted}>正在打开对话…</Text>
             </View>
-          ) : null}
+          ) : undefined}
           ListFooterComponent={(
             <View>
               {!!error && (

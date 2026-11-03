@@ -132,7 +132,7 @@ export function TactilePressable({
         "aria-busy": effectiveAccessibilityState.busy,
         "aria-disabled": effectiveAccessibilityState.disabled,
         // React Native Web handles Enter for radios, but Space only for buttons.
-        onKeyDown: (event: { key: string; repeat: boolean; preventDefault: () => void }) => {
+        onKeyDown: (event: any) => {
           if (accessibilityRole === "radio" && !isDisabled && (event.key === " " || event.key === "Spacebar")) {
             event.preventDefault();
             if (!event.repeat) onPress?.();

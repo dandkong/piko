@@ -65,8 +65,8 @@ const resolvedMarkdownStyles: MarkdownStyles = {
   ...defaultStyles,
   ...Object.fromEntries(Object.entries(markdownStyles).map(([name, style]) => [
     name,
-    StyleSheet.flatten([(defaultStyles as MarkdownStyles)[name], style]),
-  ])),
+    StyleSheet.flatten([(defaultStyles as MarkdownStyles)[name] as any, style as any]) as any,
+  ])) as MarkdownStyles,
 };
 
 const ui = StyleSheet.create({

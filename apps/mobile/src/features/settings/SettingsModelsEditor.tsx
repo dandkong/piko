@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ComponentRef } from "react";
 import {
   Modal, Pressable, StyleSheet, Text, View, useWindowDimensions,
 } from "react-native";
@@ -48,7 +48,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
-  const anchor = useRef<View>(null);
+  const anchor = useRef<ComponentRef<typeof View>>(null);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [menu, setMenu] = useState<{ left: number; top: number; width: number; height: number }>();

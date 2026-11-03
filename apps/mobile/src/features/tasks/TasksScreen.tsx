@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -79,7 +79,7 @@ export function TasksScreen({
   const [pendingDelete, setPendingDelete] = useState<AssistantTask>();
   const [deleting, setDeleting] = useState(false);
   const deletingRef = useRef(false);
-  const anchors = useRef(new Map<string, View>());
+  const anchors = useRef(new Map<string, ComponentRef<typeof View>>());
   const { width, height } = useWindowDimensions();
   useDismissOnBack(!!menu, () => setMenu(undefined));
   useEffect(() => { setMenu(undefined); }, [width, height]);

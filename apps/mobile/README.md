@@ -1,8 +1,8 @@
 # Piko React Native 客户端
 
-`apps/mobile` 是唯一前端，使用 Expo SDK 57 / React Native，覆盖 Web、iOS、Android。模型、凭据与实际工作由根目录 Bun 后端管理。
+`apps/mobile` 是唯一前端，使用 Expo SDK 58 / React Native，覆盖 Web、iOS、Android。模型、凭据与实际工作由根目录 Bun 后端管理。
 
-安装、启动、Android 原生构建、API 地址、配置与验证命令统一见 [根目录 README](../../README.md)。依赖版本以 package.json / bun.lock 为准，客户端维护自己的锁文件；`uuid` override 用于 Expo 的嵌套 xcode 构建依赖。
+安装、启动、Android 原生构建、API 地址、配置与验证命令统一见 [根目录 README](../../README.md)。依赖版本以 package.json / bun.lock 为准，客户端维护自己的锁文件；`uuid` override 用于 Expo 的嵌套 xcode 构建依赖，`glob` / `minimatch` overrides 固定在已修复安全公告的版本，兼容 Expo SDK 58 当前使用的 API。
 
 ## 客户端开发约定
 

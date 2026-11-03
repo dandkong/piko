@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { ArrowUpDown, ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
@@ -50,9 +50,9 @@ export function ArtifactsScreen({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const deletingRef = useRef(false);
-  const anchors = useRef(new Map<string, View>());
-  const sortAnchor = useRef<View>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const anchors = useRef(new Map<string, ComponentRef<typeof View>>());
+  const sortAnchor = useRef<ComponentRef<typeof View>>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const { width, height } = useWindowDimensions();
   const sortedEntries = useMemo(() => sortArtifacts(entries, sort), [entries, sort]);
   const listLoading = loading && !entries.length || !sortReady;

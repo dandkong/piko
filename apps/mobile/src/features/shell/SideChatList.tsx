@@ -1,5 +1,5 @@
 import { Trash2, MoreVertical, RefreshCw } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { DEFAULT_SIDE_CHAT_TITLE, type SideChat } from "../../../../../shared/side-chats";
 import { ConfirmationDialogContent } from "../../components/ConfirmationDialog";
@@ -27,7 +27,7 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
   const [deleteError, setDeleteError] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const anchors = useRef(new Map<string, View>());
+  const anchors = useRef(new Map<string, ComponentRef<typeof View>>());
   const { width, height } = useWindowDimensions();
   const visible = sideChats;
   useDismissOnBack(
