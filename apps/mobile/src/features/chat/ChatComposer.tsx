@@ -150,7 +150,6 @@ export function ChatComposer({
           label={showStop ? "停止回复" : "发送消息"}
           onPress={showStop ? onStop : () => onSend()}
           variant={showStop ? "soft" : "primary"}
-          disabledAppearance={sendDisabled ? "preserve-primary" : undefined}
         >
           {showStop ? (
             <Square

@@ -115,7 +115,7 @@ export const lightStateColors: ThemeStateColors = {
   softPressed: "#E5E7E9",
   primaryHover: "#C9DDF4",
   primaryPressed: "#BDD2EA",
-  disabledOpacity: 0.4,
+  disabledOpacity: 0.6,
   focus: "#267FC2",
 };
 
@@ -130,7 +130,7 @@ export const darkStateColors: ThemeStateColors = {
   softPressed: "#303030",
   primaryHover: "#205B87",
   primaryPressed: "#124269",
-  disabledOpacity: 0.4,
+  disabledOpacity: 0.6,
   focus: "#72BFFF",
 };
 
