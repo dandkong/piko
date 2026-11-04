@@ -30,6 +30,7 @@ type Props = {
   variant?: PressableVariant;
   scaleTo?: number;
   disabled?: boolean;
+  disabledAppearance?: "muted-primary";
   selected?: boolean;
   /** Opt out of hover/press/selected backgrounds when a parent or sibling owns the fill. */
   stateFill?: boolean;
@@ -50,6 +51,7 @@ export function TactilePressable({
   variant = "plain",
   scaleTo = 0.96,
   disabled = false,
+  disabledAppearance,
   selected,
   stateFill = true,
   onPress,
@@ -92,12 +94,17 @@ export function TactilePressable({
     setFocusVisible(target?.matches ? target.matches(":focus-visible") : true);
   };
 
+  const mutedPrimaryDisabled =
+    isDisabled &&
+    variant === "primary" &&
+    disabledAppearance === "muted-primary";
   const variantStyle =
-    isDisabled && variant === "primary" ? styles.soft
+    isDisabled && variant === "primary"
+      ? mutedPrimaryDisabled ? styles.primaryDisabled : styles.soft
       : variant === "card" ? styles.card
-      : variant === "soft" ? styles.soft
-        : variant === "primary" ? styles.primary
-          : styles.plain;
+        : variant === "soft" ? styles.soft
+          : variant === "primary" ? styles.primary
+            : styles.plain;
   const interactiveState = pressed
     ? selected ? styles.selectedPressed
       : variant === "primary" ? styles.primaryPressed
@@ -110,7 +117,7 @@ export function TactilePressable({
             : styles.hover
       : selected ? styles.selected : null;
   const stateStyle = isDisabled
-    ? styles.disabled
+    ? mutedPrimaryDisabled ? null : styles.disabled
     : stateFill ? interactiveState : null;
   const focusStyle = focusVisible ? styles.focus : null;
   const animatedStyle = useAnimatedStyle(() => ({
@@ -185,6 +192,9 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   },
   primary: {
     backgroundColor: colors.blue,
+  },
+  primaryDisabled: {
+    backgroundColor: stateColors.primaryDisabled,
   },
   hover: {
     backgroundColor: stateColors.hover,

@@ -10,6 +10,7 @@ type Props = {
   variant?: PressableVariant;
   size?: "sm" | "md";
   disabled?: boolean;
+  disabledAppearance?: "muted-primary";
   stateFill?: boolean;
   hint?: string;
   accessibilityState?: AccessibilityState;
@@ -25,6 +26,7 @@ export function IconButton({
   variant = "card",
   size = "md",
   disabled = false,
+  disabledAppearance,
   stateFill = true,
   hint,
   accessibilityState,
@@ -40,6 +42,7 @@ export function IconButton({
       accessibilityHint={hint}
       accessibilityState={accessibilityState}
       disabled={disabled}
+      disabledAppearance={disabledAppearance}
       stateFill={stateFill}
       hitSlop={size === "sm" ? 8 : undefined}
       onPress={onPress}
@@ -47,7 +50,13 @@ export function IconButton({
       style={[{ width: faceSize, height: faceSize }, style]}
       faceStyle={[styles.face, { width: faceSize, height: faceSize, borderRadius: faceSize / 2 }]}
       testID={testID}
-      variant={unavailable && variant === "primary" ? "soft" : variant}
+      variant={
+        unavailable &&
+        variant === "primary" &&
+        disabledAppearance !== "muted-primary"
+          ? "soft"
+          : variant
+      }
     >
       {children}
     </TactilePressable>
