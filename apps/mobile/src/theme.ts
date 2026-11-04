@@ -17,7 +17,6 @@ export type ThemeColors = {
   line: string;
   lineStrong: string;
   blue: string;
-  userBubble: string;
   blueDark: string;
   danger: string;
   dangerSurface: string;
@@ -54,8 +53,7 @@ export const lightColors: ThemeColors = {
   weak: "#949494",
   line: "#E5E5E5",
   lineStrong: "#CCCCCC",
-  blue: "#D6E5F7",
-  userBubble: "#D6E8FC",
+  blue: "#D6E8FC",
   blueDark: "#267FC2",
   danger: "#C94F4F",
   dangerSurface: "#FCEBEC",
@@ -78,7 +76,6 @@ export const darkColors: ThemeColors = {
   line: "#292929",
   lineStrong: "#414141",
   blue: "#174E78",
-  userBubble: "#174E78",
   blueDark: "#72BFFF",
   danger: "#F19A92",
   dangerSurface: "#382020",

@@ -52,7 +52,7 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
   userBubble: {
     alignSelf: "flex-end",
     maxWidth: "85%",
-    backgroundColor: colors.userBubble,
+    backgroundColor: colors.blue,
     borderBottomRightRadius: radii.control,
   },
   assistantBubble: {
