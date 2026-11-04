@@ -10,7 +10,7 @@ type Props = {
   variant?: PressableVariant;
   size?: "sm" | "md";
   disabled?: boolean;
-  disabledAppearance?: "muted-primary";
+  disabledAppearance?: "preserve-primary";
   stateFill?: boolean;
   hint?: string;
   accessibilityState?: AccessibilityState;
@@ -53,7 +53,7 @@ export function IconButton({
       variant={
         unavailable &&
         variant === "primary" &&
-        disabledAppearance !== "muted-primary"
+        disabledAppearance !== "preserve-primary"
           ? "soft"
           : variant
       }

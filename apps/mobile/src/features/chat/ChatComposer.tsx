@@ -150,7 +150,7 @@ export function ChatComposer({
           label={showStop ? "停止回复" : "发送消息"}
           onPress={showStop ? onStop : () => onSend()}
           variant={showStop ? "soft" : "primary"}
-          disabledAppearance={sendDisabled ? "muted-primary" : undefined}
+          disabledAppearance={sendDisabled ? "preserve-primary" : undefined}
         >
           {showStop ? (
             <Square
@@ -160,11 +160,7 @@ export function ChatComposer({
               strokeWidth={0}
             />
           ) : (
-            <ArrowUp
-              size={22}
-              strokeWidth={1.8}
-              color={sendDisabled ? colors.muted : colors.text}
-            />
+            <ArrowUp size={22} strokeWidth={1.8} color={colors.text} />
           )}
         </IconButton>
       </View>
