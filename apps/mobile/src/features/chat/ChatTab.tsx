@@ -6,7 +6,6 @@ import {
   type ListRenderItemInfo,
 } from "react-native";
 import { ArrowDown } from "lucide-react-native";
-import { useReducedMotion } from "react-native-reanimated";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { useTheme } from "../../theme";
 import { IconButton } from "../../components/IconButton";
@@ -32,12 +31,9 @@ export function ChatTab({ headerHeight, footerHeight }: {
   const { messages, messageKey, loading, submitting, error, errorTone, retryLabel, retryBusy, retry, dismissError, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const lastMessage = messages[messages.length - 1];
   const assistantStreaming = lastMessage?.role === "assistant" && lastMessage.id.startsWith("live-");
-  const reduceMotion = useReducedMotion();
   const scroll = useChatScroll({
     loading,
     submitting,
-    assistantStreaming,
-    reduceMotion,
     onNearStart: () => {
       if (hasOlder && !loadingOlder && !olderError) fetchOlder();
     },

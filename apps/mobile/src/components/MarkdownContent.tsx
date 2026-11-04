@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Image, Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle, type ViewStyle } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 import Markdown, {
   AstRenderer,
   renderRules as defaultRules,
@@ -10,7 +9,6 @@ import Markdown, {
   type RenderRules,
 } from "react-native-markdown-renderer";
 import { radii, useTheme, type ThemeColors, type ThemeStateColors } from "../theme";
-import { useSmoothStreamingText } from "../hooks/useSmoothStreamingText";
 import { contentMarkdown, isContentLink, isMarkdownImageUrl, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
@@ -135,12 +133,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
   );
   const [linkError, setLinkError] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
-  const reduceMotion = useReducedMotion();
-  const visibleContent = useSmoothStreamingText(content, streaming, reduceMotion);
-  const source = useMemo(
-    () => prepareMarkdown(visibleContent, streaming),
-    [visibleContent, streaming],
-  );
+  const source = useMemo(() => prepareMarkdown(content, streaming), [content, streaming]);
   const rules = useMemo<RenderRules>(() => {
     const code: RenderRules[string] = (node) => (
       <View key={node.key} style={ui.code}>
