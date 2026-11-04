@@ -5,6 +5,8 @@ import type { Message } from "../../../../../shared/chat";
 export type ChatScrollOptions = {
   loading: boolean;
   submitting: boolean;
+  assistantStreaming: boolean;
+  reduceMotion: boolean;
   onNearStart: () => void;
 };
 

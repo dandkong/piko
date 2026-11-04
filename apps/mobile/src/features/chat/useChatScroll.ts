@@ -6,6 +6,8 @@ import { BOTTOM_EPSILON, type ChatScroll, type ChatScrollOptions } from "./chat-
 /** Native counterpart; only a user drag, never content growth, cancels following. */
 export function useChatScroll(options: ChatScrollOptions): ChatScroll {
   const listRef = useRef<FlatList<Message>>(null);
+  const latest = useRef(options);
+  latest.current = options;
   const following = useRef(true);
   const dragging = useRef(false);
   const metrics = useRef({ contentHeight: 0, viewportHeight: 0, offset: 0 });
@@ -16,7 +18,10 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     prepend.current = undefined;
     const { contentHeight, viewportHeight } = metrics.current;
     if (!dragging.current && viewportHeight && contentHeight)
-      listRef.current?.scrollToOffset({ offset: Math.max(0, contentHeight - viewportHeight), animated });
+      listRef.current?.scrollToOffset({
+        offset: Math.max(0, contentHeight - viewportHeight),
+        animated: animated && !latest.current.reduceMotion,
+      });
   }, []);
   const record = (event: NativeScrollEvent) => {
     metrics.current = {
@@ -26,9 +31,15 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     };
     return event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y <= BOTTOM_EPSILON;
   };
+  const wasStreaming = useRef(options.assistantStreaming);
   useLayoutEffect(() => {
     if (options.submitting) scrollToLatest(false);
   }, [options.submitting, scrollToLatest]);
+  useLayoutEffect(() => {
+    if (wasStreaming.current && !options.assistantStreaming && following.current)
+      scrollToLatest(false);
+    wasStreaming.current = options.assistantStreaming;
+  }, [options.assistantStreaming, scrollToLatest]);
 
   return {
     listRef,
@@ -70,7 +81,12 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
         if (anchor && !dragging.current) {
           const offset = Math.max(0, anchor.offset + height - anchor.height);
           listRef.current?.scrollToOffset({ offset, animated: false });
-        } else if (following.current) scrollToLatest(false);
+        } else if (following.current)
+          scrollToLatest(
+            latest.current.assistantStreaming &&
+              !latest.current.submitting &&
+              !latest.current.reduceMotion,
+          );
       },
     },
   };

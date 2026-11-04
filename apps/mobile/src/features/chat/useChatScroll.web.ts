@@ -8,6 +8,7 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
   const listRef = useRef<FlatList<Message>>(null);
   const latest = useRef(options);
   latest.current = options;
+  const previousFollowState = useRef({ streaming: options.assistantStreaming, reduceMotion: options.reduceMotion });
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const control = useRef<{
     latest: (animated: boolean) => void;
@@ -24,17 +25,69 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     let touching = false;
     let touchY = 0;
     let anchor: { element: HTMLElement; top: number } | undefined;
+    let followFrame = 0;
+    let followActive = false;
+    let lastFollowFrame: number | undefined;
+    // One damping loop retargets new content heights instead of restarting browser smooth scroll.
     // Browser anchoring and application following must not both adjust the offset.
     const previousAnchor = node.style.overflowAnchor;
     node.style.overflowAnchor = "none";
 
     const atBottom = () => node.scrollHeight - node.clientHeight - node.scrollTop <= BOTTOM_EPSILON;
-    const publish = () => setAwayFromLatest(!latest.current.loading && !atBottom());
-    const sync = () => {
+    const bottomOffset = () => Math.max(0, node.scrollHeight - node.clientHeight);
+    const cancelFollow = () => {
+      if (followFrame) cancelAnimationFrame(followFrame);
+      followFrame = 0;
+      followActive = false;
+      lastFollowFrame = undefined;
+    };
+    const publish = () => setAwayFromLatest(
+      !latest.current.loading && !atBottom() && !(following && followActive),
+    );
+    const animateFollow = () => {
+      if (followFrame) return;
+      followActive = true;
+      const step = (time: number) => {
+        followFrame = 0;
+        if (!following) { followActive = false; lastFollowFrame = undefined; return; }
+        if (!latest.current.assistantStreaming || latest.current.reduceMotion) {
+          followActive = false;
+          lastFollowFrame = undefined;
+          node.scroll({ top: bottomOffset(), behavior: "instant" });
+          publish();
+          return;
+        }
+        const target = bottomOffset();
+        const gap = target - node.scrollTop;
+        if (Math.abs(gap) <= 0.5) {
+          node.scrollTop = target;
+          followActive = false;
+          lastFollowFrame = undefined;
+          publish();
+          return;
+        }
+        const elapsed = lastFollowFrame === undefined
+          ? 16
+          : Math.max(1, Math.min(50, time - lastFollowFrame));
+        lastFollowFrame = time;
+        const progress = 1 - Math.exp(-elapsed / 55);
+        node.scrollTop += gap * progress;
+        followFrame = requestAnimationFrame(step);
+      };
+      followFrame = requestAnimationFrame(step);
+    };
+    const sync = (assistantContentResized = false) => {
       if (!node.clientHeight) return;
       if (following) {
-        node.scroll({ top: Math.max(0, node.scrollHeight - node.clientHeight), behavior: "instant" });
+        if (assistantContentResized && latest.current.assistantStreaming &&
+          !latest.current.submitting && !latest.current.reduceMotion) {
+          animateFollow();
+        } else {
+          cancelFollow();
+          node.scroll({ top: bottomOffset(), behavior: "instant" });
+        }
       } else if (anchor?.element.isConnected) {
+        cancelFollow();
         // Preserve the visible message when an older history page is prepended.
         node.scroll({ top: node.scrollTop + anchor.element.getBoundingClientRect().top - anchor.top, behavior: "instant" });
       }
@@ -42,10 +95,12 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     };
     const pause = () => {
       following = false;
+      cancelFollow();
       leftBottom = !atBottom();
       anchor = undefined;
     };
     const resume = (_animated: boolean) => {
+      cancelFollow();
       following = true;
       leftBottom = false;
       anchor = undefined;
@@ -104,7 +159,9 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     };
     // ResizeObserver runs before paint; one exact read/write handles row growth,
     // typing footer, composer insets, and viewport changes without delayed retries.
-    const observer = new ResizeObserver(sync);
+    const observer = new ResizeObserver(entries => {
+      sync(entries.some(entry => entry.target === content));
+    });
     // Insets are padding: content-box observation misses padding-only changes
     // (e.g. the header gains its busy line, or the multiline composer shrinks).
     observer.observe(node, { box: "border-box" });
@@ -133,6 +190,7 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
     return () => {
       control.current = null;
       observer.disconnect();
+      cancelFollow();
       node.style.overflowAnchor = previousAnchor;
       node.removeEventListener("scroll", onScroll);
       node.removeEventListener("wheel", onWheel, true);
@@ -147,6 +205,13 @@ export function useChatScroll(options: ChatScrollOptions): ChatScroll {
   useLayoutEffect(() => {
     if (options.submitting) control.current?.latest(false);
   }, [options.submitting]);
+  useLayoutEffect(() => {
+    const previous = previousFollowState.current;
+    previousFollowState.current = { streaming: options.assistantStreaming, reduceMotion: options.reduceMotion };
+    if ((previous.streaming && !options.assistantStreaming) ||
+      (!previous.reduceMotion && options.reduceMotion))
+      control.current?.sync();
+  }, [options.assistantStreaming, options.reduceMotion]);
   useLayoutEffect(() => { control.current?.sync(); }, [options.loading]);
 
   return {
