@@ -158,7 +158,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       );
     };
     const link: RenderRules[string] = (node, children) => isContentLink(node.attributes.href) ? (
-      <Text key={node.key} accessibilityRole="link" style={ui.link} onPress={() => {
+      <Text key={node.key} accessibilityRole="link" style={[
+        ui.link,
+        Platform.OS === "web" && { overflowWrap: "anywhere" } as TextStyle,
+      ]} onPress={() => {
         setLinkError(false);
         void Linking.openURL(node.attributes.href).catch(() => setLinkError(true));
       }}>{children}</Text>
