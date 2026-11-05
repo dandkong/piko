@@ -3,7 +3,7 @@ import type { ActiveCompaction } from "./runtime";
 export type MessageAttachment = { id: string; url: string; mime: string };
 export type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: number; requestId?: string; attachments?: MessageAttachment[] };
 export type SubmissionReceipt = { id: string; requestId?: string; status: "queued" | "placed" | "done" | "unanswered"; error?: string };
-export const CHAT_PAGE_SIZE = 50;
+export const CHAT_PAGE_SIZE = 20;
 /** Images a single message may carry; each one is read by the model as a separate file. */
 export const MAX_ATTACHMENTS = 4;
 export type HistoryPage = { messages: Message[]; nextBefore?: string };
