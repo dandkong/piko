@@ -135,7 +135,7 @@ Piko 客户端的统一交互基线。新增或修改任何可交互控件时应
 | `ConfirmationDialogContent` | `apps/mobile/src/components/ConfirmationDialog.tsx` | 旁聊和产物删除共用二次确认内容；只能通过取消/确认按钮关闭 |
 | `FloatingPanel` | `apps/mobile/src/components/FloatingPanel.tsx` | 设置、产物预览等盖在主界面上的上浮面板；统一遮罩、圆角、动效与滚动内容，可点关闭按钮或遮罩关闭；headerLeading 放内部返回，contentKey 只重置滚动内容 |
 | `ContentPreviewPanel` | `apps/mobile/src/components/ContentPreviewPanel.tsx` | 产物、帖子和执行结果共用的 Markdown/文本阅读器；标题可选，功能层各自加载内容与提供业务 fallback |
-| `MarkdownContent` | `apps/mobile/src/components/MarkdownContent.tsx` | 聊天和阅读器共用的 Markdown 渲染；仅流式内容进行显示补全，HTTPS 图片按宽高比自适应，非 HTTPS 或加载失败显示替代文字 |
+| `MarkdownContent` | `apps/mobile/src/components/MarkdownContent.tsx` | 聊天和阅读器共用的 Markdown 渲染；仅流式内容进行显示补全，Web 长链接在容器内断行，HTTPS 图片按宽高比自适应，非 HTTPS 或加载失败显示替代文字 |
 | `AppScrollView` | `apps/mobile/src/components/AppScrollView.tsx` | 需要显示滚动条的纵向滚动共用指示器配置；用于长内容和可滚动菜单 |
 | `FeedbackToast` | `apps/mobile/src/components/FeedbackToast.tsx` | 应用级 5 秒短暂反馈，统一承载 info / warning / error |
 | `ErrorNotice` | `apps/mobile/src/components/ErrorNotice.tsx` | 所属页面、会话或预览的持续提示；具体恢复动作、可选关闭与 error / info 语义 |

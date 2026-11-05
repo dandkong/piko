@@ -158,17 +158,21 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       );
     };
     const link: RenderRules[string] = (node, children) => isContentLink(node.attributes.href) ? (
-      <Text key={node.key} accessibilityRole="link" style={[
-        ui.link,
-        Platform.OS === "web" && { overflowWrap: "anywhere" } as TextStyle,
-      ]} onPress={() => {
+      <Text key={node.key} accessibilityRole="link" style={ui.link} onPress={() => {
         setLinkError(false);
         void Linking.openURL(node.attributes.href).catch(() => setLinkError(true));
       }}>{children}</Text>
     ) : <Text key={node.key}>{children}</Text>;
     return {
       textgroup: (node, children, _parents, styles) => (
-        <Text key={node.key} selectable style={styles.text as TextStyle}>{children}</Text>
+        <Text key={node.key} selectable style={[
+          styles.text as TextStyle,
+          Platform.OS === "web" && {
+            minWidth: 0,
+            maxWidth: "100%",
+            overflowWrap: "anywhere",
+          } as TextStyle,
+        ]}>{children}</Text>
       ),
       list_item: (node, children, parents, styles) => {
         // Use the nearest list: an ordered sublist may have a bullet-list ancestor.
