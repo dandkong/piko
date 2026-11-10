@@ -13,6 +13,9 @@ import { readConfigEnvironment } from "../config/files";
 
 const SKILL_ENVIRONMENT_KEYS = [
   "NOTION_API_KEY",
+  "PORTAINER_API_KEY",
+  "PORTAINER_URL",
+  "PORTAINER_VERIFY_TLS",
   "KARAKEEP_API_KEY",
   "KARAKEEP_API_TOKEN",
   "KARAKEEP_SERVER_ADDR",
