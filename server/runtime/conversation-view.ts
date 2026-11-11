@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
-import type { WatchCall } from "@earendil-works/chord";
+import type { WatchCall } from "@earendil-works/chord/watch";
 import {
   InboxDoc,
   LiveDoc,

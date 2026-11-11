@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import {
   err,
   FileError,
