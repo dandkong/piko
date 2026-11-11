@@ -6,7 +6,7 @@ export function createExaProvider(options: ProviderOptions): SearchProvider {
     id: "exa",
     supports: () => true,
     async search(query, count, filters, signal): Promise<SearchResult[]> {
-      const body: Record<string, unknown> = { query, type: "auto", numResults: count,
+      const body: Record<string, unknown> = { query, type: "lite", numResults: count,
         contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } };
       if (filters.freshness) body.startPublishedDate = freshnessStartIso(filters.freshness);
       if (filters.includeDomains?.length) body.includeDomains = [...filters.includeDomains];

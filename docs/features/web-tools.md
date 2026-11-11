@@ -73,7 +73,7 @@ FIRECRAWL_API_KEY="..."
 
 ## 后端请求与结果映射
 
-- Exa：`POST https://api.exa.ai/search`，使用 `x-api-key` header，请求 relevance-ranked results 和 highlights；`contents.highlights.maxCharacters` 与输出上限同为 1,200。该参数只是请求侧预算，Exa 仍可能返回更长片段，格式化时统一截断。`freshness` 映射为 `startPublishedDate`，域名映射为 `includeDomains` / `excludeDomains`。
+- Exa：`POST https://api.exa.ai/search`，使用 `x-api-key` header，固定使用低成本 `type: "lite"` 并请求 highlights；`contents.highlights.maxCharacters` 与输出上限同为 1,200。Lite 使用缓存页面内容，要求 highlights/text 时没有缓存副本的页面可能不出现在结果中。该参数只是请求侧预算，Exa 仍可能返回更长片段，格式化时统一截断。`freshness` 映射为 `startPublishedDate`，域名映射为 `includeDomains` / `excludeDomains`。
 - Tavily：`POST https://api.tavily.com/search`，Bearer Key，使用 basic search，不请求生成答案或完整网页内容。始终设置 `include_published_date: true`，否则结果没有 `published_date`；`freshness` 映射为 `time_range` 并设置 `filter_by_published_date: true`，避免只按排序召回过期页面。域名映射为 `include_domains` / `exclude_domains`。
 - DeepSeek：`POST https://api.deepseek.com/v1/tools/search`，Bearer Search Key，`need_content:false`；仅取结构化摘要/片段。没有时间或域名过滤参数；带相应过滤条件时跳过该后端。
 - Brave：保留原 `GET /res/v1/web/search` 和 `X-Subscription-Token`。`freshness` 映射为 `pd`/`pw`/`pm`/`py`；它按“发现时间”筛选，不等价于 Exa/Tavily 的发布时间。Brave 没有原生域名过滤；带域名筛选时跳过。
