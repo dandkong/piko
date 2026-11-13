@@ -52,9 +52,9 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 
 静态服务只读取导出目录，拒绝隐藏文件、非法路径和越界链接。HTML 与无指纹文件要求重新验证，带内容指纹的资源可长期缓存。未知 API 与缺失脚本/图片返回 404，浏览器页面导航才使用 SPA fallback。Piko 不过滤 Origin，跨源浏览器请求会获得 CORS 响应头；部署访问控制由反向代理或网络边界负责。
 
-## 服务托管边界
+## 手动运行边界
 
-仓库不提供 systemd unit、容器配置或固定部署流程；后续部署方式尚未确定。`bun run start` 以前台方式启动单进程，如何启动、停止、更新以及是否自动重启，由实际运行环境决定。后端退出时会按既有逻辑关闭资源；重启不自动重放不确定执行或补发 TG 回复。
+`bun run start` 在前台启动单进程，按 Ctrl+C 停止。后端退出时会按既有逻辑关闭资源；重新启动不自动重放不确定执行或补发 TG 回复。
 
 源码和 PIKO_HOME 状态相互独立。备份前停止进程，成套保存 Durable SQLite 存储（包括 WAL）和助手工作区；备份与恢复见[SQLite 存储](storage.md)。Windows 盘符路径不能直接用于 Linux；已有会话 cwd 与配置不同时拒绝启动，首次在 Linux 运行时使用新的 PIKO_HOME。
 
@@ -66,6 +66,6 @@ BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 
 ## 验证边界
 
-文档覆盖 Web 构建、单进程启动与安全边界；目标部署平台、服务管理器、代理认证、真实 Telegram 网络和设备浏览器行为，需在未来选定的环境中验证。
+文档覆盖 Web 构建、手动启动与安全边界；代理认证、真实 Telegram 网络和设备浏览器行为仍需在实际环境中验证。
 
 参考：[Expo Web 导出](https://docs.expo.dev/workflow/web/)、[Bun 文件响应](https://bun.sh/docs/guides/http/stream-file)。

@@ -17,9 +17,9 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-The development command starts the API on `127.0.0.1:8787` and Expo Web on `localhost:8081`. On first launch Piko initializes its private configuration and workspace under `~/.piko`. Configure a model before sending messages; see [configuration](docs/operations/configuration.md) and [model runtime](docs/operations/agent-runtime.md). These detailed documents are currently in Chinese.
+The development command starts the API on `127.0.0.1:8787` and Expo Web on `localhost:8081`. On first launch Piko initializes its private configuration and workspace under `~/.piko`. Configure a model before sending messages; see [configuration](docs/configuration.md).
 
-For a source-built Web bundle served by the Bun backend, see the [Linux deployment guide](docs/operations/deployment.md). Telegram is optional; it shares the main conversation with the app.
+For a source-built Web bundle served by the Bun backend, see the [source deployment guide](docs/deployment.md). Telegram is optional; it shares the main conversation with the app.
 
 ```bash
 bun run typecheck
@@ -30,7 +30,7 @@ bun run build:web
 
 Piko is under active development. There are no published Android or iOS releases, container deployment, or production support guarantees. Native clients and devices have not been comprehensively tested. The current automated test coverage is limited. Features, configuration, and storage may change.
 
-The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/operations/storage.md).
+The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/storage.md).
 
 The detailed product, architecture and design documents in [docs](docs/README.md) are maintained in Chinese. See [ROADMAP.md](ROADMAP.md) for planned work.
 

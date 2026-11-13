@@ -31,7 +31,7 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-开发服务会同时启动 API（默认 `127.0.0.1:8787`）与 Expo（默认 `localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区。配置至少一个模型后即可发送消息；配置方式见[应用配置](docs/operations/configuration.md)和[模型运行时说明](docs/operations/agent-runtime.md)。
+开发服务会同时启动 API（默认 `127.0.0.1:8787`）与 Expo（默认 `localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区。配置至少一个模型后即可发送消息；配置方式见[应用配置](docs/configuration.zh-CN.md)和[模型运行时说明](docs/operations/agent-runtime.md)。
 
 Android 模拟器可在启动模拟器后运行 `bun run dev:android`。macOS 上运行 `bun run dev`，再在 Expo 终端按 `i` 启动 iOS Simulator；Windows 可使用 Android Emulator。更多运行与构建说明见[客户端 README](apps/mobile/README.md)。
 
@@ -42,13 +42,13 @@ bun run typecheck
 bun run build:web
 ```
 
-`bun run build` 导出 iOS 和 Android 的 JavaScript bundle，不会生成可直接安装或签名的原生安装包。Linux Web/API 单进程运行见[运行说明](docs/operations/deployment.md)。
+`bun run build` 导出 iOS 和 Android 的 JavaScript bundle，不会生成可直接安装或签名的原生安装包。源码构建后的 Web/API 手动运行见[运行说明](docs/deployment.zh-CN.md)。
 
 ## 数据与安全
 
 默认情况下，配置、会话数据库和附件保存在后端的 `~/.piko`；助手工作区默认为 `~/.piko/workspace`。可以通过 `PIKO_HOME` 和 `PIKO_WORKSPACE` 指定路径。模型、工具和 Telegram 的配置与凭据均保留在后端，不放入客户端构建包。具体边界见[配置说明](docs/operations/configuration.md)。
 
-不要把 Piko API 直接暴露给不可信网络。工作区只是默认工作目录，不是安全沙箱；助手的 `bash`、文件工具和联网能力可能产生真实副作用。备份、删除和恢复边界见[存储说明](docs/operations/storage.md)。
+不要把 Piko API 直接暴露给不可信网络。工作区只是默认工作目录，不是安全沙箱；助手的 `bash`、文件工具和联网能力可能产生真实副作用。备份、删除和恢复边界见[存储说明](docs/storage.zh-CN.md)。
 
 ## 文档
 
