@@ -33,7 +33,7 @@ PIKO_HOME/state/attachments/<uuid>.<ext>
 
 ```text
 <attached>
-/home/dand/.piko/state/attachments/<uuid>.jpg
+~/.piko/state/attachments/<uuid>.jpg
 </attached>
 用户文字
 ```
