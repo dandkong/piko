@@ -92,7 +92,7 @@ logInfo("server.started", {
 let stopping = false;
 async function shutdown(
   failed = false,
-  reason: "signal" | "telegram_failure" = "signal",
+  reason: "signal" | "telegram_failure" | "exit_command" = "signal",
 ) {
   if (stopping) return;
   stopping = true;
@@ -134,6 +134,10 @@ if (piko.channels.telegram.enabled) {
       undefined,
       () => {
         void shutdown(true, "telegram_failure");
+      },
+      () => {
+        // Exit nonzero after graceful cleanup so Restart=on-failure can restart the service.
+        setTimeout(() => void shutdown(true, "exit_command"), 0);
       },
     );
   } catch {

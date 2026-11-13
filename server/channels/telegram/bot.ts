@@ -18,7 +18,8 @@ export class TelegramBot {
   private starting?: Promise<void>;
   private stopping = false;
   constructor(private readonly config: TelegramConfig, private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
-    private readonly attachments: AttachmentStore, bot?: Bot, private readonly onFailure?: () => void) {
+    private readonly attachments: AttachmentStore, bot?: Bot, private readonly onFailure?: () => void,
+    private readonly onExitRequest?: () => void) {
     this.bot = bot ?? new Bot(config.token, { client: { timeoutSeconds: 10 } });
     this.api = new TelegramApi(this.bot);
     // A failed update is logged without taking down grammY's polling loop.
@@ -70,7 +71,7 @@ export class TelegramBot {
     await this.bot.api.setMyCommands(TELEGRAM_COMMANDS, {}, signal);
     if (this.stopping) return;
     this.channel = new TelegramChannel({ botId: String(this.bot.botInfo.id), username: this.bot.botInfo.username!, userId: this.config.userId },
-      this.conversations, this.runtime, this.api, this.attachments);
+      this.conversations, this.runtime, this.api, this.attachments, undefined, this.onExitRequest);
     // grammY owns the cursor, webhook removal and persistent polling retries.
     this.polling = this.bot.start({ timeout: 5, allowed_updates: ["message", "callback_query"],
       onStart: () => { logInfo("telegram.polling.started"); },

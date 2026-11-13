@@ -39,7 +39,8 @@ export class TelegramChannel {
   constructor(private readonly identity: { botId: string; username: string; userId: string },
     private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
-    private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS) {
+    private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS,
+    private readonly onExitRequest?: () => void) {
     this.menus = new TelegramMenus(conversations, runtime, api);
     this.subagentMenus = new TelegramSubagentMenus(runtime, api);
     this.skillMenus = new TelegramSkillMenus(runtime, api);
@@ -165,6 +166,12 @@ export class TelegramChannel {
 
   private async executeCommand(message: TelegramMessage, command: string): Promise<void> {
     let text: string;
+    if (command === "exit" && this.onExitRequest) {
+      await new TelegramReply(this.api, message.chatId, "plain").update(
+        "Exiting Piko. Automatic restart depends on your configuration.", true);
+      this.onExitRequest();
+      return;
+    }
     if (command === "start") text = WELCOME;
     else if (command === "help") text = formatHelp();
     else if (command === "status") {

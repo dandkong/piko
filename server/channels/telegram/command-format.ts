@@ -13,6 +13,7 @@ export const TELEGRAM_COMMANDS = [
   { command: "task", description: "Browse tasks and executions" },
   { command: "posts", description: "Browse posts" },
   { command: "stop", description: "Stop the current reply" },
+  { command: "exit", description: "Exit Piko process" },
   { command: "recent", description: "Show recent messages" },
   { command: "skills", description: "Browse skills" },
   { command: "help", description: "Show available commands" },
