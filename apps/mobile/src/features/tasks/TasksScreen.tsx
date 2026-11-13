@@ -22,25 +22,26 @@ import { MarkdownContent } from "../../components/MarkdownContent";
 import type { TaskExecutionPreviewTarget } from "./TaskExecutionPreviewPanel";
 import { useTasks } from "./useTasks";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { useTranslation } from "../../i18n";
 
 type FinishedExecution = TaskExecution & {
   status: Exclude<TaskExecution["status"], "running">;
 };
 const isFinished = (run: TaskExecution): run is FinishedExecution =>
   run.status !== "running";
-const dayTime = (value: number | string) =>
-  new Date(value).toLocaleString("zh-CN", {
+const dayTime = (value: number | string, locale: string) =>
+  new Date(value).toLocaleString(locale, {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
-const statusNames: Record<FinishedExecution["status"], string> = {
-  completed: "已完成",
-  failed: "失败",
-  stopped: "已停止",
-  interrupted: "已中断",
-};
+const statusKeys = {
+  completed: "tasks.completed",
+  failed: "tasks.failed",
+  stopped: "tasks.stopped",
+  interrupted: "tasks.interrupted",
+} as const satisfies Record<FinishedExecution["status"], string>;
 const scheduleLabel = (task: AssistantTask) => task.scheduleText;
 type MenuState = { task: AssistantTask; left: number; top: number };
 
@@ -57,6 +58,7 @@ export function TasksScreen({
   onToast: (message: string) => void;
 }) {
   const { colors } = useTheme();
+  const { t, language } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const {
     tasks,
@@ -136,8 +138,8 @@ export function TasksScreen({
         >
           <TactilePressable
             accessibilityRole="button"
-            accessibilityLabel={`更多任务操作：${value.title}`}
-            accessibilityHint="执行、归档或删除任务"
+            accessibilityLabel={t("tasks.menu", { title: value.title })}
+            accessibilityHint={t("tasks.menuHint")}
             accessibilityState={{ expanded: menu?.task.id === value.id }}
             disabled={busy}
             onPress={() => openMenu(value)}
@@ -163,7 +165,7 @@ export function TasksScreen({
     return (
       <View key={key} style={styles.sectionGroup}>
         <TactilePressable
-          accessibilityHint={expanded ? `收起${label}` : `展开${label}`}
+          accessibilityHint={t(expanded ? "tasks.collapse" : "tasks.expand", { label })}
           accessibilityLabel={label}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
@@ -190,31 +192,31 @@ export function TasksScreen({
   return (
     <Screen testID="tasks-screen" topInset={topInset} bottomInset={bottomInset}>
       <ScreenHeader
-        title={currentTask?.title ?? "任务"}
+        title={currentTask?.title ?? t("tasks.title")}
         action={
           selected ? (
-            <TextButton label="返回" onPress={() => openTask()}>
-              <Text style={styles.backText}>返回</Text>
+            <TextButton label={t("tasks.back")} onPress={() => openTask()}>
+              <Text style={styles.backText}>{t("tasks.back")}</Text>
             </TextButton>
           ) : undefined
         }
       />
-      {!!error && <ErrorNotice message={error} actionLabel="重新加载任务" onAction={reload} busy={loading}
+      {!!error && <ErrorNotice message={error} actionLabel={t("tasks.reload")} onAction={reload} busy={loading}
         testID="tasks-load-error" />}
       {loading && (
         <ActivityIndicator
-          accessibilityLabel="正在加载"
+          accessibilityLabel={t("tasks.loading")}
           color={colors.muted}
         />
       )}
 
       {!selected && (!loading || tasks.length > 0) && (
         <>
-          {renderSection("active", "进行中", activeTasks)}
-          {renderSection("archived", "已归档", archivedTasks)}
+          {renderSection("active", t("tasks.active"), activeTasks)}
+          {renderSection("archived", t("tasks.archived"), archivedTasks)}
           {!error && !activeTasks.length && !archivedTasks.length && (
             <Text style={styles.empty}>
-              还没有任务。在聊天里告诉 Piko 你想让它做什么。
+              {t("tasks.empty")}
             </Text>
           )}
         </>
@@ -227,14 +229,14 @@ export function TasksScreen({
             <Text style={styles.meta}>{scheduleLabel(currentTask)}</Text>
           </ScreenCard>
 
-          {!!records.length && <Text style={styles.section}>执行记录</Text>}
+          {!!records.length && <Text style={styles.section}>{t("tasks.records")}</Text>}
           {!!records.length && (
             <View style={styles.timeline}>
               {records.map((run, index) => {
                 const content = (
                   <>
                     <View style={styles.entryHeader}>
-                      <Text style={styles.meta}>{dayTime(run.startedAt)}</Text>
+                      <Text style={styles.meta}>{dayTime(run.startedAt, language)}</Text>
                       <View style={styles.entryMeta}>
                         {run.status !== "completed" && (
                           <Text
@@ -243,7 +245,7 @@ export function TasksScreen({
                               run.status === "failed" && styles.error,
                             ]}
                           >
-                            {statusNames[run.status]}
+                            {t(statusKeys[run.status])}
                           </Text>
                         )}
                       </View>
@@ -253,7 +255,7 @@ export function TasksScreen({
                         {run.preview}
                       </Text>
                     ) : run.status === "completed" ? (
-                      <Text style={styles.meta}>没有回答。</Text>
+                      <Text style={styles.meta}>{t("tasks.noAnswer")}</Text>
                     ) : null}
                   </>
                 );
@@ -272,8 +274,8 @@ export function TasksScreen({
                       ]}
                     >
                       <TactilePressable
-                        accessibilityHint="使用内置预览器阅读运行结果"
-                        accessibilityLabel={`查看运行结果：${dayTime(run.startedAt)}，${statusNames[run.status]}`}
+                        accessibilityHint={t("tasks.readHint")}
+                        accessibilityLabel={t("tasks.read", { time: dayTime(run.startedAt, language), status: t(statusKeys[run.status]) })}
                         accessibilityRole="button"
                         onPress={() => onPreviewExecution({ taskId: currentTask.id, executionId: run.id })}
                         scaleTo={1}
@@ -291,7 +293,7 @@ export function TasksScreen({
             </View>
           )}
           {!records.length && (
-            <Text style={styles.empty}>还没有执行记录。</Text>
+            <Text style={styles.empty}>{t("tasks.noRecords")}</Text>
           )}
         </>
       )}
@@ -304,13 +306,10 @@ export function TasksScreen({
       >
         {pendingDelete ? (
           <ConfirmationDialogContent
-            title={`删除「${pendingDelete.title}」？`}
-            message="将永久删除任务定义、全部执行记录和专属工作区，无法恢复。"
+            title={t("tasks.deleteTitle", { title: pendingDelete.title })}
+            message={t("tasks.deleteMessage")}
             onCancel={() => { setPendingDelete(undefined); clearDeleteError(); }}
             onConfirm={() => void remove()}
-            confirmLabel="删除"
-            cancelLabel="取消"
-            busyLabel="删除中…"
             busy={deleting || busy}
             error={deleteError}
             testID="task-delete-dialog"
@@ -320,24 +319,24 @@ export function TasksScreen({
             left={menu.left}
             top={menu.top}
             width={176}
-            closeLabel="关闭任务菜单"
+            closeLabel={t("tasks.closeMenu")}
             onClose={() => setMenu(undefined)}
             testID="task-item-menu"
             actions={[
               ...(menu.task.status === "active" ? [{
                 id: "run",
-                label: "执行",
-                accessibilityLabel: `立即执行任务：${menu.task.title}`,
-                hint: "立即运行一次，不更改未来调度",
+                label: t("tasks.run"),
+                accessibilityLabel: t("tasks.runNamed", { title: menu.task.title }),
+                hint: t("tasks.runHint"),
                 icon: <Play size={18} strokeWidth={1.8} color={colors.text} />,
                 disabled: busy || menu.task.latest?.status === "running",
                 onPress: () => { setMenu(undefined); void runTask(menu.task); },
               }] : []),
               {
                 id: menu.task.status === "archived" ? "restore" : "archive",
-                label: menu.task.status === "archived" ? "恢复" : "归档",
-                accessibilityLabel: menu.task.status === "archived" ? `恢复任务：${menu.task.title}` : `归档任务：${menu.task.title}`,
-                hint: menu.task.status === "archived" ? "重新启用未来调度，不立即执行" : "停止未来调度，保留任务和执行记录",
+                label: t(menu.task.status === "archived" ? "tasks.restore" : "tasks.archive"),
+                accessibilityLabel: t(menu.task.status === "archived" ? "tasks.restoreNamed" : "tasks.archiveNamed", { title: menu.task.title }),
+                hint: t(menu.task.status === "archived" ? "tasks.restoreHint" : "tasks.archiveHint"),
                 icon: menu.task.status === "archived"
                   ? <ArchiveRestore size={18} strokeWidth={1.8} color={colors.text} />
                   : <Archive size={18} strokeWidth={1.8} color={colors.text} />,
@@ -346,9 +345,9 @@ export function TasksScreen({
               },
               {
                 id: "delete",
-                label: "删除",
-                accessibilityLabel: `删除任务：${menu.task.title}`,
-                hint: menu.task.latest?.status === "running" ? "请先停止当前执行" : "永久删除任务及其执行记录和专属工作区",
+                label: t("common.delete"),
+                accessibilityLabel: t("tasks.deleteNamed", { title: menu.task.title }),
+                hint: t(menu.task.latest?.status === "running" ? "tasks.stopFirst" : "tasks.deleteHint"),
                 icon: <Trash2 size={18} strokeWidth={1.8} color={colors.danger} />,
                 destructive: true,
                 disabled: busy || menu.task.latest?.status === "running",

@@ -1,10 +1,10 @@
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 
 export const artifactSortOptions = [
-  { value: "name-asc", label: "名称 · 升序", shortLabel: "名称↑" },
-  { value: "name-desc", label: "名称 · 降序", shortLabel: "名称↓" },
-  { value: "modified-desc", label: "修改时间 · 最新在前", shortLabel: "时间↓" },
-  { value: "modified-asc", label: "修改时间 · 最早在前", shortLabel: "时间↑" },
+  { value: "name-asc", label: "artifacts.sortNameAsc" },
+  { value: "name-desc", label: "artifacts.sortNameDesc" },
+  { value: "modified-desc", label: "artifacts.sortTimeDesc" },
+  { value: "modified-asc", label: "artifacts.sortTimeAsc" },
 ] as const;
 export type ArtifactSort = typeof artifactSortOptions[number]["value"];
 export const DEFAULT_ARTIFACT_SORT: ArtifactSort = "modified-desc";
@@ -33,9 +33,9 @@ function fileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function artifactMetadata(entry: ArtifactEntry, now = new Date()): string {
+export function artifactMetadata(entry: ArtifactEntry, now = new Date(), locale = "zh-CN"): string {
   const date = new Date(entry.modifiedAt);
-  const time = date.toLocaleString("zh-CN", {
+  const time = date.toLocaleString(locale, {
     ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" as const } : {}),
     month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   });

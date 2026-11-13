@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDismissOnBack } from "../../hooks/useDismissOnBack";
+import { useTranslation } from "../../i18n";
 import { navigation, type AppTab } from "../../navigation";
 import { drawerLayout, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { IconButton } from "../../components/IconButton";
@@ -33,6 +34,7 @@ export function NavigationDrawer({
   covered?: boolean;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -72,7 +74,7 @@ export function NavigationDrawer({
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
         >
-          <Text style={styles.sectionLabel}>选项卡</Text>
+          <Text style={styles.sectionLabel}>{t("navigation.tabs")}</Text>
           <View style={styles.tabList}>
             {navigation.map(({ label, title, icon: Icon, hint }) => {
               const active =
@@ -82,8 +84,8 @@ export function NavigationDrawer({
                 <TactilePressable
                   key={label}
                   accessibilityRole="tab"
-                  accessibilityLabel={title}
-                  accessibilityHint={hint}
+                  accessibilityLabel={t(title)}
+                  accessibilityHint={t(hint)}
                   accessibilityState={{ selected: active }}
                   onPress={() => onSelectTab(label)}
                   scaleTo={1}
@@ -97,7 +99,7 @@ export function NavigationDrawer({
                   <Text
                     style={[styles.tabLabel, active && styles.tabLabelActive]}
                   >
-                    {title}
+                    {t(title)}
                   </Text>
                 </TactilePressable>
               );
@@ -106,21 +108,21 @@ export function NavigationDrawer({
 
           <View style={styles.divider} />
 
-          <Text style={styles.sectionLabel}>旁聊</Text>
+          <Text style={styles.sectionLabel}>{t("navigation.sideChats")}</Text>
           <SideChatList {...sideChatActions} />
         </ScrollView>
 
         <View style={styles.footer}>
           <IconButton
-            hint="打开设置"
-            label="设置"
+            hint={t("navigation.openSettings")}
+            label={t("navigation.settings")}
             onPress={onOpenSettings}
           >
             <Settings size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
           <IconButton
-            hint="新建独立旁聊"
-            label="新建旁聊"
+            hint={t("navigation.newSideChatHint")}
+            label={t("navigation.newSideChat")}
             onPress={
               sideChatActions.onCreateSideChat && !sideChatActions.sideChatBusy
                 ? () => void sideChatActions.onCreateSideChat?.()

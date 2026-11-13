@@ -1,6 +1,6 @@
 import { consumeSse } from "../../../../../shared/sse";
 import type { StreamEvent } from "../../../../../shared/chat";
-import { ApiError, RequestTimeoutError } from "../../api/errors";
+import { ApiError, LocalApiError, RequestTimeoutError } from "../../api/errors";
 export class HttpStreamError extends ApiError {}
 export function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -59,8 +59,9 @@ export async function submitMessage(message: string, requestId: string, signal: 
       const response = await transport.fetch(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, message, ...(attachmentIds?.length && { attachmentIds }) }) });
       let result;
       try { result = await response.json(); }
-      catch { throw new HttpStreamError("暂未确认发送结果，请核对后重试。", response.status >= 400 ? response.status : 502); }
-      if (!response.ok) throw new HttpStreamError(result.error ?? "发送失败。", response.status, result.code);
+      catch { throw new LocalApiError("api.sendUnconfirmed", response.status >= 400 ? response.status : 502); }
+      if (!response.ok) throw typeof result.error === "string" ? new HttpStreamError(result.error, response.status, result.code)
+        : new LocalApiError("api.sendFailed", response.status, result.code);
       return result;
     } catch (error) {
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");

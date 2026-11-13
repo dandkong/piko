@@ -3,6 +3,8 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { FloatingPanel } from "../../components/FloatingPanel";
 import { useTheme } from "../../theme";
 import { AppearanceSection } from "./AppearanceSection";
+import { LanguageSection } from "./LanguageSection";
+import { useTranslation } from "../../i18n";
 import type { FeedbackTone } from "../../components/FeedbackToast";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
 import type { ModelSettingsSnapshot, SaveModelSettings } from "../../../../../shared/settings";
@@ -19,6 +21,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const [saveError, setSaveError] = useState("");
   const openRef = useRef(open);
   openRef.current = open;
@@ -62,7 +65,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
           queuedDraft.current = undefined;
           desired.current = confirmed.current;
           if (confirmed.current) setData(confirmed.current);
-          const message = `${errorMessage(cause, "暂未确认模型设置保存结果。")} 界面先恢复上次确认的选择，请重新读取核对。`;
+          const message = `${errorMessage(cause, t("settings.saveUnconfirmed"), t)} ${t("settings.saveRestored")}`;
           setSaveError(message);
           if (!openRef.current) onToast(message, "error");
           refreshAfterFailure = true;
@@ -74,7 +77,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
       writesPending.current = false;
       if (refreshAfterFailure) void refresh();
     }
-  }, [invalidateReads, onToast, refresh, setData]);
+  }, [invalidateReads, onToast, refresh, setData, t]);
 
   const update = useCallback((
     mainModel: ModelSelection | null,
@@ -101,22 +104,23 @@ export function SettingsSheet({ open, onClose, onToast }: {
   }, [data, flush, setData, setError]);
 
   return <FloatingPanel
-    closeLabel="关闭设置"
+    closeLabel={t("settings.close")}
     onClose={onClose}
     open={open}
     testID="settings-sheet"
-    title="设置"
+    title={t("settings.title")}
   >
     {open ? <View style={{ gap: 16 }}>
+    <LanguageSection />
     <AppearanceSection />
     {loading && !data ? (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12 }}>
-        <ActivityIndicator accessibilityLabel="正在读取模型设置" color={colors.muted} size="small" />
-        <Text style={{ color: colors.muted, fontSize: 12 }}>正在读取…</Text>
+        <ActivityIndicator accessibilityLabel={t("settings.loadingModels")} color={colors.muted} size="small" />
+        <Text style={{ color: colors.muted, fontSize: 12 }}>{t("settings.loading")}</Text>
       </View>
     ) : null}
     {(saveError || error) ? <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
-      <ErrorNotice message={saveError || error} actionLabel="重新读取模型设置" busy={loading}
+      <ErrorNotice message={saveError || error} actionLabel={t("settings.reloadModels")} busy={loading}
         onAction={() => void refresh().then(ok => { if (ok) setSaveError(""); })} testID="settings-error-notice" />
     </View> : null}
     {data ? <SettingsModelsEditor

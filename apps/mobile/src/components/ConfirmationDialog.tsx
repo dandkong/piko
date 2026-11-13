@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TextButton } from "./TextButton";
+import { useTranslation } from "../i18n";
 
 type Props = {
   title: string;
@@ -21,14 +22,18 @@ export function ConfirmationDialogContent({
   message,
   onCancel,
   onConfirm,
-  confirmLabel = "删除",
-  cancelLabel = "取消",
-  busyLabel = "删除中…",
+  confirmLabel,
+  cancelLabel,
+  busyLabel,
   busy = false,
   error,
   testID,
 }: Props) {
   const styles = useThemeStyles(createStyles);
+  const { t } = useTranslation();
+  const confirm = confirmLabel ?? t("common.delete");
+  const cancel = cancelLabel ?? t("common.cancel");
+  const busyText = busyLabel ?? t("common.deleting");
   return (
     <View style={styles.root}>
       <View pointerEvents="none" style={styles.scrim} />
@@ -43,11 +48,11 @@ export function ConfirmationDialogContent({
         <Text style={styles.message}>{message}</Text>
         {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
         <View style={styles.actions}>
-          <TextButton label={cancelLabel} disabled={busy} onPress={onCancel}>
-            <Text style={styles.secondary}>{cancelLabel}</Text>
+          <TextButton label={cancel} disabled={busy} onPress={onCancel}>
+            <Text style={styles.secondary}>{cancel}</Text>
           </TextButton>
-          <TextButton label={confirmLabel} disabled={busy} onPress={onConfirm}>
-            <Text style={styles.danger}>{busy ? busyLabel : confirmLabel}</Text>
+          <TextButton label={confirm} disabled={busy} onPress={onConfirm}>
+            <Text style={styles.danger}>{busy ? busyText : confirm}</Text>
           </TextButton>
         </View>
       </View>

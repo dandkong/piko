@@ -15,6 +15,7 @@ import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type T
 import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { errorMessage } from "../../api/errors";
+import { useTranslation } from "../../i18n";
 
 import { artifactMetadata, artifactSortOptions, DEFAULT_ARTIFACT_SORT, isArtifactSort, sortArtifacts, type ArtifactSort } from "./presentation";
 
@@ -36,6 +37,7 @@ export function ArtifactsScreen({
   onToast: (message: string) => void;
 }) {
   const { colors } = useTheme();
+  const { t, language } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<ArtifactEntry[]>([]);
@@ -79,12 +81,12 @@ export function ArtifactsScreen({
       setEntries(result.entries);
     }).catch(cause => {
       if (controller.signal.aborted) return;
-      setError(errorMessage(cause, loadedPath.current === path ? "暂时未能更新文件夹，当前保留上次加载的内容。" : "无法读取产物文件夹，请重新加载。"));
+      setError(errorMessage(cause, t(loadedPath.current === path ? "artifacts.refreshFailed" : "artifacts.loadFailed"), t));
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [path, revision]);
+  }, [path, revision, t]);
 
   const segments = path ? path.split("/") : [];
   const navigateTo = (value: string) => setPath(value);
@@ -127,7 +129,7 @@ export function ArtifactsScreen({
   const download = (entry: ArtifactEntry) => {
     setMenu(undefined);
     void Linking.openURL(artifactDownloadUrl(entry.path)).catch(() => {
-      onToast("无法开始下载，请检查连接后重试。");
+      onToast(t("artifacts.downloadFailed"));
     });
   };
   const confirmDelete = (entry: ArtifactEntry) => {
@@ -145,7 +147,7 @@ export function ArtifactsScreen({
       setPendingDelete(undefined);
       refresh();
     } catch (cause) {
-      setDeleteError(errorMessage(cause, "暂未确认删除结果，请重试原操作。"));
+      setDeleteError(errorMessage(cause, t("posts.deleteUnconfirmed"), t));
     } finally {
       deletingRef.current = false;
       setDeleting(false);
@@ -157,17 +159,17 @@ export function ArtifactsScreen({
       <View style={styles.header}>
         {segments.length ? (
           <TextButton
-            label="返回产物根目录"
-            hint="返回产物根目录"
+            label={t("artifacts.root")}
+            hint={t("artifacts.root")}
             onPress={() => navigateTo("")}
             variant="plain"
             style={styles.headerTitleHit}
             faceStyle={styles.headerTitleFace}
           >
-            <Text style={styles.headerTitle}>产物</Text>
+            <Text style={styles.headerTitle}>{t("artifacts.title")}</Text>
           </TextButton>
         ) : (
-          <Text style={styles.headerTitle}>产物</Text>
+          <Text style={styles.headerTitle}>{t("artifacts.title")}</Text>
         )}
         {segments.length ? (
           <ScrollView
@@ -183,7 +185,7 @@ export function ArtifactsScreen({
               return (
                 <View key={value} style={styles.crumbSegment}>
                   <ChevronRight size={13} color={colors.muted} />
-                  <TextButton label={`打开文件夹 ${segment}`} onPress={() => navigateTo(value)} variant="plain" style={styles.crumbHit} faceStyle={styles.crumbFace}>
+                  <TextButton label={t("artifacts.openFolder", { name: segment })} onPress={() => navigateTo(value)} variant="plain" style={styles.crumbHit} faceStyle={styles.crumbFace}>
                     <Text numberOfLines={1} style={[styles.crumbText, current && styles.crumbCurrent]}>{segment}</Text>
                   </TextButton>
                 </View>
@@ -193,8 +195,8 @@ export function ArtifactsScreen({
         ) : <View style={styles.headerSpacer} />}
         <View ref={sortAnchor} collapsable={false}>
           <IconButton
-            label="排序"
-            hint="选择名称或修改时间排序"
+            label={t("artifacts.sort")}
+            hint={t("artifacts.sortHint")}
             accessibilityState={{ expanded: menu?.kind === "sort" }}
             disabled={!sortReady}
             onPress={openSortMenu}
@@ -203,25 +205,25 @@ export function ArtifactsScreen({
             <ArrowUpDown size={20} strokeWidth={1.8} color={colors.text} />
           </IconButton>
         </View>
-        <IconButton label="刷新产物列表" hint="重新读取当前文件夹" onPress={refresh}>
+        <IconButton label={t("artifacts.refresh")} hint={t("artifacts.refreshHint")} onPress={refresh}>
           <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
         </IconButton>
       </View>
 
-      {!!error && <ErrorNotice message={error} actionLabel="重新加载文件夹" onAction={refresh} busy={loading}
+      {!!error && <ErrorNotice message={error} actionLabel={t("artifacts.reload")} onAction={refresh} busy={loading}
         testID="artifacts-load-error" />}
-      {listLoading && <ActivityIndicator accessibilityLabel="正在读取产物" color={colors.muted} />}
+      {listLoading && <ActivityIndicator accessibilityLabel={t("artifacts.loading")} color={colors.muted} />}
       {!listLoading && !error && !entries.length && (
         <Text style={styles.empty}>
-          {path ? "这个文件夹还没有内容。" : "产物文件夹还没有内容。你可以让 Piko 把文件保存到 artifacts/。"}
+          {t(path ? "artifacts.emptyFolder" : "artifacts.emptyRoot")}
         </Text>
       )}
       {!listLoading && sortedEntries.map(entry => (
         <TactileListRow key={entry.path} surfaceVariant="card" style={styles.rowCard}>
           <TactilePressable
             accessibilityRole="button"
-            accessibilityLabel={entry.kind === "directory" ? `打开文件夹 ${entry.name}` : `查看文件 ${entry.name}`}
-            accessibilityHint={entry.kind === "directory" ? "进入此文件夹" : entry.preview ? "打开内置预览" : "查看文件信息"}
+            accessibilityLabel={t(entry.kind === "directory" ? "artifacts.openFolder" : "artifacts.viewFile", { name: entry.name })}
+            accessibilityHint={t(entry.kind === "directory" ? "artifacts.enter" : entry.preview ? "artifacts.preview" : "artifacts.info")}
             onPress={() => openEntry(entry)}
             scaleTo={1}
             style={styles.rowHit}
@@ -236,7 +238,7 @@ export function ArtifactsScreen({
             <View style={styles.rowInfo}>
               <Text numberOfLines={1} style={styles.name}>{entry.name}</Text>
               <Text numberOfLines={1} style={styles.meta}>
-                {artifactMetadata(entry)}
+                {artifactMetadata(entry, new Date(), language)}
               </Text>
             </View>
           </TactilePressable>
@@ -247,8 +249,8 @@ export function ArtifactsScreen({
           >
             <TactilePressable
               accessibilityRole="button"
-              accessibilityLabel={`更多操作：${entry.kind === "directory" ? "文件夹" : "文件"} ${entry.name}`}
-              accessibilityHint={entry.kind === "file" ? "下载或删除" : "删除文件夹"}
+              accessibilityLabel={t(entry.kind === "directory" ? "artifacts.moreFolder" : "artifacts.moreFile", { name: entry.name })}
+              accessibilityHint={t(entry.kind === "file" ? "artifacts.downloadDelete" : "artifacts.deleteFolder")}
               accessibilityState={{ expanded: menu?.kind === "entry" && menu.entry.path === entry.path }}
               onPress={() => openMenu(entry)}
               scaleTo={0.94}
@@ -272,15 +274,10 @@ export function ArtifactsScreen({
       >
         {pendingDelete ? (
           <ConfirmationDialogContent
-            title={`删除「${pendingDelete.name}」？`}
-            message={pendingDelete.kind === "directory"
-              ? "将永久删除这个文件夹及其中的全部内容，无法恢复。"
-              : "将永久删除这个文件，无法恢复。"}
+            title={t("tasks.deleteTitle", { title: pendingDelete.name })}
+            message={t(pendingDelete.kind === "directory" ? "artifacts.deleteFolderMessage" : "artifacts.deleteFileMessage")}
             onCancel={() => setPendingDelete(undefined)}
             onConfirm={() => void remove()}
-            confirmLabel="删除"
-            cancelLabel="取消"
-            busyLabel="删除中…"
             busy={deleting}
             error={deleteError}
             testID="artifact-delete-dialog"
@@ -290,14 +287,14 @@ export function ArtifactsScreen({
             left={menu.left}
             top={menu.top}
             width={Math.min(232, width - 20)}
-            closeLabel="关闭排序菜单"
-            label="产物排序"
+            closeLabel={t("artifacts.closeSort")}
+            label={t("artifacts.sortLabel")}
             onClose={() => setMenu(undefined)}
             testID="artifact-sort-menu"
             actions={artifactSortOptions.map(option => ({
               id: option.value,
-              label: option.label,
-              accessibilityLabel: option.label,
+              label: t(option.label),
+              accessibilityLabel: t(option.label),
               selected: option.value === sort,
               onPress: () => selectSort(option.value),
             }))}
@@ -306,22 +303,22 @@ export function ArtifactsScreen({
           <AnchoredMenuContent
             left={menu.left}
             top={menu.top}
-            closeLabel="关闭产物菜单"
+            closeLabel={t("artifacts.closeMenu")}
             onClose={() => setMenu(undefined)}
             testID="artifact-item-menu"
             actions={[
               ...(menu.entry.kind === "file" ? [{
                 id: "download",
-                label: "下载",
-                accessibilityLabel: `下载 ${menu.entry.name}`,
+                label: t("artifacts.download"),
+                accessibilityLabel: t("artifacts.downloadNamed", { name: menu.entry.name }),
                 icon: <Download size={18} strokeWidth={1.8} color={colors.text} />,
                 onPress: () => download(menu.entry),
               }] : []),
               {
                 id: "delete",
-                label: "删除",
-                accessibilityLabel: `删除 ${menu.entry.name}`,
-                hint: menu.entry.kind === "directory" ? "永久删除文件夹及其中全部内容" : "永久删除文件",
+                label: t("common.delete"),
+                accessibilityLabel: t("artifacts.deleteNamed", { name: menu.entry.name }),
+                hint: t(menu.entry.kind === "directory" ? "artifacts.deleteFolderHint" : "artifacts.deleteFileHint"),
                 icon: <Trash2 size={18} strokeWidth={1.8} color={colors.danger} />,
                 destructive: true,
                 onPress: () => confirmDelete(menu.entry),

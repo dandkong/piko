@@ -7,6 +7,7 @@ import type {
 import { apiFetch, readJson } from "../../api/client";
 import { errorMessage } from "../../api/errors";
 import { createUuidV4 } from "../../utils/uuid";
+import { useTranslation } from "../../i18n";
 
 async function request<T>(path: string, value?: unknown, method = value === undefined ? "GET" : "POST", timeoutMs = 10000): Promise<T> {
     const response = await apiFetch(path, {
@@ -21,6 +22,7 @@ async function request<T>(path: string, value?: unknown, method = value === unde
     return readJson<T>(response);
 }
 export function useSideChats(open: boolean) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<SideChat[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,11 +49,11 @@ export function useSideChats(open: boolean) {
       }
     } catch (cause) {
       if (mounted.current && current === version.current)
-        setError(errorMessage(cause, "无法加载旁聊。"));
+        setError(errorMessage(cause, t("side.loadFailed"), t));
     } finally {
       if (mounted.current && current === version.current) setLoading(false);
     }
-  }, []);
+  }, [t]);
   useEffect(() => {
     void refresh();
   }, [refresh]);

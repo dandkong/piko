@@ -17,9 +17,11 @@ import { NavigationDrawer } from "./NavigationDrawer";
 import { SettingsSheet } from "../settings/SettingsSheet";
 import type { FeedbackTone, FeedbackToastMessage } from "../../components/FeedbackToast";
 import { errorMessage } from "../../api/errors";
+import { useTranslation } from "../../i18n";
 
 /** One app shell; keyed chat owners retain data and drafts, not hidden lists. */
 export function MainScreen() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<AppTab>("Chat");
   const [selectedId, setSelectedId] = useState<string>();
   const [visited, setVisited] = useState<string[]>([]);
@@ -84,10 +86,10 @@ export function MainScreen() {
       await sides.generateTitle(id);
       return true;
     } catch (cause) {
-      showToast(errorMessage(cause, "标题生成失败，请重试。"));
+      showToast(errorMessage(cause, t("side.titleFailed"), t));
       return false;
     }
-  }, [sides.generateTitle, showToast]);
+  }, [sides.generateTitle, showToast, t]);
   const onSideChatRunEnd = useCallback((id: string, requestIds: readonly string[]) => {
     void sides.generateTitle(id, requestIds).catch(() => {});
   }, [sides.generateTitle]);
@@ -133,7 +135,7 @@ export function MainScreen() {
             try {
               const value = await sides.create();
               if (value) selectChat(value.id);
-            } catch (cause) { showToast(errorMessage(cause, "暂未确认旁聊创建结果，请重试原操作。")); }
+            } catch (cause) { showToast(errorMessage(cause, t("side.createUnconfirmed"), t)); }
           }}
           onGenerateSideChatTitle={generateSideChatTitle}
           onDeleteSideChat={removeChat}

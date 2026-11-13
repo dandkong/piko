@@ -22,6 +22,7 @@ import {
 } from "../../../../../shared/history";
 import { applyMessageEvent } from "../../../../../shared/messages";
 import { ApiError, errorMessage } from "../../api/errors";
+import { useTranslation } from "../../i18n";
 
 type OperationError = { kind: "send" | "stop" | "upload" | "refresh"; message: string };
 type ExecutionNotice = { key: string; message: string; tone: "error" | "info" };
@@ -39,6 +40,9 @@ export function useChat(
   onToast?: (message: string) => void,
   onSideChatRunEnd?: (id: string, requestIds: readonly string[]) => void,
 ) {
+  const { t, language } = useTranslation();
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const [history, setHistory] = useState<HistoryPage>({ messages: [] });
   const [draft, setDraft] = useState("");
   const [deleted, setDeleted] = useState(false);
@@ -113,8 +117,7 @@ export function useChat(
     const key = failed ? `failed:${snapshot.latest?.id}` : snapshot.interruption ? `interrupted:${snapshot.latest?.id ?? ""}` : "";
     setExecutionNotice(!key || key === dismissedExecution.current ? undefined : {
       key, tone: failed ? "error" : "info",
-      message: failed ? "本次回复未完成，已保存的内容仍保留。如需重新执行，请确认后重新发送。"
-        : "上次工作被服务重启中断，已保存的内容仍保留。请按需继续。",
+      message: translateRef.current(failed ? "chat.replyFailed" : "chat.interrupted"),
     });
   }, []);
   const onMessage = useCallback(
@@ -142,7 +145,7 @@ export function useChat(
   const onObservationError = useCallback((_message: string) => {
     setLoading(false);
     setOperationError(current => current && current.kind !== "refresh" ? current
-      : { kind: "refresh", message: "对话更新暂时不可用，请重新加载。" });
+      : { kind: "refresh", message: translateRef.current("chat.refreshFailed") });
   }, []);
   const { attachments, setAttachments, attaching, attach, retryUpload, removeAttachment } =
     useChatAttachments(loading, sending, mounted, onAttachmentError);
@@ -213,7 +216,7 @@ export function useChat(
           !isAbortError(cause) &&
           historyRef.current.nextBefore === before
         )
-          setOlderError(errorMessage(cause, "无法加载更早的消息。"));
+          setOlderError(errorMessage(cause, translateRef.current("chat.olderLoadFailed"), translateRef.current));
       } finally {
         olderController.current = undefined;
         if (mounted.current) setLoadingOlder(false);
@@ -243,7 +246,7 @@ export function useChat(
       )
         return;
       if (!retry && pending.current) {
-        setOperationError({ kind: "send", message: "上一条消息的发送结果尚未确认，请先核对并重试原请求。" });
+        setOperationError({ kind: "send", message: translateRef.current("chat.pendingSend") });
         return;
       }
       pending.current = input;
@@ -282,7 +285,7 @@ export function useChat(
       } catch (cause) {
         if (!mounted.current || controller.signal.aborted) return;
         if (accepted) {
-          setOperationError({ kind: "refresh", message: "消息已接纳，但暂时无法更新对话。请重新加载，不必再次发送。" });
+          setOperationError({ kind: "refresh", message: translateRef.current("chat.acceptedRefreshFailed") });
           return;
         }
         if (!pending.current) return; // SSE already confirmed the same submission.
@@ -302,7 +305,7 @@ export function useChat(
           setOperationError(undefined);
         } else {
           setOperationError({ kind: "send", message: errorMessage(cause,
-            "暂未确认发送结果，请核对并重试原请求。") });
+            translateRef.current("chat.sendUnconfirmed"), translateRef.current) });
         }
       } finally {
         sending.current = false;
@@ -325,8 +328,8 @@ export function useChat(
     } catch (cause) {
       if (mounted.current)
         setOperationError({ kind: accepted ? "refresh" : "stop", message: accepted
-          ? "停止请求已完成，但暂时无法更新会话。请重新加载。"
-          : errorMessage(cause, "暂未确认是否已停止，请重试停止或核对会话。") });
+          ? translateRef.current("chat.stoppedRefreshFailed")
+          : errorMessage(cause, translateRef.current("chat.stopUnconfirmed"), translateRef.current) });
     } finally {
       if (mounted.current) setStopping(false);
     }
@@ -343,7 +346,7 @@ export function useChat(
       if (operationError?.kind === "send" && pending.current) await send(pending.current.message, true);
     } catch (cause) {
       setOperationError({ kind: operationError?.kind === "send" ? "send" : "refresh",
-        message: errorMessage(cause, "暂时无法核对会话，请稍后重试。") });
+        message: errorMessage(cause, translateRef.current("chat.checkFailed"), translateRef.current) });
     } finally {
       checking.current = false;
       if (mounted.current) setRetrying(false);
@@ -355,23 +358,23 @@ export function useChat(
     setExecutionNotice(undefined);
   }, [executionNotice]);
   const error = operationError?.message ?? executionNotice?.message ?? "";
-  const retryLabel = operationError?.kind === "stop" ? "重试停止"
-    : operationError?.kind === "upload" ? "重试上传" : operationError?.kind === "send"
-      ? pending.current ? "核对并重试发送" : "继续编辑" : "重新加载对话";
-  const busyStatus = assistantLiveStatus(activity);
+  const retryLabel = t(operationError?.kind === "stop" ? "chat.retryStop"
+    : operationError?.kind === "upload" ? "chat.retryUpload" : operationError?.kind === "send"
+      ? pending.current ? "chat.retrySend" : "chat.continueEditing" : "chat.reload");
+  const busyStatus = assistantLiveStatus(activity, language);
   const status = loading
-    ? "连接中…"
+    ? t("chat.statusConnecting")
     : attaching
-      ? "正在上传…"
+      ? t("chat.uploading")
       : stopping
-        ? "正在停止…"
+        ? t("chat.stopping")
         : reconnecting
-          ? "正在重连…"
+          ? t("chat.reconnecting")
           : busy
             ? busyStatus
             : connected
-              ? modelReady ? "" : "尚未选择可用主模型"
-              : "等待连接";
+              ? modelReady ? "" : t("chat.noModel")
+              : t("chat.waiting");
   return {
     deleted,
     messages,

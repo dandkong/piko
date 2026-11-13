@@ -32,6 +32,8 @@ Piko is under active development. There are no published Android or iOS releases
 
 The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/storage.md).
 
+The app interface supports English, Chinese, and following the device language. This preference is local to the device and does not translate user content, server messages, or Telegram.
+
 The detailed product, architecture and design documents in [docs](docs/README.md) are maintained in Chinese. See [ROADMAP.md](ROADMAP.md) for planned work.
 
 ## License

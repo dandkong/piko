@@ -10,6 +10,7 @@ import { useDismissOnBack } from "../../hooks/useDismissOnBack";
 import { controlSizes, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { errorMessage } from "../../api/errors";
+import { useTranslation } from "../../i18n";
 
 export type SideChatActions = {
   sideChats?: SideChat[]; activeSideChatId?: string; sideChatBusy?: boolean; sideChatLoading?: boolean; sideChatError?: string;
@@ -21,6 +22,7 @@ export type SideChatActions = {
 export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, sideChatLoading, sideChatError,
   onRefreshSideChats, onSelectSideChat, onGenerateSideChatTitle, onDeleteSideChat }: SideChatActions) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const [menu, setMenu] = useState<{ chat: SideChat; left: number; top: number }>();
   const [deleting, setDeleting] = useState<SideChat>();
@@ -44,28 +46,28 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     savingRef.current = true; setSaving(true); setDeleteError("");
     try {
       if (await onDeleteSideChat?.(deleting.id)) setDeleting(undefined);
-      else setDeleteError("删除失败，请重试。");
-    } catch (cause) { setDeleteError(errorMessage(cause, "暂未确认删除结果，请重试原操作。")); }
+      else setDeleteError(t("side.deleteFailed"));
+    } catch (cause) { setDeleteError(errorMessage(cause, t("posts.deleteUnconfirmed"), t)); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const openMenu = (chat: SideChat) => anchors.current.get(chat.id)?.measureInWindow((x, y, w, h) => {
     setMenu({ chat, left: Math.max(10, Math.min(width - 186, x + w - 176)), top: Math.max(10, Math.min(height - 126, y + h + 4)) });
   });
   return <View style={styles.list}>
-    {sideChatError ? <ErrorNotice message={sideChatError} actionLabel="重新加载旁聊" onAction={onRefreshSideChats}
+    {sideChatError ? <ErrorNotice message={sideChatError} actionLabel={t("side.reload")} onAction={onRefreshSideChats}
       busy={sideChatBusy || sideChatLoading} testID="side-chat-load-error" /> : null}
-    {!visible.length && !sideChatError && !sideChatLoading && <Text style={[styles.muted, { padding: 12 }]}>还没有旁聊</Text>}
+    {!visible.length && !sideChatError && !sideChatLoading && <Text style={[styles.muted, { padding: 12 }]}>{t("side.empty")}</Text>}
     {visible.map(chat => {
       const title = chat.title.trim() || DEFAULT_SIDE_CHAT_TITLE;
       const active = activeSideChatId === chat.id;
       return <TactileListRow key={chat.id} surfaceVariant="compact" selected={active} style={styles.row}>
-        <TactilePressable accessibilityRole="button" accessibilityLabel={`打开旁聊：${title}`} accessibilityState={{ selected: active }}
+        <TactilePressable accessibilityRole="button" accessibilityLabel={t("side.open", { title })} accessibilityState={{ selected: active }}
           onPress={() => onSelectSideChat?.(chat.id)} variant="plain" selected={active} stateFill={false} scaleTo={1}
           style={styles.titleHit} faceStyle={styles.titleRow} testID={`side-chat-${chat.id}`}>
           <Text numberOfLines={1} style={styles.text}>{title}</Text>
         </TactilePressable>
         <View collapsable={false} style={styles.menuSlot} ref={node => { if (node) anchors.current.set(chat.id, node); else anchors.current.delete(chat.id); }}>
-          <TactilePressable accessibilityRole="button" accessibilityLabel={`旁聊菜单：${title}`} accessibilityHint="生成标题或删除"
+          <TactilePressable accessibilityRole="button" accessibilityLabel={t("side.menu", { title })} accessibilityHint={t("side.menuHint")}
             accessibilityState={{ expanded: menu?.chat.id === chat.id }} disabled={!!sideChatBusy}
             onPress={() => openMenu(chat)} scaleTo={0.94} stateFill={false} style={styles.menuHit} faceStyle={styles.menuFace} variant="plain">
             <MoreVertical size={20} strokeWidth={1.8} color={colors.muted} />
@@ -75,13 +77,10 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
     })}
     <Modal transparent visible={!!menu || !!deleting} animationType="fade" onRequestClose={() => { if (!deleting) dismiss(); }}>
       {deleting ? <ConfirmationDialogContent
-        title={`删除「${deleting.title.trim() || DEFAULT_SIDE_CHAT_TITLE}」？`}
-        message="将永久删除聊天内容和所属后台执行，无法恢复。附件、工作区文件和历史备份不会删除。"
+        title={t("tasks.deleteTitle", { title: deleting.title.trim() || DEFAULT_SIDE_CHAT_TITLE })}
+        message={t("side.deleteMessage")}
         onCancel={dismiss}
         onConfirm={() => void remove()}
-        confirmLabel="删除"
-        cancelLabel="取消"
-        busyLabel="删除中…"
         busy={saving || !!sideChatBusy}
         error={deleteError}
         testID="side-chat-delete-dialog"
@@ -89,21 +88,21 @@ export function SideChatList({ sideChats = [], activeSideChatId, sideChatBusy, s
         left={menu.left}
         top={menu.top}
         width={176}
-        closeLabel="关闭旁聊菜单"
+        closeLabel={t("side.closeMenu")}
         onClose={dismiss}
         testID="side-chat-menu"
         actions={[
           {
             id: "generate-title",
-            label: "生成标题",
-            accessibilityLabel: "生成旁聊标题",
+            label: t("side.generateTitle"),
+            accessibilityLabel: t("side.generateTitleLabel"),
             icon: <RefreshCw size={18} strokeWidth={1.8} color={colors.text} />,
             onPress: () => { const id = menu.chat.id; setMenu(undefined); void onGenerateSideChatTitle?.(id); },
           },
           {
             id: "delete",
-            label: "删除",
-            accessibilityLabel: "删除旁聊",
+            label: t("common.delete"),
+            accessibilityLabel: t("side.delete"),
             icon: <Trash2 size={18} strokeWidth={1.8} color={colors.danger} />,
             destructive: true,
             onPress: () => { setDeleting(menu.chat); setDeleteError(""); setMenu(undefined); },

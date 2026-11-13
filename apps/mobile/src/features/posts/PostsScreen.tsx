@@ -14,8 +14,9 @@ import { generatePost, loadPosts, loadPostGeneration } from "./api";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { ApiError, errorMessage } from "../../api/errors";
 import { createUuidV4 } from "../../utils/uuid";
+import { useTranslation } from "../../i18n";
 
-const dayTime = (value: number) => new Date(value).toLocaleString("zh-CN", {
+const dayTime = (value: number, locale: string) => new Date(value).toLocaleString(locale, {
   month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
 });
 
@@ -26,6 +27,9 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
   onToast: (message: string, tone?: FeedbackTone) => void;
 }) {
   const { colors } = useTheme();
+  const { t, language } = useTranslation();
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const styles = useThemeStyles(createStyles);
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [before, setBefore] = useState<string>();
@@ -54,11 +58,11 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
           if (generation.status !== "running" && generation.status !== "stopping") {
             activeGeneration.current = undefined;
             setGenerationNotice(generation.status === "failed"
-              ? { tone: "error", message: generation.reason || "帖子生成失败，请重试。" }
+              ? { tone: "error", message: generation.reason || translateRef.current("posts.failed") }
               : undefined);
           }
         } catch (cause) {
-          if (!controller.signal.aborted) setGenerationNotice({ tone: "error", message: errorMessage(cause, "暂时无法核对生成状态，请刷新重试。") });
+          if (!controller.signal.aborted) setGenerationNotice({ tone: "error", message: errorMessage(cause, translateRef.current("posts.checkFailed"), translateRef.current) });
         }
       }
       const result = await loadPosts(more ? moreBefore.current : undefined, controller.signal);
@@ -67,7 +71,7 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
       setBefore(result.nextBefore); moreBefore.current = result.nextBefore;
     } catch (cause) {
       if (!controller.signal.aborted) (more ? setMoreError : setError)(errorMessage(cause,
-        more ? "未能加载更多帖子，已有内容仍保留。" : "暂时无法读取帖子，已有内容仍保留。"));
+        translateRef.current(more ? "posts.moreFailed" : "posts.loadFailed"), translateRef.current));
     } finally {
       if (!controller.signal.aborted) { setLoading(false); request.current = undefined; }
     }
@@ -86,18 +90,18 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
       setGenerationNotice(undefined);
       if (result.status === "completed") {
         await refresh();
-        onToast("帖子已生成。", "info");
+        onToast(t("posts.generated"), "info");
       } else if (result.status === "skipped") {
-        onToast(result.reason || "本次没有生成新帖子。", "info");
+        onToast(result.reason || t("posts.skipped"), "info");
       } else if (result.status === "failed" || result.status === "stopped") {
-        setGenerationNotice({ message: result.reason || "帖子生成未完成。", tone: "error" });
+        setGenerationNotice({ message: result.reason || t("posts.incomplete"), tone: "error" });
       } else {
-        onToast("已开始生成帖子，完成后可刷新查看。", "info");
+        onToast(t("posts.started"), "info");
       }
     } catch (cause) {
       if (!controller.signal.aborted) {
         if (cause instanceof ApiError && cause.status < 500) pendingGenerationRequest.current = undefined;
-        const message = errorMessage(cause, "暂未确认生成请求，请重试原操作。");
+        const message = errorMessage(cause, t("posts.unconfirmed"), t);
         if (cause instanceof ApiError && cause.code === "post_generation_busy") onToast(message, "warning");
         else setGenerationNotice({ message, tone: "error" });
       }
@@ -107,7 +111,7 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
         setGenerating(false);
       }
     }
-  }, [onToast, refresh]);
+  }, [onToast, refresh, t]);
   useEffect(() => {
     void refresh();
     const subscription = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
@@ -120,43 +124,43 @@ export function PostsScreen({ topInset, bottomInset, onPreview, onToast, revisio
   }, [refresh, revision]);
 
   return <Screen testID="posts-screen" topInset={topInset} bottomInset={bottomInset}>
-    <ScreenHeader title="帖子" action={<View style={styles.headerActions}>
-      <IconButton label="生成帖子" hint="根据当前上下文生成一篇帖子" onPress={() => void startGeneration()}
+    <ScreenHeader title={t("posts.title")} action={<View style={styles.headerActions}>
+      <IconButton label={t("posts.generate")} hint={t("posts.generateHint")} onPress={() => void startGeneration()}
         disabled={generating} accessibilityState={{ busy: generating }} testID="generate-post-button" variant="primary">
         {generating ? <ActivityIndicator size="small" color={colors.text} />
           : <Sparkles size={19} strokeWidth={1.8} color={colors.text} />}
       </IconButton>
-      <IconButton label="刷新帖子列表" onPress={() => void refresh()} testID="refresh-posts-button">
+      <IconButton label={t("posts.refresh")} onPress={() => void refresh()} testID="refresh-posts-button">
         <RefreshCw size={19} strokeWidth={1.8} color={colors.text} />
       </IconButton>
     </View>} />
     {generationNotice ? <ErrorNotice message={generationNotice.message} tone={generationNotice.tone}
-      actionLabel={pendingGenerationRequest.current ? "重试生成请求" : activeGeneration.current ? "刷新并核对" : "重新生成帖子"}
+      actionLabel={t(pendingGenerationRequest.current ? "posts.retryRequest" : activeGeneration.current ? "posts.check" : "posts.regenerate")}
       onAction={() => void (pendingGenerationRequest.current || !activeGeneration.current ? startGeneration() : refresh())} busy={loading || generating}
       onDismiss={() => setGenerationNotice(undefined)} testID="post-generation-notice" /> : null}
-    {error ? <ErrorNotice message={error} actionLabel="重新加载帖子" onAction={() => void refresh()} busy={loading}
+    {error ? <ErrorNotice message={error} actionLabel={t("posts.reload")} onAction={() => void refresh()} busy={loading}
       testID="posts-load-error" /> : null}
-    {!loading && !error && !posts.length ? <Text style={styles.empty}>还没有帖子。</Text> : null}
+    {!loading && !error && !posts.length ? <Text style={styles.empty}>{t("posts.empty")}</Text> : null}
     {posts.map(post => <TactileListRow key={post.id} surfaceVariant="card" style={styles.cardRow}>
       <TactilePressable variant="plain" stateFill={false} scaleTo={1} style={styles.cardHit}
-      accessibilityRole="button" accessibilityLabel={`阅读帖子：${post.title}`}
-      accessibilityHint="使用内置预览器阅读正文" onPress={() => onPreview(post)}
+      accessibilityRole="button" accessibilityLabel={t("posts.read", { title: post.title })}
+      accessibilityHint={t("posts.readHint")} onPress={() => onPreview(post)}
       faceStyle={styles.card} testID="post-card">
-      <Text style={styles.date}>{dayTime(post.createdAt)}</Text>
+      <Text style={styles.date}>{dayTime(post.createdAt, language)}</Text>
       <Text numberOfLines={2} style={styles.title}>{post.title}</Text>
       <Text numberOfLines={3} style={styles.excerpt}>{post.excerpt}</Text>
       <View style={styles.reasonBlock}>
-        <Text style={styles.reasonLabel}>生成理由</Text>
+        <Text style={styles.reasonLabel}>{t("posts.reason")}</Text>
         <Text numberOfLines={3} style={styles.reason}>{post.reason}</Text>
       </View>
       </TactilePressable>
       <View style={styles.menuSlot}><PostActions post={post} onDeleted={onDeleted} inRow /></View>
     </TactileListRow>)}
-    {loading ? <ActivityIndicator accessibilityLabel="正在读取帖子" color={colors.muted} /> : null}
-    {moreError ? <ErrorNotice message={moreError} actionLabel="重试加载更多" onAction={() => void refresh(true)} busy={loading}
+    {loading ? <ActivityIndicator accessibilityLabel={t("posts.loading")} color={colors.muted} /> : null}
+    {moreError ? <ErrorNotice message={moreError} actionLabel={t("posts.retryMore")} onAction={() => void refresh(true)} busy={loading}
       testID="posts-more-error" /> : null}
-    {before && !loading && !moreError ? <TextButton label="加载更多帖子" onPress={() => void refresh(true)}>
-      <Text style={styles.button}>加载更多</Text>
+    {before && !loading && !moreError ? <TextButton label={t("posts.loadMore")} onPress={() => void refresh(true)}>
+      <Text style={styles.button}>{t("posts.loadMoreShort")}</Text>
     </TextButton> : null}
   </Screen>;
 }

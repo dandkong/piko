@@ -8,11 +8,8 @@ import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtim
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { AppScrollView } from "../../components/AppScrollView";
 import { TactilePressable } from "../../components/TactilePressable";
+import { useTranslation } from "../../i18n";
 import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
-
-const thinkingLabels: Record<ThinkingLevel, string> = {
-  off: "关闭", minimal: "最少", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高",
-};
 
 type ModelInfo = ModelSettingsSnapshot["availableModels"][number];
 type Role = "main" | "background";
@@ -26,8 +23,8 @@ function selectedInfo(selection: ModelSelection | null, models: ModelSettingsSna
   return models.find(model => model.provider === selection.provider && model.id === selection.model);
 }
 
-function modelLabel(selection: ModelSelection | null, models: ModelSettingsSnapshot["availableModels"]) {
-  if (!selection) return "尚未选择";
+function modelLabel(selection: ModelSelection | null, models: ModelSettingsSnapshot["availableModels"], notSelected: string) {
+  if (!selection) return notSelected;
   const model = selectedInfo(selection, models);
   return model ? `${model.name} · ${model.provider}` : `${selection.provider} / ${selection.model}`;
 }
@@ -46,6 +43,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
   disabled: boolean;
   onSelect: (selection: ModelSelection | null) => void;
 }) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useStyles();
   const anchor = useRef<ComponentRef<typeof View>>(null);
@@ -53,18 +51,18 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
   const insets = useSafeAreaInsets();
   const [menu, setMenu] = useState<{ left: number; top: number; width: number; height: number }>();
   const followsMain = role === "background" && selection === null;
-  const title = role === "main" ? "主模型" : "后台模型";
+  const title = t(role === "main" ? "model.main" : "model.background");
   const value = followsMain
-    ? mainModel ? `跟随主模型 · ${modelLabel(mainModel, models)}` : "跟随主模型（主模型尚未选择）"
-    : modelLabel(selection, models);
+    ? mainModel ? t("model.followValue", { value: modelLabel(mainModel, models, t("model.notSelected")) }) : t("model.followMissing")
+    : modelLabel(selection, models, t("model.notSelected"));
   const menuOptions = useMemo(() => [
-    ...(role === "background" ? [{ id: "follow-main", label: "跟随主模型", selection: null as ModelSelection | null }] : []),
+    ...(role === "background" ? [{ id: "follow-main", label: t("model.follow"), selection: null as ModelSelection | null }] : []),
     ...models.map(model => ({
       id: `${model.provider}/${model.id}`,
       label: `${model.name} · ${model.provider}`,
       selection: { provider: model.provider, model: model.id } as ModelSelection,
     })),
-  ], [models, role]);
+  ], [models, role, t]);
 
   const openMenu = () => {
     anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
@@ -89,7 +87,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
     </View>
     <Modal transparent visible={!!menu} animationType="fade" onRequestClose={() => setMenu(undefined)}>
       {menu ? <View style={StyleSheet.absoluteFill}>
-        <Pressable accessibilityRole="button" accessibilityLabel="关闭模型列表"
+        <Pressable accessibilityRole="button" accessibilityLabel={t("model.closeList")}
           onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
         <View testID={`${role}-model-options`} style={[styles.dropdownMenu, menu]}>
           <AppScrollView keyboardShouldPersistTaps="handled" showScrollbar>
@@ -98,7 +96,7 @@ function ModelDropdown({ role, selection, mainModel, models, disabled, onSelect 
                 ? followsMain
                 : sameModel(selection, option.selection);
               return <View key={option.id}>
-                <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}：${option.label}${active ? "，已选" : ""}`}
+                <TactilePressable accessibilityRole="button" accessibilityLabel={`${title}：${option.label}${active ? t("model.selected") : ""}`}
                   selected={active} onPress={() => { setMenu(undefined); onSelect(option.selection); }}
                   variant="plain" scaleTo={1} faceStyle={styles.dropdownOption}>
                   <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{option.label}</Text>
@@ -119,6 +117,7 @@ function ThinkingDropdown({ role, model, selected, onSelect }: {
   selected?: ThinkingLevel;
   onSelect: (level: ThinkingLevel) => void;
 }) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useStyles();
   const anchor = useRef<ComponentRef<typeof View>>(null);
@@ -127,8 +126,8 @@ function ThinkingDropdown({ role, model, selected, onSelect }: {
   const [menu, setMenu] = useState<{ left: number; top: number; width: number; height: number }>();
   const levels = model?.thinkingLevels ?? [];
   const selectedLevel = selected && levels.includes(selected) ? selected : levels[0];
-  const title = `${role === "main" ? "主模型" : "后台模型"}思维强度`;
-  const value = !model ? "先选择模型" : !levels.length ? "无可选项" : selectedLevel ? thinkingLabels[selectedLevel] : "选择强度";
+  const title = t("model.thinkingTitle", { value: t(role === "main" ? "model.main" : "model.background") });
+  const value = !model ? t("model.chooseFirst") : !levels.length ? t("model.noOptions") : selectedLevel ? t(`thinking.${selectedLevel}`) : t("model.chooseThinking");
 
   const openMenu = () => {
     anchor.current?.measureInWindow((x, y, anchorWidth, anchorHeight) => {
@@ -153,7 +152,7 @@ function ThinkingDropdown({ role, model, selected, onSelect }: {
     </View>
     <Modal transparent visible={!!menu} animationType="fade" onRequestClose={() => setMenu(undefined)}>
       {menu ? <View style={StyleSheet.absoluteFill}>
-        <Pressable accessibilityRole="button" accessibilityLabel="关闭思考强度列表"
+        <Pressable accessibilityRole="button" accessibilityLabel={t("model.closeThinking")}
           onPress={() => setMenu(undefined)} style={StyleSheet.absoluteFill} />
         <View accessibilityRole="radiogroup" accessibilityLabel={title} testID={`${role}-thinking-options`}
           style={[styles.dropdownMenu, menu]}>
@@ -162,10 +161,10 @@ function ThinkingDropdown({ role, model, selected, onSelect }: {
               const active = selectedLevel === level;
               return <View key={level}>
                 <TactilePressable testID={`${role}-thinking-option-${level}`} accessibilityRole="radio"
-                  accessibilityLabel={`${title}：${thinkingLabels[level]}`} accessibilityState={{ checked: active }}
+                  accessibilityLabel={`${title}：${t(`thinking.${level}`)}`} accessibilityState={{ checked: active }}
                   selected={active} onPress={() => { setMenu(undefined); onSelect(level); }}
                   variant="plain" scaleTo={1} faceStyle={styles.dropdownOption}>
-                  <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{thinkingLabels[level]}</Text>
+                  <Text numberOfLines={1} style={[styles.dropdownOptionText, active && styles.dropdownOptionSelected]}>{t(`thinking.${level}`)}</Text>
                   {active ? <Check size={18} strokeWidth={2} color={colors.text} /> : null}
                 </TactilePressable>
               </View>;
@@ -182,6 +181,7 @@ export function SettingsModelsEditor({ snapshot, onChange }: {
   onChange: (mainModel: ModelSelection | null, backgroundModel: ModelSelection | null, backgroundThinking: ThinkingLevel | null) => void;
 }) {
   const styles = useStyles();
+  const { t } = useTranslation();
   const mainInfo = selectedInfo(snapshot.mainModel, snapshot.availableModels);
   const explicitBackground = snapshot.backgroundModel;
   const effectiveBackground = explicitBackground ?? snapshot.mainModel;
@@ -219,14 +219,14 @@ export function SettingsModelsEditor({ snapshot, onChange }: {
   };
 
   return <View style={styles.content} testID="settings-home">
-    <ModelSection title="主模型" role="main" selection={snapshot.mainModel} mainModel={snapshot.mainModel}
+    <ModelSection title={t("model.main")} role="main" selection={snapshot.mainModel} mainModel={snapshot.mainModel}
       models={snapshot.availableModels} model={mainInfo} thinking={mainThinking}
       onModel={model => selectModel("main", model)} onThinking={thinking => selectThinking("main", thinking)} />
-    <ModelSection title="后台模型" role="background" selection={explicitBackground} mainModel={snapshot.mainModel}
+    <ModelSection title={t("model.background")} role="background" selection={explicitBackground} mainModel={snapshot.mainModel}
       models={snapshot.availableModels} model={backgroundInfo} thinking={backgroundThinking}
       onModel={model => selectModel("background", model)} onThinking={thinking => selectThinking("background", thinking)} />
     {!snapshot.availableModels.length ? <Text style={styles.notice}>
-      部署中尚未配置可用模型。请在部署配置中添加模型和凭据，然后重启 Piko。
+      {t("model.empty")}
     </Text> : null}
   </View>;
 }
@@ -243,17 +243,18 @@ function ModelSection({ title, role, selection, mainModel, models, model, thinki
   onThinking: (thinking: ThinkingLevel) => void;
 }) {
   const styles = useStyles();
+  const { t } = useTranslation();
   return <View style={styles.section} testID={`${role}-model-section`}>
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>
       <View style={styles.controlsRow}>
         <View style={styles.controlColumn}>
-          <Text style={styles.controlLabel}>模型</Text>
+          <Text style={styles.controlLabel}>{t("model.model")}</Text>
           <ModelDropdown role={role} selection={selection} mainModel={mainModel} models={models} disabled={role === "main" && models.length === 0}
             onSelect={value => onModel(value ? models.find(model => model.provider === value.provider && model.id === value.model) ?? null : null)} />
         </View>
         <View style={styles.controlColumn}>
-          <Text style={styles.controlLabel}>思维强度</Text>
+          <Text style={styles.controlLabel}>{t("model.thinking")}</Text>
           <ThinkingDropdown role={role} model={model} selected={thinking} onSelect={onThinking} />
         </View>
       </View>

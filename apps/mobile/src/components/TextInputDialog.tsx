@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, Tex
 import { useDismissOnBack } from "../hooks/useDismissOnBack";
 import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { TextButton } from "./TextButton";
+import { useTranslation } from "../i18n";
 
 type InputFocusEvent = Parameters<NonNullable<TextInputProps["onFocus"]>>[0];
 const webTextInputStyle = { outlineStyle: "none" } as unknown as TextStyle;
@@ -33,15 +34,16 @@ export function TextInputDialog({ visible, ...props }: TextInputDialogProps & { 
 
 /** Reuse inside an existing Modal when a menu transitions into an input without stacking native modals. */
 export function TextInputDialogContent({ title, inputLabel = title, value, onChangeText, onConfirm, onCancel,
-  busy = false, disabled = false, error, maxLength, placeholder, confirmLabel = "确认", testID }: TextInputDialogProps) {
+  busy = false, disabled = false, error, maxLength, placeholder, confirmLabel, testID }: TextInputDialogProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const canConfirm = !busy && !disabled && !!value.trim();
   const [focused, setFocused] = useState(false);
   const [focusVisible, setFocusVisible] = useState(false);
   useDismissOnBack(true, () => { if (!busy) onCancel(); }, { capture: true });
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`关闭${title}弹窗`} disabled={busy}
+    <Pressable accessibilityRole="button" accessibilityLabel={t("common.closeDialog", { title })} disabled={busy}
       style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onCancel} />
     <View role="dialog" accessibilityLabel={title} accessibilityViewIsModal testID={testID} style={styles.dialog}>
       <Text style={styles.title}>{title}</Text>
@@ -59,9 +61,9 @@ export function TextInputDialogContent({ title, inputLabel = title, value, onCha
       </View>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
       <View style={styles.actions}>
-        <TextButton label={`取消${title}`} disabled={busy} onPress={onCancel}><Text style={styles.muted}>取消</Text></TextButton>
-        <TextButton label={`确认${title}`} variant="primary" disabled={!canConfirm} onPress={onConfirm}>
-          <Text style={styles.text}>{busy ? "保存中…" : confirmLabel}</Text>
+        <TextButton label={t("common.cancelDialog", { title })} disabled={busy} onPress={onCancel}><Text style={styles.muted}>{t("common.cancel")}</Text></TextButton>
+        <TextButton label={t("common.confirmDialog", { title })} variant="primary" disabled={!canConfirm} onPress={onConfirm}>
+          <Text style={styles.text}>{busy ? t("common.saving") : confirmLabel ?? t("common.confirm")}</Text>
         </TextButton>
       </View>
     </View>

@@ -8,6 +8,7 @@ import {
 import { ArrowDown } from "lucide-react-native";
 import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
 import { useTheme } from "../../theme";
+import { useTranslation } from "../../i18n";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { MarkdownContent } from "../../components/MarkdownContent";
@@ -27,6 +28,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
   footerHeight: number;
 }) {
   const { colors } = useTheme();
+  const { t, language } = useTranslation();
   const styles = useChatStyles();
   const { messages, messageKey, loading, submitting, error, errorTone, retryLabel, retryBusy, retry, dismissError, hasOlder, loadingOlder, olderError, loadOlder } = useChatStore();
   const lastMessage = messages[messages.length - 1];
@@ -44,7 +46,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
     if (!hasContent && !item.attachments?.length) return null;
     const previous = messages[index - 1];
     const divider = shouldShowTimestamp(previous?.createdAt, item.createdAt)
-      ? <Text accessibilityLabel="消息时间" style={styles.timeDivider}>{formatTimestamp(item.createdAt)}</Text> : null;
+      ? <Text accessibilityLabel={t("chat.messageTime")} style={styles.timeDivider}>{formatTimestamp(item.createdAt, Date.now(), language)}</Text> : null;
     return (
       <>
         {divider}
@@ -79,6 +81,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           updateCellsBatchingPeriod={0}
           style={styles.conversation}
           data={messages}
+          extraData={language}
           keyExtractor={messageKey}
           renderItem={renderMessage}
           ItemSeparatorComponent={MessageSeparator}
@@ -93,10 +96,10 @@ export function ChatTab({ headerHeight, footerHeight }: {
           {...scroll.listProps}
           ListHeaderComponent={hasOlder ? (
             <View style={{ height: 40, alignItems: "center", justifyContent: "center" }}>
-              {loadingOlder ? <ActivityIndicator accessibilityLabel="正在加载更早的消息" color={colors.muted} size="small" /> : (
-                <TactilePressable accessibilityRole="button" accessibilityLabel={olderError ? "重试加载更早的消息" : "加载更早的消息"}
+              {loadingOlder ? <ActivityIndicator accessibilityLabel={t("chat.loadingOlder")} color={colors.muted} size="small" /> : (
+                <TactilePressable accessibilityRole="button" accessibilityLabel={t(olderError ? "chat.retryOlder" : "chat.loadOlder")}
                   onPress={fetchOlder} variant="plain" scaleTo={1} faceStyle={styles.loadOlderButton}>
-                  <Text style={styles.muted}>{olderError ? "历史记录加载失败，点击重试" : "加载更早的消息"}</Text>
+                  <Text style={styles.muted}>{t(olderError ? "chat.olderFailed" : "chat.loadOlder")}</Text>
                 </TactilePressable>
               )}
             </View>
@@ -104,7 +107,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           ListEmptyComponent={loading ? (
             <View style={styles.centerState}>
               <ActivityIndicator color={colors.muted} />
-              <Text style={styles.muted}>正在打开对话…</Text>
+              <Text style={styles.muted}>{t("chat.opening")}</Text>
             </View>
           ) : undefined}
           ListFooterComponent={(
@@ -120,7 +123,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
         {scroll.awayFromLatest && (
           <View pointerEvents="box-none" style={[styles.latestButtonOverlay, { bottom: footerHeight + 12 }]}>
             <IconButton
-              label="最新消息"
+              label={t("chat.latest")}
               onPress={() => scroll.scrollToLatest(true)}
               style={styles.latestButtonShadow}
             >

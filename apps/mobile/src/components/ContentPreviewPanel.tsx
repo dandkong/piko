@@ -4,6 +4,7 @@ import { FloatingPanel } from "./FloatingPanel";
 import { MarkdownContent } from "./MarkdownContent";
 import { useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 import { ErrorNotice } from "./ErrorNotice";
+import { useTranslation } from "../i18n";
 
 /** Shared reader for loaded text. Feature owners handle fetching and business-specific fallback content. */
 export function ContentPreviewPanel({ open, title, onClose, closeLabel, content, format, loading = false, error = "", fallback,
@@ -24,13 +25,14 @@ export function ContentPreviewPanel({ open, title, onClose, closeLabel, content,
   textTestID?: string;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemeStyles(createStyles);
   return <FloatingPanel open={open} title={title} onClose={onClose} closeLabel={closeLabel}
     testID={testID} scrollTestID={scrollTestID} showScrollbar>
     {open && <View style={styles.content}>
-      {loading ? <ActivityIndicator accessibilityLabel="正在加载预览" color={colors.muted} />
-        : error ? <ErrorNotice title="无法加载内容" message={error} onAction={onRetry}
-          actionLabel="重新加载内容" testID={`${testID.replace(/-panel$/, "")}-error`} /> : fallback ?? (format === "markdown" ? <View testID={markdownTestID}><MarkdownContent content={content} /></View>
+      {loading ? <ActivityIndicator accessibilityLabel={t("common.previewLoading")} color={colors.muted} />
+        : error ? <ErrorNotice title={t("common.contentFailed")} message={error} onAction={onRetry}
+          actionLabel={t("common.reloadContent")} testID={`${testID.replace(/-panel$/, "")}-error`} /> : fallback ?? (format === "markdown" ? <View testID={markdownTestID}><MarkdownContent content={content} /></View>
           : <Text selectable style={[styles.text, Platform.OS === "web" && { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as TextStyle]}
             testID={textTestID}>{content}</Text>)}
     </View>}

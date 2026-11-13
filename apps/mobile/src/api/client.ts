@@ -1,6 +1,6 @@
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
-import { ApiError, RequestTimeoutError } from "./errors";
+import { ApiError, LocalApiError, RequestTimeoutError } from "./errors";
 
 const DEFAULT_API_URL = Platform.OS === "web" && !__DEV__ ? ""
   : Platform.OS === "android" ? "http://10.0.2.2:8787" : "http://127.0.0.1:8787";
@@ -34,12 +34,13 @@ export async function readJson<T>(response: Response): Promise<T> {
   catch (error) {
     if (pending?.timedOut()) throw new RequestTimeoutError();
     if (error instanceof Error && error.name === "AbortError") throw error;
-    throw new ApiError("服务响应异常，请稍后重试。", response.status >= 400 ? response.status : 502);
+    throw new LocalApiError("api.invalidResponse", response.status >= 400 ? response.status : 502);
   } finally { pending?.close(); pendingResponses.delete(response); }
   if (!response.ok) {
     const value = payload as { error?: unknown; code?: unknown } | null;
-    throw new ApiError(typeof value?.error === "string" ? value.error : "请求未完成，请稍后重试。",
-      response.status, typeof value?.code === "string" ? value.code : undefined);
+    const code = typeof value?.code === "string" ? value.code : undefined;
+    throw typeof value?.error === "string" ? new ApiError(value.error, response.status, code)
+      : new LocalApiError("api.failed", response.status, code);
   }
   return payload as T;
 }

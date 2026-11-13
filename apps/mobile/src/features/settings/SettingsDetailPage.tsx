@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { ChevronLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconButton } from "../../components/IconButton";
+import { useTranslation } from "../../i18n";
 import { useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 
 /** Shared second-level settings layer: circular back control, centered title, and fixed bottom actions. */
@@ -15,13 +16,14 @@ export function SettingsDetailPage({ title, onBack, children, footer, contentKey
   testID?: string;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useThemeStyles(createStyles);
   const insets = useSafeAreaInsets();
   return <KeyboardAvoidingView style={styles.layer}
     behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}>
     <View style={[styles.layer, { paddingBottom: insets.bottom }]} testID={testID} accessibilityViewIsModal>
       <View style={styles.header}>
-        <IconButton label="返回设置" onPress={onBack} size="md">
+        <IconButton label={t("settings.back")} onPress={onBack} size="md">
           <ChevronLeft size={21} strokeWidth={1.9} color={colors.text} />
         </IconButton>
         <View pointerEvents="none" style={styles.titlePosition}>

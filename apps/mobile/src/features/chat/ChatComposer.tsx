@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 
 import { Platform, Text, TextInput, type TextStyle, View } from "react-native";
 import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react-native";
 import { useTheme } from "../../theme";
+import { useTranslation } from "../../i18n";
 import { IconButton } from "../../components/IconButton";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useChatStyles } from "./styles";
@@ -42,6 +43,7 @@ export function ChatComposer({
   onStop,
 }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useChatStyles();
   const [inputHeight, setInputHeight] = useState(44);
   const [inputWidth, setInputWidth] = useState(0);
@@ -82,7 +84,7 @@ export function ChatComposer({
                 {item.name || item.id}
               </Text>
               <TactilePressable
-                accessibilityLabel={`移除 ${item.name || item.id}`}
+                accessibilityLabel={t("chat.removeAttachment", { name: item.name || item.id })}
                 accessibilityRole="button"
                 hitSlop={10}
                 onPress={() => onRemoveAttachment(item.id)}
@@ -100,7 +102,7 @@ export function ChatComposer({
       <View style={styles.composerRow}>
         <IconButton
           disabled={loading || attaching}
-          label="添加附件"
+          label={t("chat.addAttachment")}
           onPress={onAttach}
           variant="plain"
         >
@@ -127,7 +129,7 @@ export function ChatComposer({
                   );
                 }
           }
-          placeholder={loading ? "正在连接…" : "发消息…"}
+          placeholder={t(loading ? "chat.connecting" : "chat.placeholder")}
           placeholderTextColor={colors.muted}
           style={[styles.input, webInputStyle, { height: inputHeight }]}
           multiline
@@ -143,11 +145,11 @@ export function ChatComposer({
                   }
                 }
           }
-          accessibilityLabel="给 Piko 发消息"
+          accessibilityLabel={t("chat.inputLabel")}
         />
         <IconButton
           disabled={sendDisabled}
-          label={showStop ? "停止回复" : "发送消息"}
+          label={t(showStop ? "chat.stop" : "chat.send")}
           onPress={showStop ? onStop : () => onSend()}
           variant={showStop ? "soft" : "primary"}
         >

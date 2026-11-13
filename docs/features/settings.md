@@ -1,10 +1,11 @@
 # 设置与模型
 
-状态：App 设置提供设备本地的外观偏好，并管理主模型与后台模型选择及各自的思考强度。供应商、模型目录、凭据、工具、通道和所有环境变量均由部署配置管理，不在 App 中编辑。
+状态：App 设置提供设备本地的语言和外观偏好，并管理主模型与后台模型选择及各自的思考强度。供应商、模型目录、凭据、工具、通道和所有环境变量均由部署配置管理，不在 App 中编辑。
 
 ## 页面
 
-- 设置页首先显示“外观”卡片，提供“跟随设备 / 深色 / 浅色”下拉选择；选择立即应用并保存在当前设备，不写入服务端设置。
+- 设置页提供“语言”下拉选择：跟随设备、中文或英文；选择保存在当前设备，只影响 App 自有界面和日期格式，不改变 Telegram、服务端行为或用户内容。跟随设备时，中文设备使用中文，其他语言使用英文；App 重新进入前台时重新读取设备语言。服务端返回的错误、模型生成的内容和用户填写的标题等按原文展示，不自动翻译；已经显示的临时错误在重试后按当前语言重新生成。
+- “外观”卡片提供“跟随设备 / 深色 / 浅色”下拉选择；选择立即应用并保存在当前设备，不写入服务端设置。
 - 随后直接显示“主模型”和“后台模型”两个区块；每个区块用左右并排的两个下拉框，分别选择模型和该模型支持的思考强度。未选择模型时，思考强度下拉框禁用。
 - 不为模型选择增加二级菜单。通用 `SettingsDetailPage` 模板保留供未来复用，但当前模型设置不使用它。
 - 模型目录由部署配置提供。若部署没有可用模型，页面只显示部署侧配置提示，不提供供应商或凭据表单。
@@ -35,6 +36,7 @@
 
 - `server/settings/` 与 `server/runtime/settings.ts`：模型角色配置读写和可用模型摘要。
 - `server/runtime/model-config.ts`、`server/runtime/pi.ts`：主/后台模型策略加载、热应用和动态继承。
+- `apps/mobile/src/features/settings/LanguageSection.tsx` 与 `apps/mobile/src/i18n/`：设备本地语言选项及界面文案。
 - `apps/mobile/src/features/settings/AppearanceSection.tsx` 与 `apps/mobile/src/theme.ts`：设备本地外观选项、主题色板和系统外观响应。
 - `apps/mobile/src/features/settings/`：一级模型与思考强度下拉控件。
 - `apps/mobile/src/features/shell/AppShell.tsx`、`features/chat/useChat.ts`：主模型缺失 Toast。
@@ -45,4 +47,4 @@
 
 `1fa6103` 后类型检查及 Web/iOS/Android Expo 导出通过。临时隔离检查验证了设置只写 `piko.json`、不改 models/auth 部署文件、动态后台继承/思考覆盖和旧设置写入字段拒绝；Telegram fake-transport 检查确认缺主模型时发送 `/models` 指引且不接纳消息或下载附件。生产 Web 浏览器检查了一级模型下拉、两组思考强度控件、无凭据输入框、390px 面板，以及模拟 409 时 Toast 显示且草稿保留。服务健康、`GET /api/settings` 字段和旧 `/api/settings/config` 的 404 已核对。未使用真实供应商调用、真实 Telegram Bot 或原生真机验收。
 
-外观偏好存储在本地 `AsyncStorage`，不调用模型设置 API；“跟随设备”通过系统颜色方案监听变化。主题切换的本轮 TypeScript 检查及 Web/iOS/Android Expo 导出通过；尚未在真实浏览器或 iOS/Android 设备上目视验收。
+语言和外观偏好均存储在本地 `AsyncStorage`，不调用模型设置 API。语言跟随设备在前台恢复时刷新，Web 也监听浏览器语言变化；外观跟随系统颜色方案。多语言修改通过 TypeScript 检查及隔离目录的 Web/iOS/Android Expo 导出，词条键和占位符经临时脚本核对；尚未在真实浏览器或 iOS/Android 设备上目视验收。

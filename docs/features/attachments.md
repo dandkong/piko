@@ -1,6 +1,6 @@
 # 附件与图片读取
 
-状态：服务端已实现共享附件存储、Telegram 图片接入和原生 `read` 图片返回；RN 选图/上传 UI 尚未接入。
+状态：服务端已实现共享附件存储及 Telegram 附件接入；Web 聊天支持选择并上传文件，iOS/Android 原生文件选择尚未接入。聊天中的附件以文件链接展示，不提供图片缩略图。
 
 ## 共享存储
 
@@ -23,7 +23,7 @@ PIKO_HOME/state/attachments/<uuid>.<ext>
 | 来源 | 获取字节 | 说明 |
 | --- | --- | --- |
 | Telegram | photo 取最大尺寸；document / video / audio / voice 全部接收；`getFile` 后下载到共享存储 | 相册不合并，每条消息分别处理；caption 作为文字 |
-| App | `POST /api/attachments`，请求体是原始字节，Content-Type 作为后缀提示 | 返回 `{ id, mime, bytes, url }`；`GET /api/attachments/:id` 供展示，非图片按附件下载 |
+| App Web | 聊天输入框选择文件后调用 `POST /api/attachments`，请求体是原始字节，Content-Type 作为后缀提示 | 返回 `{ id, mime, bytes, url }`；`GET /api/attachments/:id` 供展示，非图片按附件下载；原生客户端尚不支持选取文件 |
 
 `POST /api/chat` 接受可选的 `attachmentIds`（最多 4 个）。服务端解析为绝对路径后交给运行时，通道本身不拼提示词。
 
@@ -47,7 +47,7 @@ PIKO_HOME/state/attachments/<uuid>.<ext>
 
 ## 尚未实现
 
-- RN 选图、上传与聊天内缩略图（服务端接口已就绪）
+- iOS/Android 原生文件选择与上传、聊天内图片缩略图
 - Telegram 相册合并（`media_group_id`）
 - 附件元数据展示（原始文件名、尺寸）和手动清理入口
 - 按文件类型提取正文（PDF/Office）；当前交给模型自行探测

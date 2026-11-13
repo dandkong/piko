@@ -4,17 +4,14 @@ import { Modal, StyleSheet, Text, View, useWindowDimensions } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnchoredMenuContent, type AnchoredMenuAction } from "../../components/AnchoredMenu";
 import { TactilePressable } from "../../components/TactilePressable";
+import { useTranslation } from "../../i18n";
 import { radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
-
-const appearanceLabels = {
-  system: "跟随设备",
-  dark: "深色",
-  light: "浅色",
-} as const;
 
 /** Device-local appearance preference; model/runtime settings remain server-managed. */
 export function AppearanceSection() {
   const { appearance, setAppearance, colors } = useTheme();
+  const { t } = useTranslation();
+  const appearanceLabels = { system: t("settings.appearanceSystem"), dark: t("settings.appearanceDark"), light: t("settings.appearanceLight") };
   const styles = useThemeStyles(createStyles);
   const anchor = useRef<ComponentRef<typeof View>>(null);
   const { width, height } = useWindowDimensions();
@@ -23,7 +20,7 @@ export function AppearanceSection() {
   const options: AnchoredMenuAction[] = (Object.keys(appearanceLabels) as Array<keyof typeof appearanceLabels>).map((value) => ({
     id: value,
     label: appearanceLabels[value],
-    accessibilityLabel: `${appearanceLabels[value]}外观`,
+    accessibilityLabel: t("settings.appearanceOption", { value: appearanceLabels[value] }),
     selected: appearance === value,
     onPress: () => {
       setMenu(undefined);
@@ -46,12 +43,12 @@ export function AppearanceSection() {
 
   return <>
     <View style={styles.section} testID="appearance-section">
-      <Text style={styles.sectionTitle}>外观</Text>
+      <Text style={styles.sectionTitle}>{t("settings.appearance")}</Text>
       <View ref={anchor} collapsable={false}>
         <TactilePressable
           testID="appearance-dropdown"
           accessibilityRole="button"
-          accessibilityLabel={`外观模式：${appearanceLabels[appearance]}`}
+          accessibilityLabel={t("settings.appearanceCurrent", { value: appearanceLabels[appearance] })}
           accessibilityState={{ expanded: !!menu }}
           variant="card"
           scaleTo={1}
@@ -68,8 +65,8 @@ export function AppearanceSection() {
         left={menu.left}
         top={menu.top}
         width={menu.width}
-        closeLabel="关闭外观选项"
-        label="选择外观模式"
+        closeLabel={t("settings.appearanceClose")}
+        label={t("settings.appearanceChoose")}
         onClose={() => setMenu(undefined)}
         actions={options}
         testID="appearance-options"

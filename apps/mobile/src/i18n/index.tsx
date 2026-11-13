@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getLocales } from "expo-localization";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AppState, Platform } from "react-native";
+import { translate, type MessageKey } from "./messages";
 
 export type Language = "zh-CN" | "en";
 export type LanguagePreference = "system" | Language;
@@ -68,4 +69,12 @@ export function useLanguage(): LanguageContextValue {
   const value = useContext(LanguageContext);
   if (!value) throw new Error("useLanguage requires LanguageProvider");
   return value;
+}
+
+/** Reactive translator for fixed UI copy; never pass arbitrary content or server errors as keys. */
+export function useTranslation() {
+  const { language } = useLanguage();
+  const t = useCallback((key: MessageKey, values?: Record<string, string | number>) =>
+    translate(language, key, values), [language]);
+  return { language, t };
 }

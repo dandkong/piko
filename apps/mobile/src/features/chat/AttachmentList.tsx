@@ -3,12 +3,14 @@ import { Paperclip } from "lucide-react-native";
 import type { MessageAttachment } from "../../../../../shared/chat";
 import { API_URL } from "../../api/client";
 import { useTheme } from "../../theme";
+import { useTranslation } from "../../i18n";
 import { TactilePressable } from "../../components/TactilePressable";
 import { useChatStyles } from "./styles";
 
 /** Attachments render the same way for images and other files; only the name is shown. */
 export function AttachmentList({ attachments }: { attachments?: MessageAttachment[] }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useChatStyles();
   if (!attachments?.length) return null;
   return (
@@ -16,7 +18,7 @@ export function AttachmentList({ attachments }: { attachments?: MessageAttachmen
       {attachments.map(item => (
         <TactilePressable
           key={item.id}
-          accessibilityLabel={`打开 ${item.id}`}
+          accessibilityLabel={t("chat.openAttachment", { name: item.id })}
           accessibilityRole="link"
           faceStyle={styles.attachmentChip}
           hitSlop={6}

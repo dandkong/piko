@@ -3,9 +3,11 @@ import { AppState } from "react-native";
 import type { ModelSettingsSnapshot } from "../../../../../shared/settings";
 import { loadSettings } from "./api";
 import { errorMessage } from "../../api/errors";
+import { useTranslation } from "../../i18n";
 
 /** Fetch only while open, cancel superseded reads, and retain the last snapshot on refresh failure. */
 export function useSettings(open: boolean, writesPending: { current: boolean }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<ModelSettingsSnapshot>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,7 +37,7 @@ export function useSettings(open: boolean, writesPending: { current: boolean }) 
     } catch (cause) {
       if (enabled.current && readGeneration.current === generation && pending.current === controller &&
         (!controller.signal.aborted || timedOut))
-        setError(timedOut ? "读取设置超时，请重试。" : errorMessage(cause, "无法读取设置，请检查连接后重试。"));
+        setError(timedOut ? t("settings.timeout") : errorMessage(cause, t("settings.loadFailed"), t));
     } finally {
       clearTimeout(timer);
       if (pending.current === controller) {
@@ -43,7 +45,7 @@ export function useSettings(open: boolean, writesPending: { current: boolean }) 
         if (enabled.current) setLoading(false);
       }
     }
-  }, [writesPending]);
+  }, [writesPending, t]);
   useEffect(() => {
     if (!open) return;
     void refresh();

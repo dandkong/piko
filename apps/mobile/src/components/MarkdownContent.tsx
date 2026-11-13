@@ -9,6 +9,7 @@ import Markdown, {
   type RenderRules,
 } from "react-native-markdown-renderer";
 import { radii, useTheme, type ThemeColors, type ThemeStateColors } from "../theme";
+import { useTranslation } from "../i18n";
 import { contentMarkdown, isContentLink, isMarkdownImageUrl, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
@@ -128,6 +129,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
   streaming?: boolean;
 }) {
   const { colors, stateColors } = useTheme();
+  const { t } = useTranslation();
   const { body, resolvedMarkdownStyles, ui } = useMemo(
     () => createMarkdownTheme(colors, stateColors), [colors, stateColors],
   );
@@ -234,7 +236,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, streamin
       <View style={ui.content}>
         <Markdown markdownit={contentMarkdown} renderer={renderMarkdown}>{source}</Markdown>
       </View>
-      {linkError && <Text accessibilityRole="alert" style={ui.error}>无法打开这个链接。</Text>}
+      {linkError && <Text accessibilityRole="alert" style={ui.error}>{t("common.linkFailed")}</Text>}
     </View>
   );
 });

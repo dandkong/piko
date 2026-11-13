@@ -21,6 +21,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { navigation, type AppTab } from "../../navigation";
+import { useTranslation } from "../../i18n";
 import { motion, radii, useTheme, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../../theme";
 import {
   EdgeFade,
@@ -69,6 +70,7 @@ export function AppShell({
   onFooterHeightChange: (height: number) => void;
 }) {
   const styles = useStyles();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   // Align every page with the top-left menu button; no width-dependent inset.
@@ -134,7 +136,7 @@ export function AppShell({
             {!!menuOpen && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="关闭导航"
+                accessibilityLabel={t("navigation.close")}
                 onPress={onCloseMenu}
                 style={styles.closePushedSurface}
                 testID="navigation-drawer-close-surface"
@@ -188,6 +190,7 @@ function AgentHeader({
   onHeightChange: (height: number) => void;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = useStyles();
   return (
     <View
@@ -198,7 +201,7 @@ function AgentHeader({
     >
       <IconButton
         accessibilityState={{ expanded: menuOpen }}
-        label="打开导航"
+        label={t("navigation.open")}
         onPress={onOpenMenu}
         style={styles.headerButton}
       >
@@ -233,6 +236,7 @@ function BottomTabs({
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
+  const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const index = Math.max(
     0,
@@ -273,8 +277,8 @@ function BottomTabs({
             <TactilePressable
               key={label}
               accessibilityRole="tab"
-              accessibilityLabel={title}
-              accessibilityHint={enabled ? hint : "即将开放"}
+              accessibilityLabel={t(title)}
+              accessibilityHint={enabled ? t(hint) : t("navigation.comingSoon")}
               accessibilityState={{ selected: active }}
               disabled={!enabled}
               onPress={() => onTabChange?.(label)}

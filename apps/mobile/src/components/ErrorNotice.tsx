@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { TextButton } from "./TextButton";
+import { useTranslation } from "../i18n";
 import { radii, useThemeStyles, type ThemeColors, type ThemeStateColors } from "../theme";
 
 /** Local feedback, not a global error owner. Retry always belongs to the failed operation. */
@@ -8,6 +9,7 @@ export function ErrorNotice({ message, title, actionLabel, onAction, onDismiss, 
   onDismiss?: () => void; busy?: boolean; tone?: "error" | "info"; testID?: string;
 }) {
   const styles = useThemeStyles(createStyles);
+  const { t } = useTranslation();
   return <View style={[styles.notice, tone === "info" && styles.info]} testID={testID}>
     {title ? <Text style={styles.title}>{title}</Text> : null}
     <Text accessibilityRole={tone === "error" ? "alert" : "text"} accessibilityLiveRegion="polite"
@@ -16,8 +18,8 @@ export function ErrorNotice({ message, title, actionLabel, onAction, onDismiss, 
       {onAction && actionLabel ? <TextButton label={actionLabel} onPress={onAction} disabled={busy} variant="plain">
         <Text style={styles.button}>{actionLabel}</Text>
       </TextButton> : null}
-      {onDismiss ? <TextButton label="关闭提示" onPress={onDismiss} disabled={busy} variant="plain">
-        <Text style={styles.muted}>关闭</Text>
+      {onDismiss ? <TextButton label={t("common.closeNotice")} onPress={onDismiss} disabled={busy} variant="plain">
+        <Text style={styles.muted}>{t("common.close")}</Text>
       </TextButton> : null}
     </View> : null}
   </View>;
