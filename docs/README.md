@@ -1,10 +1,18 @@
 # 文档索引
 
-按读者和用途整理 Piko 文档。项目整体状态以[路线图](../ROADMAP.md)为准；功能文档会进一步说明范围、运行行为和验证限制。
+按读者和用途整理 Piko 文档。用户指南中英文配对，英文文件无后缀，中文文件使用 `.zh-CN.md`；下方设计、功能和内部运行说明保留中文。项目整体状态以[路线图](../ROADMAP.md)为准。
+
+## 用户指南
+
+- 源码运行：[English](deployment.md) / [中文](deployment.zh-CN.md)
+- 基础配置：[English](configuration.md) / [中文](configuration.zh-CN.md)
+- 数据和备份：[English](storage.md) / [中文](storage.zh-CN.md)
+
+以下中文文档提供设计背景和更详细的内部说明，不与双语用户指南逐项镜像。
 
 ## 项目概览
 
-- [项目 README](../README.md)：项目介绍、快速开始和安全提示
+- 项目 README：[English](../README.md) / [中文](../README.zh-CN.md)，包含项目介绍、快速开始和安全提示
 - [路线图](../ROADMAP.md)：当前状态、限制和后续方向
 - [产品说明](PRODUCT.md)：产品范围、主要交互和体验约定
 - [架构说明](ARCHITECTURE.md)：客户端、服务端、运行时与持久化边界
