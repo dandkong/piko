@@ -38,7 +38,7 @@ function useStyles() {
 function createStyles(colors: ThemeColors, _stateColors: ThemeStateColors) {
   return StyleSheet.create({
   page: { gap: 12 },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "600", color: colors.text, flexShrink: 1 },
   spacer: { flex: 1 },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radii.card, padding: 16, gap: 10 },
