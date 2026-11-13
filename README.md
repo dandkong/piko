@@ -36,4 +36,4 @@ The detailed product, architecture and design documents in [docs](docs/README.md
 
 ## License
 
-No license has been selected for Piko itself. Public visibility alone does not grant permission to copy, modify or redistribute the project. Third-party artwork and adapted code notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Piko is licensed under the [MIT License](LICENSE). Third-party artwork and adapted code notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

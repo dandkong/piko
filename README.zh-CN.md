@@ -56,4 +56,4 @@ bun run build:web
 
 ## 许可证
 
-目前仓库尚未为 Piko 项目本身添加开源许可证；请不要仅凭代码公开就假定获得复制、修改或再发布的许可。界面与素材中源自 OpenMuse 的部分按其 MIT 许可标注，见[第三方说明](THIRD_PARTY_NOTICES.md)。
+Piko 使用 [MIT 许可证](LICENSE)。界面与素材中源自 OpenMuse 的部分按其 MIT 许可标注，见[第三方说明](THIRD_PARTY_NOTICES.md)。
