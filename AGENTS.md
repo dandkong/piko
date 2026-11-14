@@ -7,18 +7,18 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 当前处于开发期，架构可随需求随时调整，无需考虑旧版本兼容、历史数据迁移或为此保留过渡实现。
 
 - 启动、环境与检查命令见 [README](README.md)。
-- 产品体验与范围见 [产品约定](docs/PRODUCT.md)。
-- 所有可交互控件的状态、尺寸、颜色、动效与组件用法见 [交互与视觉规范](docs/INTERACTION.md)，新增和修改 UI 必须遵循。
-- 依赖方向、工作区与领域模型见 [架构约定](docs/ARCHITECTURE.md)。
+- 产品体验与范围见 [产品约定](docs/design/PRODUCT.md)。
+- 所有可交互控件的状态、尺寸、颜色、动效与组件用法见 [交互与视觉规范](docs/design/INTERACTION.md)，新增和修改 UI 必须遵循。
+- 依赖方向、工作区与领域模型见 [架构约定](docs/design/ARCHITECTURE.md)。
 - 当前状态与未来方向见 [路线图](ROADMAP.md)。
-- 产品功能说明放在 `docs/features/`；配置、运行环境和存储说明放在 `docs/operations/`。文档索引见 [docs/README.md](docs/README.md)，已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
+- 面向用户的双语指南放在 `docs/guides/`，产品和设计约定放在 `docs/design/`，功能说明放在 `docs/features/`，内部配置与运维参考放在 `docs/operations/`。文档索引见 [docs/README.md](docs/README.md)，已实现基线见 [工作区与主会话模型](docs/features/workspace-and-main-chat.md)。
 
 文档只描述当前能力、已确定方向和明确限制，不记录实现过程；修改行为时同步对应文档，不要将方案写成现有能力。本文件指导仓库开发，不是运行中 Piko 助手的工作区 `AGENTS.md`。
 
 ## 持续有效的约定
 
-- 一级模块为 Chat、Tasks、Posts、Artifacts；主会话是默认入口。旁聊、后台工作与持久化任务的交互和所有权边界分别见[产品说明](docs/PRODUCT.md)及对应功能文档。
-- 客户端遵循统一轻触规范，复用既有交互组件；不另建按钮样式或未经请求改动已确认的键盘、滚动和布局行为。细则见[交互与视觉规范](docs/INTERACTION.md)。
+- 一级模块为 Chat、Tasks、Posts、Artifacts；主会话是默认入口。旁聊、后台工作与持久化任务的交互和所有权边界分别见[产品说明](docs/design/PRODUCT.md)及对应功能文档。
+- 客户端遵循统一轻触规范，复用既有交互组件；不另建按钮样式或未经请求改动已确认的键盘、滚动和布局行为。细则见[交互与视觉规范](docs/design/INTERACTION.md)。
 - 助手工作区位于后端并独立于源码。内建资源随应用发布，用户指导、记忆和技能保存在工作区；初始化不得覆盖用户内容。资源加载边界见[工作区与主会话](docs/features/workspace-and-main-chat.md)。
 - Durable 原生 SQLite、Harness 和原始 entries 是会话与执行的事实来源。UI 从原始 entries 投影历史；不得建立第二套消息正文、Run 状态或持久流事件。
 
@@ -43,6 +43,6 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 使用 Bun，维护根目录和客户端各自的依赖与锁文件；依赖版本以 package.json / 锁文件为准。
 - 持久化和隐私删除改动遵循[SQLite 存储](docs/operations/storage.md)中的数据范围；不删除附件、工作区文件或备份，不回滚外部副作用，也不宣称全介质擦除。
 - Android / iOS 工程由 Expo 生成且已忽略，原生配置通过 `app.json` 或配置插件保存；不提交构建产物、本机路径、凭据和用户工作区内容。
-- 动效使用 Reanimated；交互组件和第三方素材按[交互规范](docs/INTERACTION.md)及[第三方说明](THIRD_PARTY_NOTICES.md)维护。
+- 动效使用 Reanimated；交互组件和第三方素材按[交互规范](docs/design/INTERACTION.md)及[第三方说明](THIRD_PARTY_NOTICES.md)维护。
 - 代码改动按影响运行 `bun run typecheck`；涉及打包再做对应平台导出。仓库不保留测试套件，关键状态、持久化、路径边界和恢复行为以真实运行或临时脚本人工验证，并在文档中说明验证状态。
 - 文档改动检查链接、命令和实现状态即可；原生键盘、网络和后台行为需要设备验证，未验证的范围明确说明。

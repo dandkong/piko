@@ -17,9 +17,9 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-The development command starts the API on `127.0.0.1:8787` and Expo Web on `localhost:8081`. On first launch Piko initializes its private configuration and workspace under `~/.piko`. Configure a model before sending messages; see [configuration](docs/configuration.md).
+The development command starts the API on `127.0.0.1:8787` and Expo Web on `localhost:8081`. On first launch Piko initializes its private configuration and workspace under `~/.piko`. Configure a model before sending messages; see [configuration](docs/guides/configuration.md).
 
-For a source-built Web bundle served by the Bun backend, see the [source deployment guide](docs/deployment.md). Telegram is optional; it shares the main conversation with the app.
+For a source-built Web bundle served by the Bun backend, see the [source deployment guide](docs/guides/deployment.md). Telegram is optional; it shares the main conversation with the app.
 
 ```bash
 bun run typecheck
@@ -28,13 +28,17 @@ bun run build:web
 
 ## Status and scope
 
+Current capabilities include persistent main and side chats, background delegation and scheduled tasks; an assistant workspace with files, memory and skills; optional Telegram; manual posts; and artifact browsing. Web chat supports attachment uploads.
+
+Not yet implemented: automatic post scheduling or notifications, task-artifact aggregation, native attachment selection, login and multi-user isolation, permissions or a sandbox, push notifications, and browser automation. See the [roadmap](ROADMAP.en.md) for details.
+
 Piko is under active development. There are no published Android or iOS releases, container deployment, or production support guarantees. Native clients and devices have not been comprehensively tested. The current automated test coverage is limited. Features, configuration, and storage may change.
 
-The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/storage.md).
+The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/guides/storage.md).
 
 The app interface supports English, Chinese, and following the device language. This preference is local to the device and does not translate user content, server messages, or Telegram.
 
-The detailed product, architecture and design documents in [docs](docs/README.md) are maintained in Chinese. See [ROADMAP.md](ROADMAP.md) for planned work.
+Browse the [documentation index](docs/README.en.md) for English and Chinese user guides. Detailed product, architecture and design references are maintained in Chinese.
 
 ## License
 

@@ -1,6 +1,6 @@
 # 工作区与主会话模型
 
-状态：会话和执行状态使用 Durable 原生 SQLite，不维护 Piko 自建消息/Run 表。存储维护见[SQLite 说明](../operations/storage.md)；架构见[架构说明](../ARCHITECTURE.md)，模型与运行时见[Agent 运行时说明](../operations/agent-runtime.md)。
+状态：会话和执行状态使用 Durable 原生 SQLite，不维护 Piko 自建消息/Run 表。存储维护见[SQLite 说明](../operations/storage.md)；架构见[架构说明](../design/ARCHITECTURE.md)，模型与运行时见[Agent 运行时说明](../operations/agent-runtime.md)。
 
 ## 范围与初始化
 
@@ -10,8 +10,7 @@
 
 | 存储 | 内容 |
 | --- | --- |
-| config/piko.json、.env | 应用配置与可选覆盖 |
-| config/piko.json、models.json | 统一的非敏感 Agent/通道/工具行为，以及独立模型目录；不再生成 settings.json |
+| config/piko.json、models.json、auth.json | 应用行为、模型目录及模型凭据；不读取 settings.json |
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
 | state/durable/ | session.sqlite（及运行期 WAL/SHM），唯一持久会话与执行状态来源 |
 | state/tmp/ | 工具溢出与可清理临时文件 |
@@ -24,7 +23,7 @@
 
 展示从原生原始 entries 正序投影用户/助手文字，保留 reset、上下文编辑和压缩前历史。气泡 ID 直接使用 Durable 原生 entry ID，时间来自原生消息。工具调用、思考、隐藏 entry 和压缩摘要不作为聊天消息显示；头像状态栏可短暂显示已知工具活动或回复状态，这些实时状态不进入历史。
 
-Web/RN 的首次快照与后续 SSE 快照只传最近 50 条可见已保存消息，另附当前流式消息与未应用输入。`GET /api/chat/history?before=<entry ID>` 向前读取至多 50 条，`nextBefore` 表示还可向前翻页；游标基于不可变 entry ID，新增消息不会移动旧页边界。每页与状态在原生 commit 线上读取；提交绑定从原生 submission 初始化并随 commit 更新，不新建正文或永久索引。
+Web/RN 的首次快照与后续 SSE 快照只传最近 20 条可见已保存消息，另附当前流式消息与未应用输入。`GET /api/chat/history?before=<entry ID>` 向前读取至多 20 条，`nextBefore` 表示还可向前翻页；游标基于不可变 entry ID，新增消息不会移动旧页边界。每页与状态在原生 commit 线上读取；提交绑定从原生 submission 初始化并随 commit 更新，不新建正文或永久索引。
 
 客户端向上滚到顶部附近自动加载更早消息，可手动点击加载或失败重试；加载时保留阅读位置。最近快照覆盖所含范围及临时输入，不清掉已经翻出的更早记录。失联期间若增长超过最近窗口、与客户端记录无交集，则重置到最新页，避免掩盖中间缺口；旧请求的分页响应不混入新窗口。客户端仅加载访问过的页，但目前不会自动淘汰已加载页；服务端运行时仍保留完整原生历史用于事件恢复，启动与运行时内存不因此变为常量。
 
@@ -40,7 +39,7 @@ GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。公开�
 
 POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
 
-RN 在前台持续观察两通道变化，原生快照加未确认的本地输入构成列表；过期 HTTP 刷新不会覆盖较新的观察结果。聊天提示区分发送、停止、上传、读取与执行失败/中断；恢复动作只处理所属操作，详见[错误反馈与恢复](error-feedback.md)。TG 按助手消息维护投递，网络发送不阻塞接纳或执行。接口见 [架构说明](../ARCHITECTURE.md)，通道边界见 [Telegram 通道](telegram-channel.md)。
+RN 在前台持续观察两通道变化，原生快照加未确认的本地输入构成列表；过期 HTTP 刷新不会覆盖较新的观察结果。聊天提示区分发送、停止、上传、读取与执行失败/中断；恢复动作只处理所属操作，详见[错误反馈与恢复](error-feedback.md)。TG 按助手消息维护投递，网络发送不阻塞接纳或执行。接口见 [架构说明](../design/ARCHITECTURE.md)，通道边界见 [Telegram 通道](telegram-channel.md)。
 
 ## 资源与工具
 
@@ -84,7 +83,7 @@ core.md、工作区 AGENTS.md 和 MEMORY.md 均完整读取，不设程序强制
 
 技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。`WorkspaceExecutionEnv` 除进程环境外，只将显式白名单的用户技能变量从 `PIKO_HOME/config/.env` 传给 Shell，不整体导出应用凭据。cwd 不是沙箱；目前没有操作审批 UI。durable 的 read 已能读取图片，附件存储与上传接口见 [附件与图片读取](attachments.md)，RN 选图仍是占位。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。`WorkspaceExecutionEnv` 除进程环境外，只将显式白名单的用户技能变量从 `PIKO_HOME/config/.env` 传给 Shell，不整体导出应用凭据。cwd 不是沙箱；目前没有操作审批 UI。durable 的 read 已能读取图片，附件存储与上传接口见 [附件与图片读取](attachments.md)；Web 已支持上传，原生文件选择尚未接入。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
 
 ## 中断与损坏恢复
 

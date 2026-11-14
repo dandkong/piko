@@ -19,6 +19,45 @@
 
 在 App 设置或 Telegram `/models` 中选择已配置模型。Piko 不从环境变量读取模型凭据。
 
+## 应用行为与模型角色
+
+`piko.json` 采用版本 `1` 和严格 schema，未知字段或错误类型会被拒绝。以下示例展示主要字段；模型 ID 和 Telegram 用户 ID 应替换为实际值，示例中 Telegram 保持关闭：
+
+```json
+{
+  "version": 1,
+  "agent": {
+    "profiles": {
+      "main": { "provider": "deepseek", "model": "deepseek-flash", "thinking": "off" }
+    }
+  },
+  "channels": { "telegram": { "enabled": false, "userId": "YOUR_NUMERIC_USER_ID" } },
+  "tools": {
+    "web_search": { "enabled": true, "providers": ["brave", "exa", "tavily", "deepseek"] },
+    "web_extract": { "enabled": true }
+  }
+}
+```
+
+`agent.profiles.main` 统一主聊和所有旁聊；可选的 `background` 默认动态跟随主模型，其思考强度可独立覆盖。切换模型不改变正在运行的工作；未配置 `main` 时不会自动选择模型。App 只编辑角色与思考强度，不管理供应商目录或凭据。
+
+搜索供应商列表须非空、无重复且使用已知名称。搜索按顺序尝试有凭据且支持该查询的供应商，仅上游失败时回退；空结果视为成功。关闭网页工具时，该工具从 Agent 工具集中移除。
+
+## 部署环境
+
+启动前在进程环境设置绝对路径 `PIKO_HOME`；默认值为 `~/.piko`。其他部署参数及工具/通道凭据可放在进程环境或私有 `PIKO_HOME/config/.env`：
+
+| 变量 | 用途 |
+| --- | --- |
+| `PIKO_WORKSPACE` | 可选绝对工作区路径，默认 `PIKO_HOME/workspace`。 |
+| `PIKO_HOST`、`PIKO_PORT` | 监听地址和端口，默认 `127.0.0.1`、`8787`。 |
+| `PIKO_TELEGRAM_BOT_TOKEN` | Telegram 启用时需要的 Bot 凭据。 |
+| `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_SEARCH_API_KEY` | 搜索凭据；Exa 和 DeepSeek 的 Key 也用于对应提取服务。 |
+| `FIRECRAWL_API_KEY` | 启用 Firecrawl 网页提取。 |
+| `PORTAINER_API_KEY`、`PORTAINER_URL`、`PORTAINER_VERIFY_TLS` | 可选的 Portainer 技能凭据、地址和 TLS 校验设置。 |
+
+进程环境优先于 `config/.env`，显式空值也会覆盖；环境变量不覆盖 JSON 行为或提供模型凭据。部署参数、目录、凭据及工具/通道行为修改后须重启；模型角色选择在安全接纳边界生效。
+
 ## 自定义模型供应商
 
 例如，在 `models.json` 添加兼容 OpenAI 的供应商和模型（地址与模型参数需替换成供应商的实际值）：
@@ -52,7 +91,7 @@
 
 网页搜索和提取默认启用；按需在私有 `config/.env` 或进程环境设置 `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_SEARCH_API_KEY` 和 `FIRECRAWL_API_KEY`。这些 Key 与模型凭据分开。搜索只使用已配置的供应商；没有任何 Key 时会报告未配置。工具开关和搜索供应商顺序在 `piko.json` 中设置。
 
-全部字段和供应商专属选项见[详细配置说明](operations/configuration.md)及[模型运行时说明](operations/agent-runtime.md)。
+全部字段和供应商专属选项见[详细配置说明](../operations/configuration.md)及[模型运行时说明](../operations/agent-runtime.md)。
 
 工具凭据及部署参数在后端启动时读取，修改后停止前台进程并重新启动。App 模型选择在下一次安全接纳边界生效。
 

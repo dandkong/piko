@@ -1,22 +1,25 @@
 # 文档索引
 
-按读者和用途整理 Piko 文档。用户指南中英文配对，英文文件无后缀，中文文件使用 `.zh-CN.md`；下方设计、功能和内部运行说明保留中文。项目整体状态以[路线图](../ROADMAP.md)为准。
+[English](README.en.md) | 中文
+
+按用途组织：`guides/` 是中英配对的用户指南，`design/` 是跨功能产品与设计约定，`features/` 是功能说明，`operations/` 是详细配置与运维参考；后三者保留中文。项目状态见[路线图](../ROADMAP.md)。
 
 ## 用户指南
 
-- 源码运行：[English](deployment.md) / [中文](deployment.zh-CN.md)
-- 基础配置：[English](configuration.md) / [中文](configuration.zh-CN.md)
-- 数据和备份：[English](storage.md) / [中文](storage.zh-CN.md)
+- 路线图：[English](../ROADMAP.en.md) / [中文](../ROADMAP.md)
+- 源码运行：[English](guides/deployment.md) / [中文](guides/deployment.zh-CN.md)
+- 基础配置：[English](guides/configuration.md) / [中文](guides/configuration.zh-CN.md)
+- 数据和备份：[English](guides/storage.md) / [中文](guides/storage.zh-CN.md)
 
-以下中文文档提供设计背景和更详细的内部说明，不与双语用户指南逐项镜像。
+配置指南面向首次使用；[配置参考](operations/configuration.md)覆盖更完整的字段与边界。以下设计、功能和内部运行说明不与用户指南逐项镜像。
 
 ## 项目概览
 
 - 项目 README：[English](../README.md) / [中文](../README.zh-CN.md)，包含项目介绍、快速开始和安全提示
 - [路线图](../ROADMAP.md)：当前状态、限制和后续方向
-- [产品说明](PRODUCT.md)：产品范围、主要交互和体验约定
-- [架构说明](ARCHITECTURE.md)：客户端、服务端、运行时与持久化边界
-- [交互规范](INTERACTION.md)：组件、状态、尺寸、颜色和动效
+- [产品说明](design/PRODUCT.md)：产品范围、主要交互和体验约定
+- [架构说明](design/ARCHITECTURE.md)：客户端、服务端、运行时与持久化边界
+- [交互规范](design/INTERACTION.md)：组件、状态、尺寸、颜色和动效
 
 ## 功能说明
 
@@ -30,10 +33,10 @@
 | [任务与执行记录](features/tasks.md) | 手动/定时任务、执行记录、归档与恢复 |
 | [Telegram 通道](features/telegram-channel.md) | 主会话共享、命令、附件与投递限制 |
 | [网页工具](features/web-tools.md) | 网页搜索、正文提取和凭据配置 |
-| [附件](features/attachments.md) | 服务端附件存储、Telegram 图片和当前限制 |
+| [附件](features/attachments.md) | 共享附件存储、Web 上传、Telegram 接入和当前限制 |
 | [个性化帖子](features/posts.md) | 用户上下文、手动生成、历史检索、原生存储与卡片预览 |
 | [产物浏览](features/artifacts.md) | 工作区文件夹、文本预览、下载与路径边界 |
-| [设置与模型](features/settings.md) | 主/后台模型选择与思考强度；其他配置由部署管理 |
+| [设置与模型](features/settings.md) | 设备本地语言与外观、主/后台模型选择与思考强度 |
 | [错误反馈与恢复](features/error-feedback.md) | 局部加载、操作失败、确认错误、超时与安全重试 |
 
 ## 配置与运维

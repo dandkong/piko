@@ -3,10 +3,10 @@
 ## OpenMuse UI and capybara artwork
 
 `apps/mobile/assets/capybara.png` is original artwork from the OpenMuse repository, included under its MIT license.
-The React Native header, mascot treatment, chat styling and bottom navigation in `apps/mobile/src/components/AppShell.tsx`, `apps/mobile/src/theme.ts` and `apps/mobile/src/features/chat/` are adapted from OpenMuse's `apps/mobile/App.tsx`, `apps/mobile/src/chat.tsx` and `apps/mobile/src/ui.tsx` under the same license.
+The React Native header, mascot treatment, chat styling and bottom navigation in `apps/mobile/src/features/shell/AppShell.tsx`, `apps/mobile/src/theme.ts` and `apps/mobile/src/features/chat/` are adapted from OpenMuse's `apps/mobile/App.tsx`, `apps/mobile/src/chat.tsx` and `apps/mobile/src/ui.tsx` under the same license.
 Source: `CopilotKit/openmuse`.
 
-The assistant Markdown rendering in `apps/mobile/src/features/chat/AssistantMessage.tsx` also draws on OpenMuse's `apps/mobile/src/assistant-response.tsx` and `apps/mobile/src/assistant-markdown.ts` under this license.
+The assistant Markdown rendering in `apps/mobile/src/components/MarkdownContent.tsx` also draws on OpenMuse's `apps/mobile/src/assistant-response.tsx` and `apps/mobile/src/assistant-markdown.ts` under this license.
 
 MIT License
 

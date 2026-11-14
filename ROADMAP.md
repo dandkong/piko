@@ -1,6 +1,8 @@
 # Piko 路线图
 
-Piko 仍在积极开发中。本文总结当前实现、已知限制和可能的后续方向；不代表稳定版承诺或带日期的交付计划。产品目标见[产品说明](docs/PRODUCT.md)，架构见[架构说明](docs/ARCHITECTURE.md)。
+[English](ROADMAP.en.md) | 中文
+
+Piko 仍在积极开发中。本文总结当前实现、已知限制和可能的后续方向；不代表稳定版承诺或带日期的交付计划。产品目标见[产品说明](docs/design/PRODUCT.md)，架构见[架构说明](docs/design/ARCHITECTURE.md)。
 
 ## 当前实现
 
