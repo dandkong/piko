@@ -11,7 +11,7 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { readConfigEnvironment } from "../config/files";
 
-/** Keep spill files and child-process temporary files in Piko's state/tmp directory. */
+/** Keep runtime spill files in Piko's state/tmp; child processes use the configured environment. */
 export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   constructor(
     cwd: string,
@@ -20,12 +20,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   ) {
     super({
       cwd,
-      shellEnv: {
-        ...readConfigEnvironment(home),
-        TMPDIR: temporaryDirectory,
-        TMP: temporaryDirectory,
-        TEMP: temporaryDirectory,
-      },
+      shellEnv: readConfigEnvironment(home),
     });
     mkdirSync(temporaryDirectory, { recursive: true });
   }

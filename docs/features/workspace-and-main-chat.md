@@ -13,9 +13,11 @@
 | config/piko.json、models.json、auth.json | 应用行为、模型目录及模型凭据；不读取 settings.json |
 | config/.env 与进程环境 | 部署参数与敏感凭据，不覆盖 JSON 行为 |
 | state/durable/ | session.sqlite（及运行期 WAL/SHM），唯一持久会话与执行状态来源 |
-| state/tmp/ | 工具溢出与可清理临时文件 |
+| state/tmp/ | 运行时工具溢出等临时文件；清理前需确认不再使用 |
 | 当前进程内存 | 流式消息、输出合并、Session 中待挂接的后台回传、TG 投递身份 |
 | workspace/ | AGENTS.md、MEMORY.md、memory/ 每日记忆、技能与工作成果 |
+
+Bash 及子进程的临时目录变量沿用合并后的 `.env` 和进程环境，未设置时由程序或系统决定；不强制指向 Piko 的 `state/tmp/`。运行时自身的工具输出溢出文件仍放在该目录。
 
 没有 Piko 身份表、执行表、输入哈希、正文副本或永久 SSE 日志。停止去重和中断提示使用原生文档，不重复保存任务状态。当前持久化只支持 Durable 原生 SQLite，不提供旧格式导入。
 
