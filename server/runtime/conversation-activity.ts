@@ -1,13 +1,18 @@
 import type { LiveState } from "@earendil-works/pi-durable";
 import type { ConversationActivity } from "../../shared/chat";
+import { summarizeToolArgs } from "./tool-activity";
 
 /** Native Durable state restores the active tool/text; absent evidence starts with thinking. */
-export function activityFromLive(live: LiveState, busy: boolean): ConversationActivity {
+export function activityFromLive(live: LiveState, busy: boolean, argumentsForTool: (callId: string) => unknown = () => undefined): ConversationActivity {
   if (!busy) return { kind: "idle" };
   const tool = [...(live.tools ?? []), ...(live.nestedTools ?? [])].findLast(
     slot => slot.status === "running",
   );
-  if (tool) return { kind: "tool", name: tool.name };
+  if (tool) {
+    const summary = tool.name === "subagent_spawn"
+      ? summarizeToolArgs(tool.name, "arguments" in tool ? tool.arguments : argumentsForTool(tool.callId)) : "";
+    return { kind: "tool", name: tool.name, ...(summary ? { summary } : {}) };
+  }
   if (live.generation?.retry || live.generation?.deferred) return { kind: "thinking" };
   const content = live.generation?.message?.content;
   const block = Array.isArray(content)
@@ -28,10 +33,11 @@ export class ConversationActivityProjection {
 
   constructor(
     private readonly emit: (activity: ConversationActivity) => void,
+    private readonly argumentsForTool: (callId: string) => unknown = () => undefined,
   ) {}
 
   snapshot(live: LiveState, busy: boolean): ConversationActivity {
-    const native = activityFromLive(live, busy);
+    const native = activityFromLive(live, busy, this.argumentsForTool);
     if (native.kind !== "thinking") return native;
     return busy && (this.current.kind === "tool" || this.current.kind === "replying")
       ? this.current : native;
@@ -43,7 +49,9 @@ export class ConversationActivityProjection {
 
   runStarted() { this.publish({ kind: "thinking" }); }
   runEnded() { this.publish({ kind: "idle" }); }
-  toolStarted(name: string) { this.publish({ kind: "tool", name }); }
+  toolStarted(name: string, summary?: string) {
+    this.publish({ kind: "tool", name, ...(name === "subagent_spawn" && summary ? { summary } : {}) });
+  }
   replying() { this.publish({ kind: "replying" }); }
 
   private publish(activity: ConversationActivity) {

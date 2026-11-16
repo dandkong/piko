@@ -17,6 +17,7 @@ export const JobControl = defineDoc<{ epoch: number; reported: number[]; lastAct
 /** Product provenance and reporting policy, never execution state or a second agent configuration. */
 export type BackgroundJobPolicy = {
   kind: string;
+  title?: string;
   continuable: boolean;
   report: { heading: string; deliver: "origin" | "all" };
 };

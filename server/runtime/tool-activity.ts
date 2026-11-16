@@ -27,7 +27,8 @@ function summarize(toolName: string, record: Record<string, unknown>): string {
   if (toolName === "web_extract") return pick(record, "url") ?? "";
   if (toolName.startsWith("subagent_")) {
     const id = pick(record, "id");
-    const task = pick(record, "task") ?? pick(record, "message");
+    const task = (toolName === "subagent_spawn" ? singleLine(pick(record, "title")) : undefined)
+      ?? pick(record, "task") ?? pick(record, "message");
     return [id && `#${id}`, task].filter(Boolean).join(" ");
   }
   if (toolName.startsWith("task_")) {

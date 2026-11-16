@@ -86,6 +86,7 @@ export class ConversationView {
   private runStartedAt?: number;
   private readonly liveActivity = new ConversationActivityProjection(
     activity => this.emit({ type: "activity", activity }),
+    callId => this.toolArguments(callId),
   );
   observationError?: Error;
 
@@ -446,7 +447,7 @@ export class ConversationView {
         conversationId: String(this.conversation.id),
         tool: slot.name,
       });
-      this.liveActivity.toolStarted(slot.name);
+      this.liveActivity.toolStarted(slot.name, current.summary);
       this.emit({
         type: "tool",
         activity: {

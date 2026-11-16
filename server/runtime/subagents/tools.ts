@@ -19,7 +19,7 @@ import {
 /** Main-assistant entry points; shared execution lives in subagent-runtime. */
 export function createSubagentTools(children: SubagentRuntime, background: () => Promise<BackgroundSelection | undefined>) {
   type Command =
-    | { action: "spawn"; task: string; id?: never }
+    | { action: "spawn"; title: string; task: string; id?: never }
     | { action: "send"; id: string; task: string }
     | { action: "status" | "stop"; id: string; task?: never }
     | { action: "list"; id?: never; task?: never };
@@ -65,13 +65,16 @@ export function createSubagentTools(children: SubagentRuntime, background: () =>
     }
     if (!args.task?.trim())
       return failure("Non-empty instructions are required.");
+    const title = args.action === "spawn" ? args.title.replace(/\s+/g, " ").trim() : undefined;
+    if (args.action === "spawn" && !title)
+      return failure("A non-empty title is required.");
     const agent = await api.agent(ctx);
     const selection = args.action === "spawn" ? await background() : undefined;
     const result = await api.commit(async (tx) => {
       const source = await children.source(tx, api.callId, parent);
       return args.action === "send"
         ? children.send(tx, id!, args.task!, source, parent)
-        : spawnDelegation(tx, children, agent, selection, parent, args.task!, source);
+        : spawnDelegation(tx, children, agent, selection, parent, title!, args.task!, source);
     }, ctx);
     return output({ id: String(result), status: "accepted" });
   };
@@ -100,9 +103,12 @@ export function createSubagentTools(children: SubagentRuntime, background: () =>
       replay: "unsafe",
       description:
         "Delegate independent work to a fresh background subagent. Returns an id immediately; results arrive privately.",
-      parameters: Type.Object({ task }),
+      parameters: Type.Object({
+        title: Type.String({ minLength: 1, maxLength: 100, description: "A short description of the task." }),
+        task,
+      }),
       execute: (args, api, ctx) =>
-        execute({ action: "spawn", task: args.task }, api, ctx),
+        execute({ action: "spawn", title: args.title, task: args.task }, api, ctx),
     }),
     defineTool({
       name: "subagent_send",

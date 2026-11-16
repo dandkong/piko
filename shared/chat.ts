@@ -10,7 +10,7 @@ export type HistoryPage = { messages: Message[]; nextBefore?: string };
 /** Prompt size of the last model call; a reference point, not a live token count. */
 export type ChatUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; contextWindow?: number; ratio?: number };
 /** A transient projection of native execution state, not another persisted run record. */
-export type ConversationActivity = { kind: "idle" | "thinking" | "replying" } | { kind: "tool"; name: string };
+export type ConversationActivity = { kind: "idle" | "thinking" | "replying" } | { kind: "tool"; name: string; summary?: string };
 export type MessageEvent = { type: "message"; message: Message; final: boolean; previousId?: string };
 /** A snapshot's history window is authoritative; older pages remain client-side. */
 export type ConversationResponse = { messages: Message[]; history?: { nextBefore?: string }; busy: boolean; activity: ConversationActivity; latest?: SubmissionReceipt; interruption?: string; previousIds?: Record<string, string>; usage?: ChatUsage; compactions?: ActiveCompaction[] };

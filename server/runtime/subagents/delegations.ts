@@ -9,16 +9,16 @@ import { backgroundJobs, jobFacts, recentActivity, type JobFacts } from "./queri
 import type { SubagentRuntime } from "./runtime";
 
 const resources: AgentResourcePolicy = { core: false, guidance: false, memory: [], skills: "workspace" };
-const policy = (child: ConversationId): BackgroundJobPolicy => ({
-  kind: "delegation", continuable: true,
+const policy = (child: ConversationId, title?: string): BackgroundJobPolicy => ({
+  kind: "delegation", ...(title ? { title } : {}), continuable: true,
   report: { heading: `Background subagent ${child}.\n\n`, deliver: "origin" },
 });
 
 export async function spawnDelegation(tx: Tx, children: SubagentRuntime, agent: Agent,
-  selection: BackgroundSelection | undefined, owner: ConversationId, message: string, source: InputSource) {
+  selection: BackgroundSelection | undefined, owner: ConversationId, title: string, message: string, source: InputSource) {
   const model = backgroundAgent(selection, agent);
   return children.spawn(tx, {
-    owner, source, message, policy,
+    owner, source, message, policy: child => policy(child, title),
     agent: {
       agent: { ...model, model: model.model ?? null, cwd: agent.cwd!, ...childScope(agent), instructions: BACKGROUND_AGENT_INSTRUCTIONS },
       resources,
@@ -60,15 +60,19 @@ export async function listDelegations(tx: Tx, owner: ConversationId) {
   const jobs = await backgroundJobs(tx, owner);
   const values = [];
   for (const child of jobs.children) {
-    if ((await tx.doc(BackgroundJob, child)).policy?.kind !== "delegation") continue;
+    const policy = (await tx.doc(BackgroundJob, child)).policy;
+    if (policy?.kind !== "delegation") continue;
     const facts = await jobFacts(tx, jobs, child);
-    values.push({ id: String(child), task: facts.task, status: delegationState(facts).status });
+    values.push({ id: String(child), title: singleLine(policy.title, DETAIL_TEXT_LIMIT) ?? facts.task, task: facts.task, status: delegationState(facts).status });
   }
   return values;
 }
 export async function delegationStatus(tx: Tx, owner: ConversationId, value: string) {
   const jobs = await backgroundJobs(tx, owner);
   const child = jobs.children.find(id => String(id) === value);
-  if (child === undefined || (await tx.doc(BackgroundJob, child)).policy?.kind !== "delegation") return undefined;
-  return { id: String(child), ...delegationState(await jobFacts(tx, jobs, child)), recentSteps: await recentActivity(tx, child, 5) };
+  if (child === undefined) return undefined;
+  const policy = (await tx.doc(BackgroundJob, child)).policy;
+  if (policy?.kind !== "delegation") return undefined;
+  const facts = await jobFacts(tx, jobs, child);
+  return { id: String(child), title: singleLine(policy.title, DETAIL_TEXT_LIMIT) ?? facts.task, ...delegationState(facts), recentSteps: await recentActivity(tx, child, 5) };
 }

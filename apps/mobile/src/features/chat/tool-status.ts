@@ -17,7 +17,7 @@ const toolKeys: Record<string, MessageKey> = {
 /** Presentation only: every platform receives the same runtime-derived activity. */
 export function assistantLiveStatus(activity: ConversationActivity, language: Language = "zh-CN"): string {
   switch (activity.kind) {
-    case "tool": return `${toolIcon(activity.name)} ${toolActivityLabel(activity.name, language)}`;
+    case "tool": return `${toolIcon(activity.name)} ${toolActivityLabel(activity.name, language)}${activity.name === "subagent_spawn" && activity.summary ? `: ${activity.summary}` : ""}`;
     case "replying": return translate(language, "activity.replying");
     case "thinking": return translate(language, "activity.thinking");
     case "idle": return "";

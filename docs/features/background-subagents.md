@@ -24,8 +24,8 @@
 
 | 工具 | 必填参数与行为 |
 | --- | --- |
-| `subagent_list` | 无参数；返回普通委派的 id、简短初始任务、当前状态，不展开历史或步骤，排除保存任务的执行 |
-| `subagent_spawn` | `task`；创建新子会话，立即返回原生会话 ID，不等待结果 |
+| `subagent_list` | 无参数；返回普通委派的 id、标题、简短初始任务和当前状态，不展开历史或步骤，排除保存任务的执行 |
+| `subagent_spawn` | 必填 `title`（简短任务描述）和 `task`（完整指令）；创建新子会话，立即返回原生会话 ID，不等待结果 |
 | `subagent_send` | `id`、`message`；继续已有子任务：运行中以 steer 插入当前工作，空闲时启动下一轮 |
 | `subagent_status` | `id`；返回该任务执行状态：`working` / `interrupted` / `stopped` / `failed`（附原因）/ `finished`，并附最近 5 步（工具调用摘要 + 助手输出，单步截断） |
 | `subagent_stop` | `id`；取消指定的子任务，不停止主 Agent |
@@ -34,15 +34,15 @@
 
 工具成功返回统一使用 JSON 文本：
 
-- list：`{"subagents":[{"id":"23","task":"检查配置","status":"working"}]}`，空列表为 `{"subagents":[]}`。
+- list：`{"subagents":[{"id":"23","title":"检查配置","task":"检查配置并报告结果","status":"working"}]}`，空列表为 `{"subagents":[]}`。旧委派没有标题时回退到初始任务摘要。
 - spawn/send：`{"id":"23","status":"accepted"}`，只表示已接纳，不表示工作完成。
-- status：`{"id":"23","status":"finished","recentSteps":["已检查配置"]}`；失败可附 `detail`，最近步骤最多五条。
+- status：`{"id":"23","title":"检查配置","status":"finished","recentSteps":["已检查配置"]}`；失败可附 `detail`，最近步骤最多五条。
 - stop：`{"id":"23","status":"stopped"}`。
 - 工具主动拒绝的未知 id、越权或空指令：`{"status":"error","error":"…"}` 并标记 `isError`；schema 校验与原生执行异常仍由 SDK 处理。
 
 普通用户输入仍进入主会话，维持 steer all，不广播给所有子 Agent。报告以内部 input、whenBusy:followUp 回传：主 Agent 空闲时唤起处理，忙碌时等待当前回答结束。报告不是新的用户指令，不强制生成完成通知。
 
-RN/Web 和 TG 不显示子 Agent 消息、工具过程、状态卡片或内部报告气泡。可信来源由运行时原生文档记录，历史和 queued 输入都按该来源过滤；外部 requestId 禁用 piko: 命名空间，正文写成“内部报告”仍是普通用户消息。
+RN/Web 在主 Agent 调用委派工具期间显示标题，TG 的工具活动摘要也显示标题；这只是调用时的短暂状态，不是后台工作列表。RN/Web 和 TG 不显示子 Agent 消息、工具过程、状态卡片或内部报告气泡。可信来源由运行时原生文档记录，历史和 queued 输入都按该来源过滤；外部 requestId 禁用 piko: 命名空间，正文写成“内部报告”仍是普通用户消息。
 
 子会话的原文、工具过程和状态不直接投递。回传到 root 后，主 Agent 是否回复仍由它决定；一旦主会话产生助手消息，该消息投递到 Telegram，不再按委派输入的来源筛选。主 Agent 保持安静时没有助手回复通知。保存任务的执行结果同样经主会话整理，见[任务与执行记录](tasks.md#回传与恢复)。Rich Markdown 和按助手消息独立投递保持原样。平台状态在内存，不保证重启补发或恰好一次送达，原生历史仍可查看。
 
@@ -60,7 +60,7 @@ Anchor 是立即完成的持久化所有权节点，不是常驻线程；子会�
 
 Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对应同一个原生 answer entry，按 answer 身份只回传一次；回传决定与下一阶段 checkpoint 在同一 native commit 保存。checkpoint 保存 answer entry 引用或原生失败原因，报告正文从原生回答读取。
 
-原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID；piko.agent-resources 保存资源选择，piko.background-job 保存用途、继续规则和回报来源标题/投递提示。执行状态仍以 Durable 为准，不保存状态副本。报告先经过父会话的 ConversationControl 接纳线，再进入后台取消接纳线，并在两者内部复核 epoch；同一顺序用于归档，避免反向持锁。归档预留覆盖停止前台、撤回报告、停止子工作和写入元数据全过程，归档后的报告不能再次唤起会话。原生提交去重与 checkpoint 保持不变。
+原生文档只补充产品所需元数据：piko.input-origin 保存通道来源、内部报告标记及关联子会话；piko.subagent-control 保存显式取消的 epoch 和已报告 answer ID；piko.agent-resources 保存资源选择，piko.background-job 保存用途、委派标题、继续规则和回报来源标题/投递提示。执行状态仍以 Durable 为准，不保存状态副本。报告先经过父会话的 ConversationControl 接纳线，再进入后台取消接纳线，并在两者内部复核 epoch；同一顺序用于归档，避免反向持锁。归档预留覆盖停止前台、撤回报告、停止子工作和写入元数据全过程，归档后的报告不能再次唤起会话。原生提交去重与 checkpoint 保持不变。
 
 ## 停止、失败与重启
 
@@ -78,6 +78,6 @@ Reporter 用稳定 requestId 提交子输入和主报告。多个 steer 可对�
 
 ## 验证状态与限制
 
-五个工具在隔离工作区中覆盖了列表、状态查询、接纳、继续、停止、权限隔离和持久化恢复。验证不调用真实模型供应商或 Telegram Bot。
+五个工具在隔离工作区中覆盖了列表、状态查询、接纳、继续、停止、权限隔离和持久化恢复。标题必填、空白校验、元数据写入、旧任务回退以及活动展示已用隔离模拟检查；尚未通过真实模型验证生成标题。验证不调用真实模型供应商或 Telegram Bot。
 
 任务执行与普通后台委派共用运行时，见[任务与执行记录](tasks.md)。普通后台委派没有独立管理界面或自动续跑能力；并发/成本限额与可靠平台 outbox 尚未实现。旁聊委派受发起旁聊的 owner 范围约束，报告只回原旁聊。
