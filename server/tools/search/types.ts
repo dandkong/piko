@@ -11,20 +11,12 @@ export const SEARCH_FRESHNESS = ["day", "week", "month", "year"] as const;
 export type SearchFreshness = (typeof SEARCH_FRESHNESS)[number];
 const FRESHNESS_DAYS: Record<SearchFreshness, number> = { day: 1, week: 7, month: 30, year: 365 };
 
-/** Relative recency and domain filters; providers without native support are skipped by the tool. */
+/** Relative recency and domain filters; providers omit filters they do not support. */
 export type SearchFilters = {
   freshness?: SearchFreshness;
   includeDomains?: readonly string[];
   excludeDomains?: readonly string[];
 };
-
-export function hasFreshnessFilter(filters: SearchFilters): boolean {
-  return !!filters.freshness;
-}
-
-export function hasDomainFilters(filters: SearchFilters): boolean {
-  return !!(filters.includeDomains?.length || filters.excludeDomains?.length);
-}
 
 export function freshnessStartIso(freshness: SearchFreshness, now = Date.now()): string {
   return new Date(now - FRESHNESS_DAYS[freshness] * 86_400_000).toISOString();
@@ -41,7 +33,7 @@ export type SearchResult = {
 /** Small seam for adding/removing a backend; no plugin lifecycle or provider config object. */
 export type SearchProvider = {
   id: SearchProviderId;
-  supports(query: string, filters: SearchFilters): boolean;
+  supports(query: string): boolean;
   search(query: string, count: number, filters: SearchFilters, signal?: AbortSignal): Promise<SearchResult[]>;
 };
 

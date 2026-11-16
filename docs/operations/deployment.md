@@ -38,7 +38,7 @@ PIKO_PORT=8787
 PIKO_TELEGRAM_BOT_TOKEN="填写轮换后、未暴露的 token"
 EXA_API_KEY="可选：Exa Search Key"
 TAVILY_API_KEY="可选：Tavily Search Key"
-DEEPSEEK_SEARCH_API_KEY="可选：DeepSeek Search Key"
+DEEPSEEK_API_KEY="可选：DeepSeek API Key"
 BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 ```
 

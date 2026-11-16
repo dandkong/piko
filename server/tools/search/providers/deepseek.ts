@@ -1,13 +1,12 @@
 import { requestJson, record, text, httpUrl } from "../request";
-import { hasDomainFilters, hasFreshnessFilter, type ProviderOptions, type SearchProvider, type SearchResult } from "../types";
+import type { ProviderOptions, SearchProvider, SearchResult } from "../types";
 
 const SEARCH_URL = "https://api.deepseek.com/v1/tools/search";
 export function createDeepSeekProvider(options: ProviderOptions): SearchProvider {
   return {
     id: "deepseek",
-    // DeepSeek Search has no freshness or domain parameters and limits queries to 128 Unicode
-    // characters; skip it rather than truncate the user's intent or ignore a filter.
-    supports: (query, filters) => [...query].length <= 128 && !hasFreshnessFilter(filters) && !hasDomainFilters(filters),
+    // Unsupported filters are omitted; never truncate a query to fit the 128-character limit.
+    supports: query => [...query].length <= 128,
     async search(query, count, _filters, signal): Promise<SearchResult[]> {
       const data = await requestJson("deepseek", SEARCH_URL, {
         method: "POST",

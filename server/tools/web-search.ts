@@ -35,11 +35,9 @@ export async function searchWeb(
     throw new WebRequestError("Web search is not configured on this backend. Ask the administrator to configure search credentials.");
   const filters = normalizeFilters(args);
 
-  // Skip backends that cannot honor the filters instead of silently returning content outside them.
-  const capable = options.providers.filter(provider => provider.supports(query, filters));
-  if (!capable.length) throw new WebRequestError(options.providers.some(provider => provider.supports(query, {}))
-    ? "Configured search backends do not support the requested freshness or domain filters."
-    : "The search query exceeds the limits of configured search backends.");
+  // Providers omit unsupported filters; an overlong query is never silently truncated.
+  const capable = options.providers.filter(provider => provider.supports(query));
+  if (!capable.length) throw new WebRequestError("The search query exceeds the limits of configured search backends.");
 
   for (const provider of capable) {
     signal?.throwIfAborted();

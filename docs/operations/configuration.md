@@ -60,7 +60,7 @@ PIKO_PORT=8787
 # PIKO_WORKSPACE=/absolute/assistant-workspace
 EXA_API_KEY="填写自己的 Exa API Key"
 TAVILY_API_KEY="填写自己的 Tavily API Key"
-DEEPSEEK_SEARCH_API_KEY="填写自己的 DeepSeek Search API Key"
+DEEPSEEK_API_KEY="填写自己的 DeepSeek API Key"
 BRAVE_SEARCH_API_KEY="填写自己的 Brave Search API Key"
 FIRECRAWL_API_KEY="填写自己的 Firecrawl API Key"
 PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
@@ -73,7 +73,7 @@ PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
 | PIKO_HOST | 后端监听地址，默认 127.0.0.1 |
 | PIKO_PORT | 后端监听端口，默认 8787；整数 1–65535 |
 | PIKO_TELEGRAM_BOT_TOKEN | Telegram 敏感凭据；仅 JSON enabled=true 时需要 |
-| EXA_API_KEY / TAVILY_API_KEY / DEEPSEEK_SEARCH_API_KEY / BRAVE_SEARCH_API_KEY | 各搜索后端凭据；均缺失不阻止启动，`web_search` 返回未配置；Exa 与 DeepSeek 凭据也用于对应提取 provider；DeepSeek Search Key 独立于模型供应商 auth.json/models.json |
+| EXA_API_KEY / TAVILY_API_KEY / DEEPSEEK_API_KEY / BRAVE_SEARCH_API_KEY | 各搜索后端凭据；均缺失不阻止启动，`web_search` 返回未配置；Exa 与 DeepSeek 凭据也用于对应提取 provider；DeepSeek 网络工具凭据独立于模型供应商 auth.json/models.json |
 | FIRECRAWL_API_KEY | Firecrawl 网页提取凭据；Key 存在时 `firecrawl` 才加入 `web_extract` 的动态参数选项 |
 | headersEnv 引用的变量 | HTTP header 值，仅在后端解析，不进入工具 schema |
 

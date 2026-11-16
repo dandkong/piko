@@ -32,7 +32,7 @@ bun run dev
 ```dotenv
 EXA_API_KEY="可选：Exa Search Key"
 TAVILY_API_KEY="可选：Tavily Search Key"
-DEEPSEEK_SEARCH_API_KEY="可选：DeepSeek Search Key"
+DEEPSEEK_API_KEY="可选：DeepSeek API Key"
 BRAVE_SEARCH_API_KEY="可选：Brave Search Key"
 ```
 

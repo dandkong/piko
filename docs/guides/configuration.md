@@ -52,7 +52,7 @@ Set `PIKO_HOME` in the process environment before startup; it is the absolute da
 | `PIKO_WORKSPACE` | Optional absolute workspace path; defaults to `PIKO_HOME/workspace`. |
 | `PIKO_HOST`, `PIKO_PORT` | Bind address and port; defaults are `127.0.0.1` and `8787`. |
 | `PIKO_TELEGRAM_BOT_TOKEN` | Bot credential, required when Telegram is enabled. |
-| `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `DEEPSEEK_SEARCH_API_KEY` | Search credentials; Exa and DeepSeek keys also enable their respective extraction providers. |
+| `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `DEEPSEEK_API_KEY` | Search credentials; Exa and DeepSeek keys also enable their respective extraction providers. |
 | `FIRECRAWL_API_KEY` | Enables the Firecrawl extraction provider. |
 
 Process environment values override `config/.env`, including explicit empty values. Shell tools receive the merged environment, including credentials; do not print values in chat or logs, or pass them to untrusted programs. Environment variables do not override JSON behavior or supply model credentials. Changes to deployment settings, catalog, credentials and tool/channel behavior require restarting the backend; model role choices apply at a safe admission boundary.
@@ -88,7 +88,7 @@ Create a bot with BotFather and obtain your numeric Telegram user ID. In `piko.j
 
 ## Optional web tools
 
-Web search and extraction are enabled by default. Add provider keys to private `config/.env` or the process environment as needed: `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `DEEPSEEK_SEARCH_API_KEY`, and `FIRECRAWL_API_KEY`. These keys are separate from model credentials. Search only uses configured providers; without any keys it reports that search is not configured. Configure tool behavior and search provider order in `piko.json`.
+Web search and extraction are enabled by default. Add provider keys to private `config/.env` or the process environment as needed: `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `DEEPSEEK_API_KEY`, and `FIRECRAWL_API_KEY`. These keys are separate from model credentials. Search only uses configured providers; without any keys it reports that search is not configured. Configure tool behavior and search provider order in `piko.json`.
 
 For provider-specific request options, `headersEnv`, keyless providers, OAuth entries and the full schema, see the detailed [configuration reference](../operations/configuration.md) and [model runtime reference](../operations/agent-runtime.md) (Chinese). `headersEnv` contains environment variable names, never header values; do not place credentials in URLs or frontend builds.
 

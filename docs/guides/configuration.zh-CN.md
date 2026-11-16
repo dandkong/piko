@@ -52,7 +52,7 @@
 | `PIKO_WORKSPACE` | 可选绝对工作区路径，默认 `PIKO_HOME/workspace`。 |
 | `PIKO_HOST`、`PIKO_PORT` | 监听地址和端口，默认 `127.0.0.1`、`8787`。 |
 | `PIKO_TELEGRAM_BOT_TOKEN` | Telegram 启用时需要的 Bot 凭据。 |
-| `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_SEARCH_API_KEY` | 搜索凭据；Exa 和 DeepSeek 的 Key 也用于对应提取服务。 |
+| `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_API_KEY` | 搜索凭据；Exa 和 DeepSeek 的 Key 也用于对应提取服务。 |
 | `FIRECRAWL_API_KEY` | 启用 Firecrawl 网页提取。 |
 
 进程环境优先于 `config/.env`，显式空值也会覆盖；Shell 工具可读取合并后的全部环境，包括敏感凭据，不要将值输出到聊天或日志，也不要传给不可信程序。环境变量不覆盖 JSON 行为或提供模型凭据。部署参数、目录、凭据及工具/通道行为修改后须重启；模型角色选择在安全接纳边界生效。
@@ -88,7 +88,7 @@
 
 ## 可选网页工具
 
-网页搜索和提取默认启用；按需在私有 `config/.env` 或进程环境设置 `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_SEARCH_API_KEY` 和 `FIRECRAWL_API_KEY`。这些 Key 与模型凭据分开。搜索只使用已配置的供应商；没有任何 Key 时会报告未配置。工具开关和搜索供应商顺序在 `piko.json` 中设置。
+网页搜索和提取默认启用；按需在私有 `config/.env` 或进程环境设置 `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_API_KEY` 和 `FIRECRAWL_API_KEY`。这些 Key 与模型凭据分开。搜索只使用已配置的供应商；没有任何 Key 时会报告未配置。工具开关和搜索供应商顺序在 `piko.json` 中设置。
 
 全部字段和供应商专属选项见[详细配置说明](../operations/configuration.md)及[模型运行时说明](../operations/agent-runtime.md)。
 
