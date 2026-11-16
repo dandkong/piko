@@ -179,6 +179,7 @@ class PikoRuntime {
       this.main.attachMemory(this.memory);
       await this.tasks.recoverDeletions();
       harness.resume();
+      this.posts.start();
       this.tasks.start();
       await this.memory.start();
       this.retention = new StorageRetentionService(harness, opened.maintenance);

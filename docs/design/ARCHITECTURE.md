@@ -161,4 +161,4 @@ TG 与 RN 共用 root 和 ConversationStore；App 聚合主会话历史，TG 观
 
 ## 未实现能力与后续方向
 
-Tasks、后台工作、旁聊、Posts 手动发布与卡片预览，以及 Artifacts 浏览/下载/确认删除已接入，详情见[任务说明](../features/tasks.md)、[后台工作说明](../features/background-subagents.md)、[旁聊说明](../features/side-chats.md)、[个性化帖子](../features/posts.md)和[产物浏览](../features/artifacts.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、Posts 自动调度、任务产物聚合及创建/重命名/移动尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。
+Tasks、后台工作、旁聊、Posts 每日自动/手动生成与卡片预览，以及 Artifacts 浏览/下载/确认删除已接入，详情见[任务说明](../features/tasks.md)、[后台工作说明](../features/background-subagents.md)、[旁聊说明](../features/side-chats.md)、[个性化帖子](../features/posts.md)和[产物浏览](../features/artifacts.md)。内置登录认证、工具权限/沙箱、通知、可靠投递 outbox、任务产物聚合及创建/重命名/移动尚未实现。后续结构化状态优先复用 Durable 原生 task、conversation、doc 与 submission；产品是否接入及其顺序以实际需求和路线图为准。

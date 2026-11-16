@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Cron } from "croner";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { ROOT_CONVERSATION_ID, type Harness, type TaskId } from "@earendil-works/pi-durable";
 import type { GeneratePost, PostGeneration } from "../../../shared/posts";
 import { PostError, postId } from "../../domain/posts";
-import { logInfo } from "../../logging";
+import { logInfo, logWarn } from "../../logging";
 import { POSTS_GENERATION_KIND, PostRequests } from "./documents";
 import type { PostGenerationTask, PostGenerationResult } from "./generation";
 import { postPage, readPost } from "./queries";
@@ -11,9 +12,29 @@ import type { StorageMaintenance } from "../storage-maintenance";
 
 export class PostsService {
   private deletionLine: Promise<void> = Promise.resolve();
+  private schedule?: Cron;
+  private scheduledStart?: Promise<void>;
   private closing = false;
   constructor(private readonly harness: Harness, private readonly task: PostGenerationTask, private readonly ensureModel: () => Promise<unknown>,
     private readonly maintenance: StorageMaintenance, private readonly refreshObservation: () => Promise<void>) {}
+
+  /** One automatic attempt at 07:00 server-local time; missed runs are not replayed. */
+  start() {
+    if (this.schedule || this.closing) return;
+    this.schedule = new Cron("0 7 * * *", { unref: true }, () => {
+      if (this.closing || this.scheduledStart) return;
+      const pending = this.generate({ requestId: randomUUID() }).then(result => {
+        logInfo("posts.schedule.accepted", { taskId: Number(result.id) });
+      }).catch(error => {
+        if (error instanceof PostError && error.code === "post_generation_busy")
+          logInfo("posts.schedule.busy");
+        else if (!this.closing) logWarn("posts.schedule.failed");
+      }).finally(() => { this.scheduledStart = undefined; });
+      this.scheduledStart = pending;
+    });
+    logInfo("posts.schedule.started", { nextAt: this.schedule.nextRun()?.getTime() });
+  }
+
   remove(id: string): Promise<void> {
     const nativeId = postId(id);
     if (this.closing) return Promise.reject(new Error("Piko is shutting down."));
@@ -25,7 +46,13 @@ export class PostsService {
     this.deletionLine = deletion;
     return deletion;
   }
-  async close() { this.closing = true; await this.deletionLine.catch(() => {}); }
+  async close() {
+    this.closing = true;
+    this.schedule?.stop();
+    this.schedule = undefined;
+    await this.scheduledStart;
+    await this.deletionLine.catch(() => {});
+  }
   list(before?: string, limit = 20) { return this.harness.commit(tx => postPage(tx, before, limit), ctx); }
   read(id: string) { return this.harness.commit(tx => readPost(tx, id), ctx); }
 

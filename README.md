@@ -28,9 +28,9 @@ bun run build:web
 
 ## Status and scope
 
-Current capabilities include persistent main and side chats, background delegation and scheduled tasks; an assistant workspace with files, memory and skills; optional Telegram; manual posts; and artifact browsing. Web chat supports attachment uploads.
+Current capabilities include persistent main and side chats, background delegation and scheduled tasks; an assistant workspace with files, memory and skills; optional Telegram; scheduled or manual posts; and artifact browsing. Web chat supports attachment uploads.
 
-Not yet implemented: automatic post scheduling or notifications, task-artifact aggregation, native attachment selection, login and multi-user isolation, permissions or a sandbox, push notifications, and browser automation. See the [roadmap](ROADMAP.en.md) for details.
+Not yet implemented: post notifications, task-artifact aggregation, native attachment selection, login and multi-user isolation, permissions or a sandbox, push notifications, and browser automation. See the [roadmap](ROADMAP.en.md) for details.
 
 Piko is under active development. There are no published Android or iOS releases, container deployment, or production support guarantees. Native clients and devices have not been comprehensively tested. The current automated test coverage is limited. Features, configuration, and storage may change.
 

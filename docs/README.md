@@ -34,7 +34,7 @@
 | [Telegram 通道](features/telegram-channel.md) | 主会话共享、命令、附件与投递限制 |
 | [网页工具](features/web-tools.md) | 网页搜索、正文提取和凭据配置 |
 | [附件](features/attachments.md) | 共享附件存储、Web 上传、Telegram 接入和当前限制 |
-| [个性化帖子](features/posts.md) | 用户上下文、手动生成、历史检索、原生存储与卡片预览 |
+| [个性化帖子](features/posts.md) | 用户上下文、每日自动或手动生成、历史检索与卡片预览 |
 | [产物浏览](features/artifacts.md) | 工作区文件夹、文本预览、下载与路径边界 |
 | [设置与模型](features/settings.md) | 设备本地语言与外观、主/后台模型选择与思考强度 |
 | [错误反馈与恢复](features/error-feedback.md) | 局部加载、操作失败、确认错误、超时与安全重试 |

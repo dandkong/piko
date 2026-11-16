@@ -15,7 +15,7 @@ Piko is under active development. This document summarizes implemented capabilit
 | Workspace | File and shell tools, skills, and daily and long-term memory maintenance; the workspace is on the backend machine. |
 | Web tools | Built-in web search and extraction; the deployer configures provider credentials on the backend. |
 | Telegram | Optional single-user private chat sharing the main conversation with the app; not a multi-user bot. |
-| Posts | Manual generation, title/body/reason, native storage and history search, card list, shared reader and confirmed deletion with associated records; no automatic scheduling or notifications. |
+| Posts | Automatic daily generation attempt at 07:00 server-local time or manual generation, title/body/reason, native storage and history search, card list, shared reader and confirmed deletion; no notifications. |
 | Artifacts | Browse `workspace/artifacts/`, preview Markdown and common text, download from the list menu and delete after confirmation. Task execution files and binary previews are not integrated. |
 | Settings | Device-local language (follow device, Chinese or English) and appearance; main/background model and thinking-level selection. Providers, model catalog, credentials, tools, channels and environment variables are deployment-managed. The model-selection API is not authenticated. |
 | Client and server | Expo Web/iOS/Android client; a single Bun process serves Web, API/SSE and optional Telegram. A general deployment solution has not been established. |
@@ -24,7 +24,7 @@ The [feature documentation](docs/README.en.md#design-and-implementation-referenc
 
 ## Current limitations
 
-- Posts are manually triggered and have no automatic scheduling, notifications or editing. Artifacts only browses global `workspace/artifacts/`; it does not aggregate `workspace/tasks/<id>/` results or support creating, renaming, moving, or built-in PDF/Office previews.
+- The daily Posts schedule is not configurable and there are no notifications or editing. Artifacts only browses global `workspace/artifacts/`; it does not aggregate `workspace/tasks/<id>/` results or support creating, renaming, moving, or built-in PDF/Office previews.
 - Web chat supports selecting and uploading attachments. Native iOS/Android file selection and in-chat image thumbnails are not implemented.
 - There is no built-in login, multi-user isolation, fine-grained permissions, operation approval or file sandbox. Settings writes are unauthenticated too; do not expose the API to untrusted networks.
 - Telegram delivery has no reliable outbox. A saved assistant reply may not be redelivered after a restart or network failure.
@@ -37,7 +37,7 @@ Priorities depend on real-world use; these are directions, not commitments:
 
 1. Clarify security boundaries: authentication, tool permissions, workspace access and confirmation for high-risk actions.
 2. Improve existing capabilities: mobile attachments, memory/skill management, and task-result and artifact aggregation.
-3. Evaluate topic selection, context and reading value using real posts before deciding on automatic generation, feedback and separate notifications.
+3. Evaluate topic selection, context and reading value using daily posts before deciding whether to adjust generation.
 4. Evaluate browser automation, external service connectors and multi-user deployment; do not automate external operations before permissions and revocation are defined.
 
 The top-level navigation remains Chat, Tasks, Posts and Artifacts. New pages should reflect implemented data and behavior rather than mock content.
