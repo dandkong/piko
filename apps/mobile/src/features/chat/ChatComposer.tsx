@@ -24,6 +24,7 @@ type Props = {
   attachments: PendingAttachment[];
   attaching: boolean;
   onAttach: () => void;
+  onPasteFiles: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onSend: (text?: string) => void;
   onStop: () => void;
@@ -38,6 +39,7 @@ export function ChatComposer({
   attachments,
   attaching,
   onAttach,
+  onPasteFiles,
   onRemoveAttachment,
   onSend,
   onStop,
@@ -49,7 +51,7 @@ export function ChatComposer({
   const [inputWidth, setInputWidth] = useState(0);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const canSend =
-    !loading && !submitting && (!!draft.trim() || attachments.length > 0);
+    !loading && !submitting && !attaching && (!!draft.trim() || attachments.length > 0);
   const showStop = busy && !draft.trim() && !attachments.length;
   useEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
@@ -59,6 +61,27 @@ export function ChatComposer({
     input.addEventListener("keydown", onKeyDown);
     return () => input.removeEventListener("keydown", onKeyDown);
   }, [canSend, onSend]);
+  useEffect(() => {
+    if (Platform.OS !== "web" || !inputRef.current) return;
+    const input = inputRef.current as unknown as HTMLTextAreaElement;
+    const onPaste = (event: ClipboardEvent) => {
+      const data = event.clipboardData;
+      if (!data) return;
+      const files = Array.from(data.files);
+      if (!files.length) {
+        for (const item of Array.from(data.items)) {
+          if (item.kind === "file") {
+            const file = item.getAsFile();
+            if (file) files.push(file);
+          }
+        }
+      }
+      if (files.length) onPasteFiles(files);
+      // Keep the browser's normal text paste, including when clipboard also contains files.
+    };
+    input.addEventListener("paste", onPaste);
+    return () => input.removeEventListener("paste", onPaste);
+  }, [onPasteFiles]);
   useLayoutEffect(() => {
     if (Platform.OS !== "web" || !inputRef.current) return;
     const input = inputRef.current as unknown as HTMLTextAreaElement;

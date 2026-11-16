@@ -182,6 +182,7 @@ export function MainScreen() {
             attachments={chat.attachments}
             attaching={chat.attaching}
             onAttach={() => void chat.attach()}
+            onPasteFiles={chat.pasteFiles}
             onRemoveAttachment={chat.removeAttachment}
           />
         ) : null

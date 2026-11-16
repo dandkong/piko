@@ -147,7 +147,7 @@ export function useChat(
     setOperationError(current => current && current.kind !== "refresh" ? current
       : { kind: "refresh", message: translateRef.current("chat.refreshFailed") });
   }, []);
-  const { attachments, setAttachments, attaching, attach, retryUpload, removeAttachment } =
+  const { attachments, setAttachments, attaching, attach, pasteFiles, retryUpload, removeAttachment } =
     useChatAttachments(loading, sending, mounted, onAttachmentError);
   const onDeleted = useCallback(() => {
     deletedRef.current = true;
@@ -395,6 +395,7 @@ export function useChat(
     retry,
     attachments,
     attach,
+    pasteFiles,
     removeAttachment,
     attaching,
     hasOlder: !!history.nextBefore,

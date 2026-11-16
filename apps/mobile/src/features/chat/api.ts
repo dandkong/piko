@@ -14,10 +14,10 @@ export function submit(message: string, requestId: string, signal: AbortSignal, 
 }
 
 /** A file chosen on this device, uploaded before the message is sent. */
-export type PickedFile = { name: string; mime: string; bytes: Blob };
+export type PickedFile = { name: string; mime: string; bytes: Blob; uploadName?: string };
 
 export async function uploadAttachment(file: PickedFile): Promise<MessageAttachment> {
-    const response = await apiFetch(`/api/attachments?name=${encodeURIComponent(file.name)}`, {
+    const response = await apiFetch(`/api/attachments?name=${encodeURIComponent(file.uploadName ?? file.name)}`, {
       method: "POST",
       headers: { "Content-Type": file.mime || "application/octet-stream" },
       body: file.bytes,
