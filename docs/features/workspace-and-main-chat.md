@@ -35,11 +35,11 @@ POST /api/chat 接收 {requestId,message}，返回原生提交回执。RN 新请
 
 输入、停止与维护预留由 DurableChatSession 的单一接纳线协调；ConversationStore 只负责文本校验、输出合并与观察，不重复维护锁或后台回传缓存。普通输入使用 whenBusy=steer 与 steeringMode=all，运行期间仍可接纳，在原生边界全部应用；不强行打断模型或工具。模型/思考选择及手动压缩占用空闲边界，期间普通输入立即拒绝；停止可取消压缩。
 
-GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。公开事件仅有 snapshot/message/activity/error/deleted，内部状态失效、工具开始/结束和压缩生命周期不直接透传；完整契约见[会话事件与实时活动](conversation-events.md)。每次连接先发送最近一页的 authoritative snapshot（含从原生 LiveDoc 恢复的当前活动），再继续实时更新；不使用事件游标和重放缓存，不补齐断线期间的中间流式事件。首次快照与实时订阅仍衔接在同一发布线上，防止漏掉期间的变化。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。断线、页面卸载和退后台均只退订，服务端继续工作。
+GET /api/chat/events 是持续会话 SSE，与每条输入提交分开。公开事件仅有 snapshot/message/activity/error/deleted，内部状态失效、工具开始/结束和压缩生命周期不直接透传；完整契约见[会话事件与实时活动](conversation-events.md)。每次连接先发送最近一页的 authoritative snapshot（含从原生 LiveDoc 恢复的当前活动），再继续实时更新；不使用事件游标和重放缓存，不补齐断线期间的中间流式事件。首次快照与实时订阅仍衔接在同一发布线上，防止漏掉期间的变化。消息更新最多 50ms 合并，15 秒心跳，客户端 30 秒无数据重连并有限退避。进入后台不主动退订；系统可能冻结或中断连接，回到前台主动重连。断线和页面卸载不停止服务端工作。
 
 POST /api/chat/stop 以独立 requestId 停止 conversation 和待应用输入。原生 piko.stop 文档记录当时的 task ID，重复请求只取消原目标，不影响之后的新工作。执行失败也结算和撤回剩余输入；未落入原生用户 entries 的输入不进入最终历史。提交状态使用原生 queued/placed/done/unanswered，不另存 Piko 终态。
 
-RN 在前台持续观察两通道变化，原生快照加未确认的本地输入构成列表；过期 HTTP 刷新不会覆盖较新的观察结果。聊天提示区分发送、停止、上传、读取与执行失败/中断；恢复动作只处理所属操作，详见[错误反馈与恢复](error-feedback.md)。TG 按助手消息维护投递，网络发送不阻塞接纳或执行。接口见 [架构说明](../design/ARCHITECTURE.md)，通道边界见 [Telegram 通道](telegram-channel.md)。
+App 持续观察当前会话的两通道变化，原生快照加未确认的本地输入构成列表；过期 HTTP 刷新不会覆盖较新的观察结果。聊天提示区分发送、停止、上传、读取与执行失败/中断；恢复动作只处理所属操作，详见[错误反馈与恢复](error-feedback.md)。TG 按助手消息维护投递，网络发送不阻塞接纳或执行。接口见 [架构说明](../design/ARCHITECTURE.md)，通道边界见 [Telegram 通道](telegram-channel.md)。
 
 ## 资源与工具
 

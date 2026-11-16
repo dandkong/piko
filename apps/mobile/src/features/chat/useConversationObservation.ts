@@ -10,7 +10,7 @@ import { checkHealth, observe } from "./api";
 
 type MessageEvent = Extract<StreamEvent, { type: "message" }>;
 
-/** Active-only observation; reconnecting never resubmits input. */
+/** Observe the selected conversation in all app states; reconnecting never resubmits input. */
 export function useConversationObservation(
   conversationId: string | undefined,
   enabled: boolean,
@@ -21,23 +21,24 @@ export function useConversationObservation(
   onError: (error: string) => void,
   onDeleted: () => void,
 ) {
-  const [foreground, setForeground] = useState(
-    AppState.currentState === "active",
-  );
+  const [resumeGeneration, setResumeGeneration] = useState(0);
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const version = useRef(0);
   useEffect(() => {
     if (!enabled) return;
-    setForeground(AppState.currentState === "active");
-    const listener = AppState.addEventListener("change", (state) =>
-      setForeground(state === "active"),
-    );
+    let previous = AppState.currentState;
+    const listener = AppState.addEventListener("change", (state) => {
+      // A suspended socket can look open while no longer receiving data.
+      // Reconnect on return to obtain an authoritative snapshot immediately.
+      if (state === "active" && previous !== "active") setResumeGeneration(value => value + 1);
+      previous = state;
+    });
     return () => listener.remove();
   }, [enabled]);
   useEffect(() => {
-    if (!foreground || !enabled) return;
+    if (!enabled) return;
     const controller = new AbortController();
     let active = true;
     let checkedHealth = false;
@@ -102,6 +103,6 @@ export function useConversationObservation(
       controller.abort();
       onActivity({ kind: "idle" });
     };
-  }, [conversationId, enabled, foreground, onSnapshot, onMessage, onActivity, onRunEnd, onError, onDeleted]);
+  }, [conversationId, enabled, resumeGeneration, onSnapshot, onMessage, onActivity, onRunEnd, onError, onDeleted]);
   return { connected, reconnecting, modelReady, version };
 }
