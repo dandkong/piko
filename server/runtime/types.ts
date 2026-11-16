@@ -46,8 +46,8 @@ export interface AssistantTasksRuntime {
   result(id: string, executionId: string): Promise<TaskExecutionDetail>;
 }
 export type SubagentStatus = "working" | "interrupted" | "stopped" | "failed" | "finished";
-export type SubagentListItem = { id: string; task: string; status: SubagentStatus };
-export type SubagentDetail = { id: string; status: SubagentStatus; detail?: string; recentSteps: string[] };
+export type SubagentListItem = { id: string; title: string; task: string; status: SubagentStatus };
+export type SubagentDetail = { id: string; title: string; status: SubagentStatus; detail?: string; recentSteps: string[] };
 export interface AssistantSubagentsRuntime {
   list(): Promise<SubagentListItem[]>;
   status(id: string): Promise<SubagentDetail | undefined>;

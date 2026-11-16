@@ -35,7 +35,7 @@ function listView(all: SubagentListItem[]): View {
       "Newest first. Choose an ID to view its latest status and five recent steps:",
       "",
       ...items.map(item => singleLine(
-        `${statusIcon(item.status)} #${item.id} · ${item.status} · ${item.task.trim() || "(no task description)"}`,
+        `${statusIcon(item.status)} #${item.id} · ${item.status} · ${item.title.trim() || item.task.trim() || "(no task description)"}`,
         SUMMARY_TEXT_LIMIT,
       )!),
     ].join("\n"),
@@ -50,6 +50,7 @@ function detailView(item: SubagentListItem, detail: SubagentDetail): View {
   return {
     text: [
       `Background subagent #${detail.id}`,
+      `Title: ${singleLine(item.title, DETAIL_TEXT_LIMIT) ?? singleLine(item.task, DETAIL_TEXT_LIMIT) ?? "(no task description)"}`,
       `Task: ${singleLine(item.task, DETAIL_TEXT_LIMIT) ?? "(no task description)"}`,
       `Status: ${detail.status}`,
       ...(detail.detail ? [`Detail: ${singleLine(detail.detail, DETAIL_TEXT_LIMIT)}`] : []),
