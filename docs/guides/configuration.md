@@ -54,9 +54,8 @@ Set `PIKO_HOME` in the process environment before startup; it is the absolute da
 | `PIKO_TELEGRAM_BOT_TOKEN` | Bot credential, required when Telegram is enabled. |
 | `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `DEEPSEEK_SEARCH_API_KEY` | Search credentials; Exa and DeepSeek keys also enable their respective extraction providers. |
 | `FIRECRAWL_API_KEY` | Enables the Firecrawl extraction provider. |
-| `PORTAINER_API_KEY`, `PORTAINER_URL`, `PORTAINER_VERIFY_TLS` | Optional Portainer skill credentials, endpoint and TLS verification setting. |
 
-Process environment values override `config/.env`, including explicit empty values. Environment variables do not override JSON behavior or supply model credentials. Changes to deployment settings, catalog, credentials and tool/channel behavior require restarting the backend; model role choices apply at a safe admission boundary.
+Process environment values override `config/.env`, including explicit empty values. Shell tools receive the merged environment, including credentials; do not print values in chat or logs, or pass them to untrusted programs. Environment variables do not override JSON behavior or supply model credentials. Changes to deployment settings, catalog, credentials and tool/channel behavior require restarting the backend; model role choices apply at a safe admission boundary.
 
 ## Custom model provider
 

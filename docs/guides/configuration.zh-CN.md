@@ -54,9 +54,8 @@
 | `PIKO_TELEGRAM_BOT_TOKEN` | Telegram 启用时需要的 Bot 凭据。 |
 | `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_SEARCH_API_KEY` | 搜索凭据；Exa 和 DeepSeek 的 Key 也用于对应提取服务。 |
 | `FIRECRAWL_API_KEY` | 启用 Firecrawl 网页提取。 |
-| `PORTAINER_API_KEY`、`PORTAINER_URL`、`PORTAINER_VERIFY_TLS` | 可选的 Portainer 技能凭据、地址和 TLS 校验设置。 |
 
-进程环境优先于 `config/.env`，显式空值也会覆盖；环境变量不覆盖 JSON 行为或提供模型凭据。部署参数、目录、凭据及工具/通道行为修改后须重启；模型角色选择在安全接纳边界生效。
+进程环境优先于 `config/.env`，显式空值也会覆盖；Shell 工具可读取合并后的全部环境，包括敏感凭据，不要将值输出到聊天或日志，也不要传给不可信程序。环境变量不覆盖 JSON 行为或提供模型凭据。部署参数、目录、凭据及工具/通道行为修改后须重启；模型角色选择在安全接纳边界生效。
 
 ## 自定义模型供应商
 

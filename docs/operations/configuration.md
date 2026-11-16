@@ -64,9 +64,6 @@ DEEPSEEK_SEARCH_API_KEY="填写自己的 DeepSeek Search API Key"
 BRAVE_SEARCH_API_KEY="填写自己的 Brave Search API Key"
 FIRECRAWL_API_KEY="填写自己的 Firecrawl API Key"
 PIKO_TELEGRAM_BOT_TOKEN="填写新的 Bot Token"
-PORTAINER_API_KEY="填写 Portainer API Key"
-PORTAINER_URL="https://127.0.0.1:9443"
-PORTAINER_VERIFY_TLS=false
 ```
 
 | 环境变量 | 职责 / 默认值 |
@@ -78,11 +75,9 @@ PORTAINER_VERIFY_TLS=false
 | PIKO_TELEGRAM_BOT_TOKEN | Telegram 敏感凭据；仅 JSON enabled=true 时需要 |
 | EXA_API_KEY / TAVILY_API_KEY / DEEPSEEK_SEARCH_API_KEY / BRAVE_SEARCH_API_KEY | 各搜索后端凭据；均缺失不阻止启动，`web_search` 返回未配置；Exa 与 DeepSeek 凭据也用于对应提取 provider；DeepSeek Search Key 独立于模型供应商 auth.json/models.json |
 | FIRECRAWL_API_KEY | Firecrawl 网页提取凭据；Key 存在时 `firecrawl` 才加入 `web_extract` 的动态参数选项 |
-| PORTAINER_API_KEY | Portainer API 凭据；仅通过工作区技能环境白名单传给 Shell 工具 |
-| PORTAINER_URL / PORTAINER_VERIFY_TLS | Portainer 地址与 TLS 证书校验设置；本机默认 `https://127.0.0.1:9443`，自签证书设为 `false` |
 | headersEnv 引用的变量 | HTTP header 值，仅在后端解析，不进入工具 schema |
 
-只有环境体系内部存在 `config/.env < 进程环境` 的优先级：未设置保留本地值，显式空值覆盖本地值。此规则不影响 JSON 行为。可使用引号、export 前缀与行尾注释；读取不修改全局 process.env，不把后端值注入 Expo。传给工作区 Shell 工具的技能设置和凭据还需显式列入环境白名单。**模型供应商凭据不读环境变量**：只认 auth.json 与 models.json。
+只有环境体系内部存在 `config/.env < 进程环境` 的优先级：未设置保留本地值，显式空值覆盖本地值。此规则不影响 JSON 行为。可使用引号、export 前缀与行尾注释；读取不修改全局 process.env，不把后端值注入 Expo。Shell 工具继承合并后的全部环境变量，包括敏感凭据；工作区技能可以读取其所需变量，不再需要源码白名单。不要将变量值输出到聊天、日志或不可信程序。**模型供应商凭据不读环境变量**：只认 auth.json 与 models.json。
 
 部署参数、通道与工具凭据继续只接环境读取；模型供应商凭据只认 auth.json 与 models.json。当前尚无需要用户配置的加密密钥或加密存储功能。
 

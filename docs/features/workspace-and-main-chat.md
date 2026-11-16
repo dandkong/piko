@@ -83,7 +83,7 @@ core.md、工作区 AGENTS.md 和 MEMORY.md 均完整读取，不设程序强制
 
 技能来源为工作区 `.agents/skills` 与应用内建技能；同名时工作区版本优先，同名覆盖有诊断。`PIKO_HOME/skills` 不创建也不读取。不继承个人 Pi CLI、祖先指导或全局扩展。模型配置独立于 Pi CLI；Durable Extension 只由 Piko 内建代码注册，用户 skill 不增加运行时工具。
 
-read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。`WorkspaceExecutionEnv` 除进程环境外，只将显式白名单的用户技能变量从 `PIKO_HOME/config/.env` 传给 Shell，不整体导出应用凭据。cwd 不是沙箱；目前没有操作审批 UI。durable 的 read 已能读取图片，附件存储与上传接口见 [附件与图片读取](attachments.md)；Web 已支持上传，原生文件选择尚未接入。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
+read/write/edit/bash 保持启用，相对路径默认工作区，本机 Shell 执行命令。`WorkspaceExecutionEnv` 将 `PIKO_HOME/config/.env` 和进程环境完整传给 Shell，进程环境同名变量优先；其中可能包含敏感凭据，不应输出到聊天或日志。cwd 不是沙箱；目前没有操作审批 UI。durable 的 read 已能读取图片，附件存储与上传接口见 [附件与图片读取](attachments.md)；Web 已支持上传，原生文件选择尚未接入。记忆整理已实现；专门的记忆浏览、检索和版本管理 UI 尚未实现。
 
 ## 中断与损坏恢复
 
