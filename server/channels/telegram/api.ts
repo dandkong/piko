@@ -1,4 +1,6 @@
-import { Bot, GrammyError } from "grammy";
+import { Bot, GrammyError, InputFile } from "grammy";
+import type { MessageAttachment } from "../../../shared/chat";
+import type { SentAttachmentStore } from "../../sent-attachments";
 
 export type TelegramButton = { text: string; callbackData: string };
 export type TelegramKeyboard = TelegramButton[][];
@@ -7,6 +9,7 @@ const markup = (buttons: TelegramKeyboard | undefined) => buttons === undefined 
 
 export interface TelegramTransport {
   send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string>;
+  sendFile(chatId: string, attachment: MessageAttachment): Promise<void>;
   edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void>;
   answerCallback(callbackId: string, text?: string, alert?: boolean): Promise<void>;
   remove(chatId: string, messageId: string): Promise<void>;
@@ -56,7 +59,7 @@ export class TelegramApi implements TelegramTransport {
   readonly controller = new AbortController();
   // grammY's Node typings use the abort-controller polyfill; Bun's signal implements the same runtime protocol.
   get signal() { return this.controller.signal as unknown as NonNullable<Parameters<Bot["api"]["getWebhookInfo"]>[0]>; }
-  constructor(private readonly bot: Bot) {}
+  constructor(private readonly bot: Bot, private readonly sentAttachments: SentAttachmentStore) {}
 
   async send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string> {
     const options = markup(buttons);
@@ -64,6 +67,13 @@ export class TelegramApi implements TelegramTransport {
       ? this.bot.api.sendRichMessage(chatId, { markdown: text }, options, this.signal)
       : this.bot.api.sendMessage(chatId, text, { ...options, link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
     return String(message.message_id);
+  }
+
+  async sendFile(chatId: string, attachment: MessageAttachment): Promise<void> {
+    const bytes = await this.sentAttachments.read(attachment.id);
+    if (!bytes) throw new Error("Attachment is unavailable.");
+    // Non-idempotent: a timeout can mean Telegram already accepted the upload. Do not retry.
+    await this.bot.api.sendDocument(chatId, new InputFile(bytes, attachment.name ?? "attachment"), {}, this.signal);
   }
 
   async edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void> {

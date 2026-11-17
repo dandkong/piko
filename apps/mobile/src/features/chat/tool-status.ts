@@ -5,7 +5,7 @@ import type { Language } from "../../i18n";
 
 const toolKeys: Record<string, MessageKey> = {
   read: "activity.read", write: "activity.write", edit: "activity.edit", bash: "activity.bash",
-  web_search: "activity.searchWeb", web_extract: "activity.extractWeb",
+  web_search: "activity.searchWeb", web_extract: "activity.extractWeb", send_attachment: "activity.sendAttachment",
   sessions_search: "activity.searchHistory", sessions_history: "activity.readHistory",
   subagent_list: "activity.background", subagent_status: "activity.background",
   subagent_spawn: "activity.delegate", subagent_send: "activity.delegate", subagent_stop: "activity.stopDelegate",

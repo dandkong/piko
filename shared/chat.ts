@@ -1,6 +1,6 @@
 import type { ActiveCompaction } from "./runtime";
 /** A stored attachment; the model sees its path, the UI only needs the served URL. */
-export type MessageAttachment = { id: string; url: string; mime: string };
+export type MessageAttachment = { id: string; url: string; mime: string; name?: string };
 export type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: number; requestId?: string; attachments?: MessageAttachment[] };
 export type SubmissionReceipt = { id: string; requestId?: string; status: "queued" | "placed" | "done" | "unanswered"; error?: string };
 export const CHAT_PAGE_SIZE = 20;

@@ -9,6 +9,7 @@ export function toolIcon(name: string): string {
     case "bash": return "💻";
     case "web_search": return "🔍";
     case "web_extract": return "🌐";
+    case "send_attachment": return "📎";
     default: return "🛠️";
   }
 }

@@ -50,6 +50,9 @@ import { PostsService } from "./posts/service";
 import { postHistoryScope } from "./posts/documents";
 import { historyAroundPiMessage, searchPiHistory } from "./pi-history";
 import { StorageRetentionService } from "./storage-retention";
+import { SentAttachmentStore } from "../sent-attachments";
+import { createSentAttachmentTools } from "./sent-attachments";
+import { join } from "node:path";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -137,6 +140,7 @@ class PikoRuntime {
       createTaskTools(() => this.tasks),
       memory.extension,
       sessionSearch,
+      createSentAttachmentTools(new SentAttachmentStore(join(this.paths.state, "sent-attachments"))),
       postTools,
       posts.extension,
     ])

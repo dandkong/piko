@@ -8,6 +8,8 @@ import type { TelegramConfig } from "../../config";
 import type { AttachmentStore } from "../../attachments";
 import { MAX_ATTACHMENTS } from "../../../shared/chat";
 import { logInfo, logWarn } from "../../logging";
+import { SentAttachmentStore } from "../../sent-attachments";
+import { dirname, join } from "node:path";
 
 export class TelegramBot {
   private readonly bot: Bot;
@@ -21,7 +23,7 @@ export class TelegramBot {
     private readonly attachments: AttachmentStore, bot?: Bot, private readonly onFailure?: () => void,
     private readonly onExitRequest?: () => void) {
     this.bot = bot ?? new Bot(config.token, { client: { timeoutSeconds: 10 } });
-    this.api = new TelegramApi(this.bot);
+    this.api = new TelegramApi(this.bot, new SentAttachmentStore(join(dirname(attachments.directory), "sent-attachments")));
     // A failed update is logged without taking down grammY's polling loop.
     this.bot.catch(error => logWarn("telegram.update.failed", { telegramCode: telegramErrorCode(error.error) }));
     this.bot.on("message", async ctx => {

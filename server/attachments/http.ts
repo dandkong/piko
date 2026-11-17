@@ -1,5 +1,6 @@
 import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments";
 import { json, readBody } from "../http";
+import { audioPreviewResponse } from "./audio-preview";
 
 export async function attachmentRequest(
   request: Request,
@@ -40,7 +41,7 @@ export async function attachmentRequest(
     }
   }
   if (
-    request.method === "GET" &&
+    (request.method === "GET" || (request.method === "HEAD" && url.searchParams.get("play") === "1")) &&
     url.pathname.startsWith("/api/attachments/")
   ) {
     let id: string;
@@ -51,6 +52,7 @@ export async function attachmentRequest(
     }
     const stored = await attachments.read(id);
     if (!stored) return json({ error: "Attachment not found." }, 404);
+    if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, stored.bytes, stored.attachment.mime);
     return new Response(stored.bytes.slice().buffer, {
       headers: {
         "Content-Type": stored.attachment.mime,

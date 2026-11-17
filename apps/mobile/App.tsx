@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { MainScreen } from "./src/features/shell/MainScreen";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { LanguageProvider } from "./src/i18n";
+import { AudioPlaybackProvider } from "./src/features/chat/AudioPlayback";
 
 export default function App() {
   return (
@@ -19,7 +20,7 @@ function ThemedApp() {
   return (
     <SafeAreaProvider>
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
-      <MainScreen />
+      <AudioPlaybackProvider><MainScreen /></AudioPlaybackProvider>
     </SafeAreaProvider>
   );
 }

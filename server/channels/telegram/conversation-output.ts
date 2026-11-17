@@ -67,6 +67,15 @@ export class TelegramConversationOutput {
         return;
       case "message":
         if (event.message.role !== "assistant" || this.known.has(event.message.id)) return;
+        if (event.final && event.message.attachments?.length) {
+          await this.flushText();
+          this.breakTools();
+          // Mark before sending: ambiguous failures must not trigger automatic duplicates.
+          this.remember(event.message.id);
+          for (const item of event.message.attachments)
+            await this.api.sendFile(this.chatId, item);
+          return;
+        }
         if (!event.message.content.trim() && !event.previousId) return;
         if (event.message.content.trim()) this.breakTools();
         if (this.text && this.text.message.id !== event.message.id && this.text.message.id !== event.previousId)

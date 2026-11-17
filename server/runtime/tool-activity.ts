@@ -16,6 +16,7 @@ export function summarizeToolArgs(toolName: string, args: unknown): string {
 }
 
 function summarize(toolName: string, record: Record<string, unknown>): string {
+  if (toolName === "send_attachment") return "";
   if (toolName === "read" || toolName === "write") return pick(record, "path") ?? "";
   if (toolName === "bash") return pick(record, "command") ?? "";
   if (toolName === "edit") {
