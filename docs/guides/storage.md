@@ -6,7 +6,8 @@ By default, Piko keeps configuration, state and the workspace under `~/.piko`. `
 
 - `config/` contains private configuration and credentials.
 - `state/durable/session.sqlite` is the Durable database. SQLite uses WAL and may also have `-wal` and `-shm` files.
-- `state/attachments/` holds incoming attachments; the default cleanup policy removes old files. `state/sent-attachments/` holds independent snapshots of assistant-sent files, with no automatic cleanup.
+- `state/attachments/` holds incoming files and independent snapshots of assistant-sent files; attachments are not automatically deleted.
+- `state/tmp/` holds temporary runtime files and is emptied whenever the backend starts. Do not store permanent files there.
 - `workspace/` contains assistant guidance, memory, skills and artifacts by default.
 
 ## Backup and restore
@@ -21,6 +22,6 @@ Database corruption, unsupported old formats or a nonempty state directory missi
 
 Deleting a side chat also cleans up its owned background work. Deleting a saved task removes its execution records and dedicated task directory; deleting a post removes its dedicated generation records. Side-chat and post deletion do not delete attachments, workspace files, artifacts or backups. Deletions do not undo external side effects or erase provider-side records.
 
-Temporary background executions without a long-term owner are checked every 24 hours and reclaimed after seven days of inactivity, with active or unconsumed work skipped. Main conversation history, memory files and workspace artifacts are not removed by this retention policy. Incoming attachments are cleaned up separately after 30 days; older message paths may then stop working. Assistant-sent snapshots are not automatically deleted.
+Temporary background executions without a long-term owner are checked every 24 hours and reclaimed after seven days of inactivity, with active or unconsumed work skipped. Main conversation history, memory files and workspace artifacts are not removed by this retention policy. Attachments are not automatically deleted; manually removing files can make historical attachments unavailable. Runtime temporary files are removed on backend startup.
 
 Application deletion does not erase separate backups, filesystem snapshots or all storage media. Piko's workspace is a working directory, not a sandbox.

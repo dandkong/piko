@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 
 /** One stored upload. The model reads `path`; channels share the same file. */
@@ -88,21 +89,51 @@ export class AttachmentStore {
     } catch { return undefined; }
   }
 
-  /** Paths already referenced by saved history stay readable until this age; long enough for follow-up turns. */
-  async sweep(maxAgeMs: number, now = Date.now()): Promise<number> {
-    let names: string[];
-    try { names = await readdir(this.directory); } catch { return 0; }
-    let removed = 0;
-    for (const name of names) {
-      if (!this.allowed(name)) continue;
-      const path = this.pathOf(name);
-      try {
-        const info = await stat(path);
-        if (!info.isFile() || now - info.mtimeMs < maxAgeMs) continue;
-        await unlink(path); removed++;
-      } catch { /* A concurrent sweep or a manual deletion is fine. */ }
+  /** Snapshot an assistant-sent file without changing the original. */
+  async saveSnapshot(source: string): Promise<{ id: string; name: string; mime: string; bytes: number }> {
+    const name = safeAttachmentName(basename(source)) ?? "attachment";
+    const file = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let bytes: Buffer;
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || !info.size || info.size > this.maxBytes) throw new Error("Invalid attachment file.");
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for (;;) {
+        const chunk = Buffer.alloc(Math.min(64 * 1024, this.maxBytes + 1 - total));
+        const { bytesRead } = await file.read(chunk, 0, chunk.length, null);
+        if (!bytesRead) break;
+        total += bytesRead;
+        if (total > this.maxBytes) throw new Error("The attachment is too large.");
+        chunks.push(chunk.subarray(0, bytesRead));
+      }
+      bytes = Buffer.concat(chunks, total);
+      if (!bytes.length) throw new Error("The attachment is empty.");
+    } finally { await file.close(); }
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const id = randomUUID();
+    const destination = join(this.directory, id);
+    const output = await open(destination, "wx", 0o600);
+    try {
+      await output.writeFile(bytes);
+      await output.sync();
+    } catch (error) {
+      await output.close().catch(() => {});
+      await unlink(destination).catch(() => {});
+      throw error;
     }
-    return removed;
+    await output.close();
+    return { id, name, mime: detectExtension(name), bytes: bytes.length };
+  }
+
+  async readSnapshot(id: string): Promise<Uint8Array | undefined> {
+    if (!isSnapshotId(id)) return undefined;
+    try { return await readFile(join(this.directory, id)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  }
+
+  async discardSnapshot(id: string): Promise<void> {
+    if (isSnapshotId(id)) await unlink(join(this.directory, id)).catch(() => {});
   }
 
   private pathOf(id: string): string {
@@ -112,6 +143,10 @@ export class AttachmentStore {
   private allowed(id: string): boolean {
     return safeAttachmentName(id) === id && resolve(this.pathOf(id)).startsWith(resolve(this.directory) + sep);
   }
+}
+
+export function isSnapshotId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 }
 
 function nameExtension(name: string | undefined): string | undefined {

@@ -13,8 +13,6 @@ import { chatRequest } from "./chat/http";
 import { sideChatRequest } from "./side-chats/http";
 import { attachmentRequest } from "./attachments/http";
 import { sentAttachmentRequest } from "./attachments/sent-http";
-import { SentAttachmentStore } from "./sent-attachments";
-import { dirname, join } from "node:path";
 import type { AttachmentStore } from "./attachments";
 import { artifactRequest } from "./artifacts/http";
 import { settingsRequest } from "./settings/http";
@@ -39,7 +37,6 @@ export function createApp({
   artifacts: ArtifactStore;
   web?: WebHandler;
 }) {
-  const sentAttachments = new SentAttachmentStore(join(dirname(attachments.directory), "sent-attachments"));
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const reply = (response: Response) => withCors(request, response);
@@ -77,7 +74,7 @@ export function createApp({
         (await settingsRequest(request, runtime)) ??
         (await sideChatRequest(request, runtime, id => chats.forget(id))) ??
         (await attachmentRequest(request, attachments)) ??
-        (await sentAttachmentRequest(request, sentAttachments)) ??
+        (await sentAttachmentRequest(request, attachments)) ??
         (await artifactRequest(request, artifacts)) ??
         (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")
           ? await taskRequest(request, runtime, config.maxRequestBytes)

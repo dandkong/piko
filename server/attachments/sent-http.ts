@@ -1,14 +1,13 @@
-import { detectExtension, safeAttachmentName } from "../attachments";
-import { SentAttachmentStore } from "../sent-attachments";
+import { AttachmentStore, detectExtension, safeAttachmentName } from "../attachments";
 import { audioPreviewResponse } from "./audio-preview";
 import { json } from "../http";
 
 /** Outgoing snapshot IDs never contain user-provided paths; the name is only a download hint. */
-export async function sentAttachmentRequest(request: Request, store: SentAttachmentStore): Promise<Response | undefined> {
+export async function sentAttachmentRequest(request: Request, store: AttachmentStore): Promise<Response | undefined> {
   const url = new URL(request.url);
   if ((request.method !== "GET" && request.method !== "HEAD") || !url.pathname.startsWith("/api/sent-attachments/")) return undefined;
   const id = url.pathname.slice("/api/sent-attachments/".length);
-  const bytes = await store.read(id);
+  const bytes = await store.readSnapshot(id);
   if (!bytes) return json({ error: "Attachment not found." }, 404);
   const name = safeAttachmentName(url.searchParams.get("name") ?? undefined) ?? "attachment";
   const encoded = encodeURIComponent(name).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);

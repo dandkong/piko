@@ -1,6 +1,6 @@
 import { Bot, GrammyError, InputFile } from "grammy";
 import type { MessageAttachment } from "../../../shared/chat";
-import type { SentAttachmentStore } from "../../sent-attachments";
+import type { AttachmentStore } from "../../attachments";
 
 export type TelegramButton = { text: string; callbackData: string };
 export type TelegramKeyboard = TelegramButton[][];
@@ -59,7 +59,7 @@ export class TelegramApi implements TelegramTransport {
   readonly controller = new AbortController();
   // grammY's Node typings use the abort-controller polyfill; Bun's signal implements the same runtime protocol.
   get signal() { return this.controller.signal as unknown as NonNullable<Parameters<Bot["api"]["getWebhookInfo"]>[0]>; }
-  constructor(private readonly bot: Bot, private readonly sentAttachments: SentAttachmentStore) {}
+  constructor(private readonly bot: Bot, private readonly sentAttachments: AttachmentStore) {}
 
   async send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string> {
     const options = markup(buttons);
@@ -70,7 +70,7 @@ export class TelegramApi implements TelegramTransport {
   }
 
   async sendFile(chatId: string, attachment: MessageAttachment): Promise<void> {
-    const bytes = await this.sentAttachments.read(attachment.id);
+    const bytes = await this.sentAttachments.readSnapshot(attachment.id);
     if (!bytes) throw new Error("Attachment is unavailable.");
     // Non-idempotent: a timeout can mean Telegram already accepted the upload. Do not retry.
     await this.bot.api.sendDocument(chatId, new InputFile(bytes, attachment.name ?? "attachment"), {}, this.signal);

@@ -50,7 +50,7 @@ import { PostsService } from "./posts/service";
 import { postHistoryScope } from "./posts/documents";
 import { historyAroundPiMessage, searchPiHistory } from "./pi-history";
 import { StorageRetentionService } from "./storage-retention";
-import { SentAttachmentStore } from "../sent-attachments";
+import { AttachmentStore } from "../attachments";
 import { createSentAttachmentTools } from "./sent-attachments";
 import { join } from "node:path";
 
@@ -140,7 +140,7 @@ class PikoRuntime {
       createTaskTools(() => this.tasks),
       memory.extension,
       sessionSearch,
-      createSentAttachmentTools(new SentAttachmentStore(join(this.paths.state, "sent-attachments"))),
+      createSentAttachmentTools(new AttachmentStore(join(this.paths.state, "attachments"))),
       postTools,
       posts.extension,
     ])

@@ -4,6 +4,7 @@ import { ConversationStores } from "./chat/stores";
 import { createPiRuntime } from "./runtime/pi";
 import { initializeWorkspace } from "./workspace";
 import { acquireBackendLock } from "./domain/backend-lock";
+import { clearRuntimeTemp, migrateSentAttachments } from "./runtime/startup-files";
 import { TelegramBot } from "./channels/telegram/bot";
 import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
@@ -51,16 +52,19 @@ try {
   throw error;
 }
 process.on("exit", releaseLock);
+try {
+  const migrated = await migrateSentAttachments(paths.state);
+  if (migrated) logInfo("attachments.migration.completed", { migrated });
+  await clearRuntimeTemp(paths.state);
+  logInfo("runtime.temp.cleaned");
+} catch {
+  logError("runtime.startup_files.failed");
+  throw new Error("Cannot prepare attachment or temporary storage.");
+}
 const runtime = createPiRuntime(paths);
 // Telegram and app uploads share one store, outside the workspace; history references these paths.
 const attachments = new AttachmentStore(join(paths.state, "attachments"));
 const artifacts = new ArtifactStore(paths.workspace);
-void attachments
-  .sweep(30 * 24 * 60 * 60 * 1000)
-  .then((removed) => {
-    if (removed) logInfo("attachments.cleanup.completed", { removed });
-  })
-  .catch(() => logWarn("attachments.cleanup.failed"));
 const chats = new ConversationStores(runtime);
 const conversations = chats.main;
 // Open and validate native state, withdrawing inherited work before accepting requests.
