@@ -2,7 +2,6 @@ import { defineEntry, defineExtension, defineTool } from "@earendil-works/pi-dur
 import { Type } from "typebox";
 import type { Message, MessageAttachment } from "../../shared/chat";
 import { SentAttachmentStore } from "../sent-attachments";
-import { isUserConversation } from "./subagents/delegations";
 
 export type SentAttachment = { id: string; name: string; mime: string; bytes: number; createdAt: number };
 export const SentAttachmentEntry = defineEntry<SentAttachment>("piko.chat-attachment");
@@ -26,18 +25,13 @@ export function createSentAttachmentTools(store: SentAttachmentStore) {
     execute: async (args, api, context) => {
       const { path } = args;
       if (!path.startsWith("/")) return failure("An absolute local file path is required.");
-      if (!(await api.commit(tx => isUserConversation(tx, api.conversationId), context)))
-        return failure("Attachments can only be published in a user chat.");
       let saved: Awaited<ReturnType<SentAttachmentStore["save"]>>;
       try { saved = await store.save(path); }
       catch { return failure("Cannot read or save the file. Ensure it is a regular nonempty file no larger than 20 MiB."); }
       // After a commit is attempted, keep the snapshot on an ambiguous failure: it may already be referenced.
       if (context.abortSignal?.aborted) { await store.discard(saved.id); return failure("Attachment publication cancelled."); }
       const data: SentAttachment = { ...saved, createdAt: api.now() };
-      await api.commit(async tx => {
-        if (!await isUserConversation(tx, api.conversationId)) throw new Error("This conversation is no longer available.");
-        return tx.appendEntry(SentAttachmentEntry, api.conversationId, { data });
-      }, context);
+      await api.commit(tx => tx.appendEntry(SentAttachmentEntry, api.conversationId, { data }), context);
       return { output: [{ type: "text" as const, text: "Attachment sent." }] };
     },
   });
