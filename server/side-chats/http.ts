@@ -13,7 +13,8 @@ export async function sideChatRequest(
     if (request.method !== "POST") return json({ error: "Not found." }, 404);
     const input = await readObjectBody(request, 8000);
     if (
-      Object.keys(input).some(key => key !== "requestIds") ||
+      Object.keys(input).some(key => key !== "requestIds" && key !== "onlyIfEmpty") ||
+      input.onlyIfEmpty !== undefined && typeof input.onlyIfEmpty !== "boolean" ||
       input.requestIds !== undefined &&
         (!Array.isArray(input.requestIds) || input.requestIds.length > 50 ||
           !input.requestIds.every(isRequestId))
@@ -23,6 +24,9 @@ export async function sideChatRequest(
       generateTitle[1]!,
       input.requestIds as string[] | undefined,
       request.signal,
+      input.onlyIfEmpty === undefined
+        ? Array.isArray(input.requestIds) && input.requestIds.length > 0
+        : input.onlyIfEmpty as boolean,
     ));
   }
   if (

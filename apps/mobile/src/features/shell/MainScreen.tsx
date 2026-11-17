@@ -46,6 +46,8 @@ export function MainScreen() {
   }>();
   const { width } = useWindowDimensions();
   const sides = useSideChats(menuOpen);
+  const sideChatsRef = useRef(sides.items);
+  sideChatsRef.current = sides.items;
   const activeId = tab === "Chat" ? selectedId : undefined;
   const chat = activeChat?.id === activeId ? activeChat?.chat : undefined;
   const onActiveChat = useCallback(
@@ -91,7 +93,8 @@ export function MainScreen() {
     }
   }, [sides.generateTitle, showToast, t]);
   const onSideChatRunEnd = useCallback((id: string, requestIds: readonly string[]) => {
-    void sides.generateTitle(id, requestIds).catch(() => {});
+    if (sideChatsRef.current.find(chat => chat.id === id)?.title.trim()) return;
+    void sides.generateTitle(id, requestIds, true).catch(() => {});
   }, [sides.generateTitle]);
   const removeChat = async (id: string) => {
     if (!(await sides.remove(id))) return false;

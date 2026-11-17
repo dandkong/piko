@@ -79,10 +79,10 @@ export class SideChats {
     logInfo("side_chat.create.completed", { conversationId: created.id });
     return created;
   }
-  generateTitle(value: string, requestIds?: readonly string[], signal?: AbortSignal): Promise<SideChat> {
+  generateTitle(value: string, requestIds?: readonly string[], signal?: AbortSignal, onlyIfEmpty = false): Promise<SideChat> {
     const previous = this.titleGenerations.get(value);
     const generation = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
-      () => this.generateTitleNow(value, requestIds, signal),
+      () => this.generateTitleNow(value, requestIds, signal, onlyIfEmpty),
     );
     this.titleGenerations.set(value, generation);
     const clear = () => {
@@ -96,9 +96,16 @@ export class SideChats {
     value: string,
     requestIds?: readonly string[],
     signal?: AbortSignal,
+    onlyIfEmpty = false,
   ): Promise<SideChat> {
-    const { id } = await this.harness.commit(tx => requireSideChat(tx, value), ctx);
     if (signal?.aborted) throw new SideChatError("Title generation was cancelled.", 499);
+    const existing = await this.harness.commit(async tx => {
+      const { id, metadata } = await requireSideChat(tx, value);
+      return { id, title: metadata.title, createdAt: metadata.createdAt };
+    }, ctx);
+    if (onlyIfEmpty && existing.title.trim())
+      return { id: String(existing.id), title: existing.title, createdAt: existing.createdAt };
+    const { id } = existing;
     const conversation = await this.harness.conversation(id, ctx);
     if (!conversation) throw new SideChatError("Side chat not found.");
     const agent = await conversation.agent(ctx);
@@ -135,7 +142,7 @@ export class SideChats {
 
     const updated = await this.harness.commit(async tx => {
       const { metadata } = await requireSideChat(tx, value);
-      metadata.title = title;
+      if (!onlyIfEmpty || !metadata.title.trim()) metadata.title = title;
       return { id: value, title: metadata.title, createdAt: metadata.createdAt };
     }, ctx);
     logInfo("side_chat.title.generated", { conversationId: value });

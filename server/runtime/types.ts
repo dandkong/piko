@@ -77,7 +77,7 @@ export interface ChatRuntime {
   sideChats: {
     list(): Promise<SideChat[]>;
     create(requestId: string): Promise<SideChat>;
-    generateTitle(id: string, requestIds?: readonly string[], signal?: AbortSignal): Promise<SideChat>;
+    generateTitle(id: string, requestIds?: readonly string[], signal?: AbortSignal, onlyIfEmpty?: boolean): Promise<SideChat>;
     remove(id: string): Promise<void>;
   };
   createSession(conversationId?: string): Promise<ChatSession>;

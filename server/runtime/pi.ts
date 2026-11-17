@@ -393,8 +393,8 @@ export function createPiRuntime(
     sideChats: {
       list: async () => (await get()).sideChats.list(),
       create: async requestId => (await get()).sideChats.create(requestId),
-      generateTitle: async (id, requestIds, signal) =>
-        (await get()).sideChats.generateTitle(id, requestIds, signal),
+      generateTitle: async (id, requestIds, signal, onlyIfEmpty) =>
+        (await get()).sideChats.generateTitle(id, requestIds, signal, onlyIfEmpty),
       remove: async id => (await get()).sideChats.remove(id),
     },
     isModelReady: async () => (await session()).modelReady(),

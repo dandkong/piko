@@ -88,8 +88,11 @@ export function useSideChats(open: boolean) {
       if (mounted.current) setBusy(false);
     }
   };
-  const generateTitle = useCallback(async (id: string, requestIds?: readonly string[]) => {
-    const input: GenerateSideChatTitle = requestIds?.length ? { requestIds: [...requestIds] } : {};
+  const generateTitle = useCallback(async (id: string, requestIds?: readonly string[], onlyIfEmpty = false) => {
+    const input: GenerateSideChatTitle = {
+      ...(requestIds?.length ? { requestIds: [...requestIds] } : {}),
+      ...(onlyIfEmpty ? { onlyIfEmpty: true } : {}),
+    };
     const result = await request<SideChat>(
       `/api/side-chats/${encodeURIComponent(id)}/title/generate`,
       input,
