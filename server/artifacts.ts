@@ -1,5 +1,6 @@
 import { lstat, readdir, readFile, realpath, rm, unlink } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { contentType, lookup } from "mime-types";
 import {
   artifactPreviewKind,
   decodePreviewText,
@@ -22,17 +23,6 @@ export type ArtifactDownload = {
   name: string;
   size: number;
   mimeType: string;
-};
-
-const mimeTypes: Record<string, string> = {
-  md: "text/markdown; charset=utf-8", markdown: "text/markdown; charset=utf-8",
-  txt: "text/plain; charset=utf-8", text: "text/plain; charset=utf-8", log: "text/plain; charset=utf-8",
-  json: "application/json; charset=utf-8", jsonl: "application/jsonl; charset=utf-8", ndjson: "application/x-ndjson; charset=utf-8",
-  csv: "text/csv; charset=utf-8", tsv: "text/tab-separated-values; charset=utf-8",
-  yaml: "application/yaml; charset=utf-8", yml: "application/yaml; charset=utf-8", toml: "application/toml; charset=utf-8",
-  xml: "application/xml; charset=utf-8", ini: "text/plain; charset=utf-8", conf: "text/plain; charset=utf-8",
-  pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
-  zip: "application/zip", gz: "application/gzip", tar: "application/x-tar",
 };
 
 function relativeParts(value: string | undefined): string[] {
@@ -172,12 +162,13 @@ export class ArtifactStore {
 
   async download(path: string): Promise<ArtifactDownload> {
     const file = await this.resolveEntry(path, "file");
-    const extension = extname(file.absolutePath).slice(1).toLowerCase();
+    const name = basename(file.absolutePath);
+    const mime = lookup(name) || "application/octet-stream";
     return {
       absolutePath: file.absolutePath,
-      name: basename(file.absolutePath),
+      name,
       size: file.info.size,
-      mimeType: mimeTypes[extension] ?? "application/octet-stream",
+      mimeType: contentType(mime) || mime,
     };
   }
 
