@@ -167,7 +167,7 @@ function Mascot({ size }: { size: number }) {
         }}
       />
       <Image
-        source={require("../../../assets/capybara.png")}
+        source={require("../../../assets/mascot.png")}
         resizeMode="contain"
         style={{ width: size, height: size }}
         accessible={false}

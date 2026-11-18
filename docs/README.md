@@ -52,4 +52,3 @@
 ## 仓库约定
 
 - [仓库编码约定](../AGENTS.md)：架构边界、文档维护和验证要求
-- [第三方说明](../THIRD_PARTY_NOTICES.md)：OpenMuse UI 与素材的许可声明

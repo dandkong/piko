@@ -7,7 +7,7 @@
     "platforms": ["ios", "android", "web"],
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/capybara.png",
+      "favicon": "./assets/mascot.png",
       "name": "Piko",
       "shortName": "Piko",
       "lang": "zh-CN",
@@ -19,7 +19,7 @@
       "themeColor": "#0C0C0C",
       "backgroundColor": "#0C0C0C"
     },
-    "icon": "./assets/capybara.png",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -29,7 +29,7 @@
     "android": {
       "package": "com.piko.assistant",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/capybara.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FCFCFC"
       }
     },

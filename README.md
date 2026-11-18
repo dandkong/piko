@@ -42,4 +42,4 @@ Browse the [documentation index](docs/README.en.md) for English and Chinese user
 
 ## License
 
-Piko is licensed under the [MIT License](LICENSE). Third-party artwork and adapted code notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Piko is licensed under the [MIT License](LICENSE).

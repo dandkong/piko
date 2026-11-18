@@ -22,5 +22,3 @@ The following references are in Chinese:
 - [Feature index](README.md#功能说明), covering chat, side chats, background work, tasks, Telegram, attachments, posts, artifacts and settings.
 - [Operations index](README.md#配置与运维), covering configuration, runtime, deployment, storage and logging.
 - [Repository coding instructions](../AGENTS.md).
-
-Third-party license and attribution information is in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

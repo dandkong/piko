@@ -58,4 +58,4 @@ bun run build:web
 
 ## 许可证
 
-Piko 使用 [MIT 许可证](LICENSE)。界面与素材中源自 OpenMuse 的部分按其 MIT 许可标注，见[第三方说明](THIRD_PARTY_NOTICES.md)。
+Piko 使用 [MIT 许可证](LICENSE)。

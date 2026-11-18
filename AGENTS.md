@@ -43,6 +43,6 @@ Piko 是本地优先的个人助理。前端为 Expo / React Native，后端为 
 - 使用 Bun，维护根目录和客户端各自的依赖与锁文件；依赖版本以 package.json / 锁文件为准。
 - 持久化和隐私删除改动遵循[SQLite 存储](docs/operations/storage.md)中的数据范围；不删除附件、工作区文件或备份，不回滚外部副作用，也不宣称全介质擦除。
 - Android / iOS 工程由 Expo 生成且已忽略，原生配置通过 `app.json` 或配置插件保存；不提交构建产物、本机路径、凭据和用户工作区内容。
-- 动效使用 Reanimated；交互组件和第三方素材按[交互规范](docs/design/INTERACTION.md)及[第三方说明](THIRD_PARTY_NOTICES.md)维护。
+- 动效使用 Reanimated；交互组件按[交互规范](docs/design/INTERACTION.md)维护。
 - 代码改动按影响运行 `bun run typecheck`；涉及打包再做对应平台导出。仓库不保留测试套件，关键状态、持久化、路径边界和恢复行为以真实运行或临时脚本人工验证，并在文档中说明验证状态。
 - 文档改动检查链接、命令和实现状态即可；原生键盘、网络和后台行为需要设备验证，未验证的范围明确说明。
