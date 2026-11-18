@@ -7,12 +7,13 @@
 用户上传、Telegram 下载及助手发送的文件都保存在同一目录，不在工作区内：
 
 ```text
-PIKO_HOME/state/attachments/<文件名或 UUID>
+PIKO_HOME/state/attachments/<UUID>/<原文件名>  # 新接收的用户文件
+PIKO_HOME/state/attachments/<UUID>             # 助手发送的快照
 ```
 
 - 接收任意文件：图片、PDF、Office 文档、音视频等，模型自己决定如何检查
-- 服务端保留安全化的文件名，后缀取自原始文件名，取不到时按嗅探类型或客户端 MIME 推断；路径永远不由客户端提供。同名文件会覆盖，因此 Web 粘贴文件时加唯一前缀，手动选取的同名文件仍会覆盖
-- 单文件上限 20 MiB；图片按字节嗅探类型，其他类型通过 `mime-types` 根据后缀推断；未知类型按普通二进制处理
+- 每次上传或下载均使用独立 UUID 目录，目录内保留安全化的原文件名；同名文件不会互相覆盖，剪贴板文件名无需加唯一前缀。无文件名时按嗅探类型或客户端 MIME 生成默认名；路径永远不由客户端提供。此前保存在附件目录根部的用户文件和历史链接仍可读取。
+- 单文件上限 20 MiB；图片按字节嗅探类型，其他类型通过 `mime-types` 根据后缀推断；无后缀或未知类型历史记录按普通二进制处理
 - 接收文件和助手发送的快照均不自动过期；手动清理文件会使对应的历史附件失效
 - 附件属于运行时数据，不参与工作区备份语义；`PIKO_HOME` 备份时一并复制
 
@@ -46,7 +47,7 @@ PIKO_HOME/state/attachments/<文件名或 UUID>
 
 ```text
 <attached>
-~/.piko/state/attachments/<uuid>.jpg
+~/.piko/state/attachments/<uuid>/photo.jpg
 </attached>
 用户文字
 ```

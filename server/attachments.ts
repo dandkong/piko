@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { extension as extensionForMime, lookup as lookupMime } from "mime-types";
 
@@ -20,10 +20,7 @@ export function detectAttachmentMimeType(bytes: Uint8Array): string | undefined 
   return undefined;
 }
 
-/**
- * Files keep the name they arrived with; a repeated name overwrites the earlier file. Only the last path segment is
- * used, so a client can never choose a directory, and control characters are dropped.
- */
+/** Only the last path segment is used, so a client cannot choose a directory; control characters are dropped. */
 export function safeAttachmentName(name: string | undefined): string | undefined {
   if (name === undefined) return undefined;
   let value = basename(name.replace(/\\/g, "/")).replace(/[\u0000-\u001f\u007f]/g, "").trim();
@@ -50,12 +47,20 @@ export class AttachmentStore {
     if (bytes.length > this.maxBytes) throw new Error("The attachment is too large.");
     const detected = detectAttachmentMimeType(bytes);
     const extension = nameExtension(input.name) ?? ((detected && extensionForMime(detected)) || (input.mime && extensionForMime(input.mime)) || "bin");
-    const id = withExtension(safeAttachmentName(input.name) ?? randomUUID(), extension);
-    const fromExtension = detectExtension(id);
+    const name = safeAttachmentName(input.name) ?? `attachment.${extension}`;
+    const id = `${randomUUID()}/${name}`;
+    const fromExtension = detectExtension(name);
     const mime = detected ?? (fromExtension !== "application/octet-stream" ? fromExtension : input.mime ?? "application/octet-stream");
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const path = this.pathOf(id);
-    await writeFile(path, bytes, { mode: 0o600 });
+    const directory = join(this.directory, id.slice(0, id.indexOf("/")));
+    await mkdir(directory, { mode: 0o700 });
+    try { await writeFile(path, bytes, { mode: 0o600, flag: "wx" }); }
+    catch (error) {
+      await unlink(path).catch(() => {});
+      await rmdir(directory).catch(() => {});
+      throw error;
+    }
     return { id, path, mime, bytes: bytes.length };
   }
 
@@ -64,7 +69,7 @@ export class AttachmentStore {
     const path = this.pathOf(id);
     try {
       const bytes = new Uint8Array(await readFile(path));
-      return { attachment: { id, path, mime: detectExtension(id), bytes: bytes.length }, bytes };
+      return { attachment: { id, path, mime: detectAttachmentMimeType(bytes) ?? detectExtension(id), bytes: bytes.length }, bytes };
     } catch { return undefined; }
   }
 
@@ -129,7 +134,10 @@ export class AttachmentStore {
   }
 
   private allowed(id: string): boolean {
-    return safeAttachmentName(id) === id && resolve(this.pathOf(id)).startsWith(resolve(this.directory) + sep);
+    const parts = id.split("/");
+    const valid = parts.length === 1 ? safeAttachmentName(id) === id
+      : parts.length === 2 && isSnapshotId(parts[0]!) && safeAttachmentName(parts[1]) === parts[1];
+    return valid && resolve(this.pathOf(id)).startsWith(resolve(this.directory) + sep);
   }
 }
 
@@ -140,10 +148,6 @@ export function isSnapshotId(id: string): boolean {
 function nameExtension(name: string | undefined): string | undefined {
   const value = name?.match(/\.([A-Za-z0-9]{1,8})$/)?.[1].toLowerCase();
   return value && /^[a-z0-9]+$/.test(value) ? value : undefined;
-}
-
-function withExtension(name: string, extension: string): string {
-  return nameExtension(name) ? name : `${name}.${extension}`;
 }
 
 /** Determine MIME from a name using the shared database, falling back for unknown types. */

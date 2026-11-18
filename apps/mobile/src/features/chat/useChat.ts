@@ -104,6 +104,7 @@ export function useChat(
                 content: remaining.message,
                 createdAt: remaining.createdAt,
                 requestId: remaining.id,
+                ...(remaining.attachments.length && { attachments: remaining.attachments }),
               },
             ],
           }

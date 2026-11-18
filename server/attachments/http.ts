@@ -3,6 +3,12 @@ import { json, readBody } from "../http";
 import { audioPreviewResponse } from "./audio-preview";
 import { attachmentTextPreview } from "./text-preview";
 
+function contentDisposition(name: string): string {
+  const fallback = name.replace(/[\u0000-\u001f\u007f"\\]/g, "_").replace(/[^\x20-\x7e]/g, "_") || "attachment";
+  const encoded = encodeURIComponent(name).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export async function attachmentRequest(
   request: Request,
   attachments: AttachmentStore,
@@ -23,6 +29,7 @@ export async function attachmentRequest(
       return json(
         {
           id: saved.id,
+          name: saved.id.split("/").at(-1),
           mime: saved.mime,
           bytes: saved.bytes,
           url: `/api/attachments/${encodeURIComponent(saved.id)}`,
@@ -54,7 +61,8 @@ export async function attachmentRequest(
     const stored = await attachments.read(id);
     if (!stored) return json({ error: "Attachment not found." }, 404);
     if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, stored.bytes, stored.attachment.mime);
-    if (url.searchParams.get("preview") === "1") return attachmentTextPreview(id, stored.bytes);
+    const name = id.split("/").at(-1)!;
+    if (url.searchParams.get("preview") === "1") return attachmentTextPreview(name, stored.bytes);
     return new Response(stored.bytes.slice().buffer, {
       headers: {
         "Content-Type": stored.attachment.mime,
@@ -62,7 +70,7 @@ export async function attachmentRequest(
         "Cache-Control": "private, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
         ...((url.searchParams.get("download") === "1" || !stored.attachment.mime.startsWith("image/")) && {
-          "Content-Disposition": "attachment",
+          "Content-Disposition": contentDisposition(name),
         }),
       },
     });

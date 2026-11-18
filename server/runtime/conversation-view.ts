@@ -30,6 +30,7 @@ import {
   projectPiHistory,
   historyAroundPiMessage,
   searchPiHistory,
+  splitAttachments,
   readPiEntries,
   readPiInputs,
 } from "./pi-history";
@@ -652,11 +653,13 @@ export class ConversationView {
           const input = await this.storage.submission(item.id, ctx);
           if (await internalInput(tx, input?.requestId, this.conversation.id))
             continue;
+          const projected = splitAttachments(messageText(item.content));
           queued.push({
             id: `input-${item.id}`,
             role: "user",
-            content: messageText(item.content),
+            content: projected.text,
             createdAt: 0,
+            ...(projected.attachments && { attachments: projected.attachments }),
             ...(input?.requestId && { requestId: input.requestId }),
           });
         }

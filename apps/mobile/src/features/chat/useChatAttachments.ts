@@ -4,7 +4,6 @@ import { errorMessage } from "../../api/errors";
 import { uploadAttachment, type PickedFile } from "./api";
 import { pickAttachments } from "./pickAttachments";
 import { useTranslation } from "../../i18n";
-import { createUuidV4 } from "../../utils/uuid";
 
 export type PendingAttachment = MessageAttachment & { name: string };
 
@@ -68,8 +67,6 @@ export function useChatAttachments(loading: boolean, sending: RefObject<boolean>
   const pasteFiles = useCallback((files: File[]) => {
     enqueue(files.map(file => ({
       name: file.name || "image",
-      // Stored names must be unique: the server overwrites files with identical names.
-      uploadName: `paste-${createUuidV4()}-${file.name.split(/[\\/]/).pop() || "image"}`,
       mime: file.type,
       bytes: file,
     })));

@@ -3,7 +3,7 @@ import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
 import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
-import { detectExtension } from "../attachments";
+import { detectExtension, isSnapshotId } from "../attachments";
 import { PREVIEW_EXCERPT_MAX_CHARS } from "../domain/text-limits";
 import { SentAttachmentEntry, sentAttachmentMessage } from "./sent-attachments";
 
@@ -74,12 +74,15 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
 
 /** Attachment paths are model input; the UI gets ids and served URLs instead of the raw block. */
 const ATTACHED = /^<attached>\n([\s\S]*?)\n<\/attached>\n?/;
-function splitAttachments(content: string): { text: string; attachments?: MessageAttachment[] } {
+export function splitAttachments(content: string): { text: string; attachments?: MessageAttachment[] } {
   const match = ATTACHED.exec(content);
   if (!match) return { text: content };
   const attachments = match[1].split("\n").map(line => line.trim()).filter(Boolean).map(path => {
-    const id = path.slice(path.lastIndexOf("/") + 1);
-    return { id, url: `/api/attachments/${encodeURIComponent(id)}`, mime: detectExtension(id) };
+    const segments = path.split("/");
+    const name = segments.at(-1)!;
+    const parent = segments.at(-2);
+    const id = parent && isSnapshotId(parent) ? `${parent}/${name}` : name;
+    return { id, name, url: `/api/attachments/${encodeURIComponent(id)}`, mime: detectExtension(name) };
   });
   return { text: content.slice(match[0].length).trim(), ...(attachments.length && { attachments }) };
 }
