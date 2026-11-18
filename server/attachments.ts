@@ -2,25 +2,12 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
-import { lookup as lookupMime } from "mime-types";
+import { extension as extensionForMime, lookup as lookupMime } from "mime-types";
 
 /** One stored upload. The model reads `path`; channels share the same file. */
 export type StoredAttachment = { id: string; path: string; mime: string; bytes: number };
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-
-/** Extension hints, in both directions: a file keeps a recognizable suffix so the model can judge it. */
-const MIME_EXTENSIONS: Record<string, string> = {
-  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp",
-  "application/pdf": "pdf", "application/zip": "zip", "application/json": "json",
-  "application/msword": "doc", "application/vnd.ms-excel": "xls", "application/vnd.ms-powerpoint": "ppt",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
-  "text/plain": "txt", "text/markdown": "md", "text/csv": "csv", "text/html": "html", "text/xml": "xml",
-  "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/wav": "wav",
-  "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm",
-};
 
 /** Sniff the formats both the model and the image processor accept; never trust a client-supplied type. */
 export function detectAttachmentMimeType(bytes: Uint8Array): string | undefined {
@@ -62,7 +49,7 @@ export class AttachmentStore {
     if (!bytes.length) throw new Error("The attachment is empty.");
     if (bytes.length > this.maxBytes) throw new Error("The attachment is too large.");
     const detected = detectAttachmentMimeType(bytes);
-    const extension = nameExtension(input.name) ?? (detected && MIME_EXTENSIONS[detected]) ?? (input.mime && MIME_EXTENSIONS[input.mime]) ?? "bin";
+    const extension = nameExtension(input.name) ?? ((detected && extensionForMime(detected)) || (input.mime && extensionForMime(input.mime)) || "bin");
     const id = withExtension(safeAttachmentName(input.name) ?? randomUUID(), extension);
     const fromExtension = detectExtension(id);
     const mime = detected ?? (fromExtension !== "application/octet-stream" ? fromExtension : input.mime ?? "application/octet-stream");
@@ -124,7 +111,7 @@ export class AttachmentStore {
       throw error;
     }
     await output.close();
-    return { id, name, mime: detectSentAttachmentMime(name), bytes: bytes.length };
+    return { id, name, mime: detectExtension(name), bytes: bytes.length };
   }
 
   async readSnapshot(id: string): Promise<Uint8Array | undefined> {
@@ -146,11 +133,6 @@ export class AttachmentStore {
   }
 }
 
-/** Assistant attachments use the MIME database; unknown extensions stay ordinary files. */
-export function detectSentAttachmentMime(name: string): string {
-  return lookupMime(name) || "application/octet-stream";
-}
-
 export function isSnapshotId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 }
@@ -164,7 +146,7 @@ function withExtension(name: string, extension: string): string {
   return nameExtension(name) ? name : `${name}.${extension}`;
 }
 
+/** Determine MIME from a name using the shared database, falling back for unknown types. */
 export function detectExtension(id: string): string {
-  const extension = id.slice(id.lastIndexOf(".") + 1).toLowerCase();
-  return Object.entries(MIME_EXTENSIONS).find(([, value]) => value === extension)?.[0] ?? "application/octet-stream";
+  return lookupMime(id) || "application/octet-stream";
 }

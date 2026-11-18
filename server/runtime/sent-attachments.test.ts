@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { AttachmentStore, detectExtension, detectSentAttachmentMime } from "../attachments";
+import { AttachmentStore, detectExtension } from "../attachments";
 import { sentAttachmentRequest } from "../attachments/sent-http";
 import { createSentAttachmentTools, sentAttachmentMessage, type SentAttachment } from "./sent-attachments";
 
@@ -23,11 +23,17 @@ test("assistant file MIME comes from the extension database and is persisted in 
     expect(recorded?.name).toBe("sample.epub");
     const message = sentAttachmentMessage(7, recorded!);
     expect(message.attachments?.[0]?.mime).toBe("application/epub+zip");
-    expect(detectSentAttachmentMime("file.with-unknown-extension-xyz")).toBe("application/octet-stream");
-    // User-upload extension rules deliberately remain unchanged.
-    expect(detectExtension("sample.epub")).toBe("application/octet-stream");
+    expect(detectExtension("file.with-unknown-extension-xyz")).toBe("application/octet-stream");
+    expect(detectExtension("sample.epub")).toBe("application/epub+zip");
+    const incoming = await store.save({ name: "sample.epub", bytes: Buffer.from("content") });
+    expect(incoming.mime).toBe("application/epub+zip");
+    expect((await store.lookup(incoming.id))?.mime).toBe("application/epub+zip");
+    const unnamed = await store.save({ bytes: Buffer.from("ID3data"), mime: "audio/mpeg" });
+    expect(unnamed.id.endsWith(".mpga")).toBe(true);
+    expect(unnamed.mime).toBe("audio/mpeg");
+    expect((await store.read(unnamed.id))?.attachment.mime).toBe("audio/mpeg");
     for (const [name, type] of [["sound.mp3", "audio/mpeg"], ["sound.m4a", "audio/mp4"], ["sound.ogg", "audio/ogg"], ["sound.wav", "audio/wav"]])
-      expect(detectSentAttachmentMime(name!)).toBe(type!);
+      expect(detectExtension(name!)).toBe(type!);
   } finally { await rm(state, { recursive: true, force: true }); }
 });
 
