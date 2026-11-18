@@ -15,8 +15,8 @@ export function createTavilyProvider(options: ProviderOptions): SearchProvider {
         body.time_range = filters.freshness;
         body.filter_by_published_date = true;
       }
-      if (filters.includeDomains?.length) body.include_domains = [...filters.includeDomains];
-      if (filters.excludeDomains?.length) body.exclude_domains = [...filters.excludeDomains];
+      if (filters.includeDomains !== undefined) body.include_domains = filters.includeDomains;
+      if (filters.excludeDomains !== undefined) body.exclude_domains = filters.excludeDomains;
       const data = await requestJson("tavily", "https://api.tavily.com/search", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` },

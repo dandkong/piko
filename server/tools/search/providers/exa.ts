@@ -9,8 +9,8 @@ export function createExaProvider(options: ProviderOptions): SearchProvider {
       const body: Record<string, unknown> = { query, type: "lite", numResults: count,
         contents: { highlights: { maxCharacters: SEARCH_SNIPPET_MAX } } };
       if (filters.freshness) body.startPublishedDate = freshnessStartIso(filters.freshness);
-      if (filters.includeDomains?.length) body.includeDomains = [...filters.includeDomains];
-      if (filters.excludeDomains?.length) body.excludeDomains = [...filters.excludeDomains];
+      if (filters.includeDomains !== undefined) body.includeDomains = filters.includeDomains;
+      if (filters.excludeDomains !== undefined) body.excludeDomains = filters.excludeDomains;
       const data = await requestJson("exa", "https://api.exa.ai/search", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "x-api-key": options.apiKey },

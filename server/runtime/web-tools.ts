@@ -40,10 +40,10 @@ export function createWebTools(env: Record<string, string | undefined>, options:
         description: "Maximum number of web results. Defaults to 5, max 10." })),
       freshness: Type.Optional(Type.Union([Type.Literal("day"), Type.Literal("week"), Type.Literal("month"), Type.Literal("year")],
         { description: "Limit results to the last day, week, month, or year." })),
-      includeDomains: Type.Optional(Type.Array(Type.String(), { maxItems: 5,
-        description: "Restrict results to these hostnames, such as example.com. Max 5." })),
-      excludeDomains: Type.Optional(Type.Array(Type.String(), { maxItems: 5,
-        description: "Exclude results from these hostnames, such as example.com. Max 5." })),
+      includeDomains: Type.Optional(Type.Array(Type.String(), {
+        description: "Restrict results to these domains, where supported by the search provider." })),
+      excludeDomains: Type.Optional(Type.Array(Type.String(), {
+        description: "Exclude results from these domains, where supported by the search provider." })),
     }, { additionalProperties: false }),
     replay: "unsafe",
     execute: async (args, _api, context) => ({ output: [{ type: "text", text: await searchWeb(args, { providers }, context.abortSignal) }] }),

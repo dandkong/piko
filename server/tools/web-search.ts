@@ -60,42 +60,11 @@ function normalizeFilters(args: SearchArguments): SearchFilters {
   const freshness = args.freshness;
   if (freshness !== undefined && !(SEARCH_FRESHNESS as readonly string[]).includes(freshness))
     throw new WebRequestError("freshness must be day, week, month, or year.");
-  const includeDomains = domainArgument(args.includeDomains, "includeDomains");
-  const excludeDomains = domainArgument(args.excludeDomains, "excludeDomains");
   return {
     ...(freshness && { freshness }),
-    ...(includeDomains.length && { includeDomains }),
-    ...(excludeDomains.length && { excludeDomains }),
+    ...(args.includeDomains !== undefined && { includeDomains: args.includeDomains }),
+    ...(args.excludeDomains !== undefined && { excludeDomains: args.excludeDomains }),
   };
-}
-
-function domainArgument(value: unknown, name: string): string[] {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new WebRequestError(`${name} must be an array of hostnames.`);
-  const unique = new Set<string>();
-  for (const entry of value) {
-    const hostname = typeof entry === "string" ? normalizeHostname(entry) : undefined;
-    if (!hostname) throw new WebRequestError(`${name} must contain hostnames such as example.com.`);
-    unique.add(hostname);
-  }
-  if (unique.size > 5) throw new WebRequestError(`${name} accepts at most 5 domains.`);
-  return [...unique];
-}
-
-function normalizeHostname(value: string): string | undefined {
-  const raw = value.trim().toLowerCase();
-  // Accept only a bare hostname. URL parsing alone would silently discard a supplied
-  // path/query or normalize default ports, widening the requested source scope.
-  if (!raw || /[\\/:?#@\\s]/.test(raw)) return undefined;
-  try {
-    const url = new URL(`https://${raw}`);
-    const hostname = url.hostname;
-    return !url.username && !url.password && !url.port && url.pathname === "/" && !url.search && !url.hash
-      && hostname.length <= 253
-      && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)
-      ? hostname
-      : undefined;
-  } catch { return undefined; }
 }
 
 function formatResults(results: readonly SearchResult[]): string {
