@@ -129,12 +129,17 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
     borderRadius: radii.pill,
   },
   attachmentRow: {
-    width: 260,
     maxWidth: "100%",
     gap: 4,
   },
+  attachmentActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   attachmentHit: {
-    alignSelf: "stretch",
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   attachmentChip: {
     flexDirection: "row",
@@ -155,7 +160,8 @@ function createStyles(colors: ThemeColors, stateColors: ThemeStateColors) {
     backgroundColor: stateColors.soft,
   },
   attachmentName: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
     color: colors.text,
     fontSize: 14,

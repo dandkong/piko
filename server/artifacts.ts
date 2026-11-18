@@ -2,6 +2,7 @@ import { lstat, readdir, readFile, realpath, rm, unlink } from "node:fs/promises
 import { basename, extname, join, resolve } from "node:path";
 import {
   artifactPreviewKind,
+  decodePreviewText,
   MAX_ARTIFACT_PREVIEW_BYTES,
   type ArtifactDeletion,
   type ArtifactDirectory,
@@ -159,7 +160,7 @@ export class ArtifactStore {
     }
     if (bytes.byteLength > MAX_ARTIFACT_PREVIEW_BYTES)
       throw new ArtifactError("This file is too large to preview in Piko. Download it to view.", 413);
-    const content = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+    const content = decodePreviewText(bytes);
     return {
       path: file.relativePath,
       content,

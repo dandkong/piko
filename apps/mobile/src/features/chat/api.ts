@@ -25,5 +25,8 @@ export async function uploadAttachment(file: PickedFile): Promise<MessageAttachm
     });
     return readJson<MessageAttachment>(response);
 }
+export function attachmentActionUrl(url: string, action: "play" | "preview" | "download"): string {
+  return `${url}${url.includes("?") ? "&" : "?"}${action}=1`;
+}
 export async function stopConversation(requestId: string, id?: string) { await chatJson(`${chatPath(id)}/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId }) }); }
 export { isAbortError } from "../../api/errors";

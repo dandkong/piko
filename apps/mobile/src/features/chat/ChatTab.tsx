@@ -6,7 +6,7 @@ import {
   type ListRenderItemInfo,
 } from "react-native";
 import { ArrowDown } from "lucide-react-native";
-import { CHAT_PAGE_SIZE, type Message } from "../../../../../shared/chat";
+import { CHAT_PAGE_SIZE, type Message, type MessageAttachment } from "../../../../../shared/chat";
 import { useTheme } from "../../theme";
 import { useTranslation } from "../../i18n";
 import { IconButton } from "../../components/IconButton";
@@ -23,9 +23,11 @@ export const MESSAGE_GAP = 13;
 const MessageSeparator = () => <View style={{ height: MESSAGE_GAP }} />;
 
 /** Only the visible conversation mounts a list; each visit starts at the latest message. */
-export function ChatTab({ headerHeight, footerHeight }: {
+export function ChatTab({ headerHeight, footerHeight, onAttachmentPreview, onDownloadError }: {
   headerHeight: number;
   footerHeight: number;
+  onAttachmentPreview: (item: MessageAttachment) => void;
+  onDownloadError: () => void;
 }) {
   const { colors } = useTheme();
   const { t, language } = useTranslation();
@@ -55,7 +57,7 @@ export function ChatTab({ headerHeight, footerHeight }: {
           style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}
         >
           <View style={{ gap: 7 }}>
-            <AttachmentList attachments={item.attachments} />
+            <AttachmentList attachments={item.attachments} onPreview={onAttachmentPreview} onDownloadError={onDownloadError} />
             {hasContent ? (
               <MarkdownContent
                 content={item.content}

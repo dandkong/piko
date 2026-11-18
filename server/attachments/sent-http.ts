@@ -1,5 +1,6 @@
 import { AttachmentStore, detectSentAttachmentMime, safeAttachmentName } from "../attachments";
 import { audioPreviewResponse } from "./audio-preview";
+import { attachmentTextPreview } from "./text-preview";
 import { json } from "../http";
 
 /** Outgoing snapshot IDs never contain user-provided paths; the name is only a download hint. */
@@ -12,6 +13,7 @@ export async function sentAttachmentRequest(request: Request, store: AttachmentS
   const name = safeAttachmentName(url.searchParams.get("name") ?? undefined) ?? "attachment";
   const encoded = encodeURIComponent(name).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
   if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, bytes, detectSentAttachmentMime(name));
+  if (url.searchParams.get("preview") === "1") return attachmentTextPreview(name, bytes);
   return new Response(request.method === "HEAD" ? null : new Uint8Array(bytes).buffer, { headers: {
     "Content-Type": "application/octet-stream",
     "Content-Length": String(bytes.length),

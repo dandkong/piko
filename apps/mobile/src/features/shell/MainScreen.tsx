@@ -4,6 +4,8 @@ import { AppShell, type AppTab } from "./AppShell";
 import { ChatComposer } from "../chat/ChatComposer";
 import { ChatProvider, type ChatStore } from "../chat/ChatProvider";
 import { ChatTab, MESSAGE_GAP } from "../chat/ChatTab";
+import { AttachmentPreviewPanel } from "../chat/AttachmentPreviewPanel";
+import type { MessageAttachment } from "../../../../../shared/chat";
 import { useSideChats } from "../chat/side-chats";
 import { ArtifactsScreen } from "../artifacts/ArtifactsScreen";
 import { ArtifactPreviewPanel } from "../artifacts/ArtifactPreviewPanel";
@@ -28,6 +30,7 @@ export function MainScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactEntry>();
+  const [attachmentPreview, setAttachmentPreview] = useState<MessageAttachment>();
   const [postPreview, setPostPreview] = useState<PostSummary>();
   const [postsRevision, setPostsRevision] = useState(0);
   const onPostDeleted = useCallback((id: string) => {
@@ -62,8 +65,10 @@ export function MainScreen() {
     toastTimer.current = setTimeout(() => setToastMessage(undefined), 5000);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+  const onAttachmentDownloadError = useCallback(() => showToast(t("artifacts.downloadFailed")), [showToast, t]);
   const selectTab = (value: AppTab) => {
     Keyboard.dismiss();
+    setAttachmentPreview(undefined);
     setArtifactPreview(undefined);
     setPostPreview(undefined);
     setExecutionPreview(undefined);
@@ -73,6 +78,7 @@ export function MainScreen() {
   };
   const selectChat = (id: string) => {
     Keyboard.dismiss();
+    setAttachmentPreview(undefined);
     setArtifactPreview(undefined);
     setPostPreview(undefined);
     setExecutionPreview(undefined);
@@ -153,6 +159,7 @@ export function MainScreen() {
             onClose={() => setSettingsOpen(false)}
             onToast={showToast}
           />
+          <AttachmentPreviewPanel file={attachmentPreview} onClose={() => setAttachmentPreview(undefined)} />
           <PostPreviewPanel post={postPreview} onClose={() => setPostPreview(undefined)} />
           <TaskExecutionPreviewPanel target={executionPreview} onClose={() => setExecutionPreview(undefined)} />
           <ArtifactPreviewPanel
@@ -211,6 +218,8 @@ export function MainScreen() {
           visible={tab === "Chat" && id === selectedId}
           onActiveChat={onActiveChat}
           onSideChatRunEnd={onSideChatRunEnd}
+          onAttachmentPreview={setAttachmentPreview}
+          onDownloadError={onAttachmentDownloadError}
           headerHeight={headerHeight}
           footerHeight={footerHeight}
         />

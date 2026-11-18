@@ -40,6 +40,10 @@ const textExtensions = new Set([
 ]);
 const wellKnownTextNames = new Set(["readme", "license", "notice", "changelog"]);
 
+export function decodePreviewText(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+}
+
 export function artifactPreviewKind(name: string): ArtifactPreviewKind | null {
   const lower = name.toLowerCase();
   if (wellKnownTextNames.has(lower)) return "text";

@@ -1,6 +1,7 @@
 import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments";
 import { json, readBody } from "../http";
 import { audioPreviewResponse } from "./audio-preview";
+import { attachmentTextPreview } from "./text-preview";
 
 export async function attachmentRequest(
   request: Request,
@@ -53,13 +54,14 @@ export async function attachmentRequest(
     const stored = await attachments.read(id);
     if (!stored) return json({ error: "Attachment not found." }, 404);
     if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, stored.bytes, stored.attachment.mime);
+    if (url.searchParams.get("preview") === "1") return attachmentTextPreview(id, stored.bytes);
     return new Response(stored.bytes.slice().buffer, {
       headers: {
         "Content-Type": stored.attachment.mime,
         "Content-Length": String(stored.attachment.bytes),
         "Cache-Control": "private, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
-        ...(!stored.attachment.mime.startsWith("image/") && {
+        ...((url.searchParams.get("download") === "1" || !stored.attachment.mime.startsWith("image/")) && {
           "Content-Disposition": "attachment",
         }),
       },

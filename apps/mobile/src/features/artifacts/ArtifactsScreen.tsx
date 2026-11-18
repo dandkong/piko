@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { ArrowUpDown, ChevronRight, Download, FileText, Folder, MoreVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import type { ArtifactEntry } from "../../../../../shared/artifacts";
 import { AnchoredMenuContent } from "../../components/AnchoredMenu";
@@ -16,6 +16,7 @@ import { artifactDownloadUrl, deleteArtifact, loadArtifacts } from "./api";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { errorMessage } from "../../api/errors";
 import { useTranslation } from "../../i18n";
+import { downloadFile } from "../../utils/download";
 
 import { artifactMetadata, artifactSortOptions, DEFAULT_ARTIFACT_SORT, isArtifactSort, sortArtifacts, type ArtifactSort } from "./presentation";
 
@@ -128,7 +129,7 @@ export function ArtifactsScreen({
   };
   const download = (entry: ArtifactEntry) => {
     setMenu(undefined);
-    void Linking.openURL(artifactDownloadUrl(entry.path)).catch(() => {
+    void downloadFile(artifactDownloadUrl(entry.path)).catch(() => {
       onToast(t("artifacts.downloadFailed"));
     });
   };
