@@ -17,7 +17,6 @@ export type PostGenerationResult = { postId: string } | { skipped: true; reason:
 
 export function createPostsExtension(options: {
   workspace: string;
-  bindings: () => ReadonlyMap<number, string>;
   background: () => Promise<BackgroundSelection | undefined>;
   web: ReturnType<typeof createWebTools>["extension"];
   history: ReturnType<typeof createSessionSearchTools>;
@@ -48,7 +47,7 @@ export function createPostsExtension(options: {
           }
           let input: Awaited<ReturnType<typeof postContext>> | undefined;
           await runtime.commit(async tx => {
-            input = await postContext(tx, options.workspace, options.bindings(), runtime.now());
+            input = await postContext(tx, options.workspace, runtime.now());
           }, context);
           const child = await runtime.conversation(childId!, context);
           if (!child) throw new Error("Post research conversation is unavailable.");

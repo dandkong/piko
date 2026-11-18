@@ -127,7 +127,7 @@ class PikoRuntime {
     });
     const postTools = createPostTools();
     const postResearchTools = createPostTools({ includeSearch: false, recentOnlyRead: true });
-    const posts = createPostsExtension({ workspace: this.paths.workspace, bindings: () => this.main.bindings,
+    const posts = createPostsExtension({ workspace: this.paths.workspace,
       background, web: web.extension, history: sessionSearch, posts: postResearchTools });
     this.searchConfigured = web.searchConfigured;
     const registry = createRegistry();
