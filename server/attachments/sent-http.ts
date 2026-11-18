@@ -1,4 +1,4 @@
-import { AttachmentStore, detectExtension, safeAttachmentName } from "../attachments";
+import { AttachmentStore, detectSentAttachmentMime, safeAttachmentName } from "../attachments";
 import { audioPreviewResponse } from "./audio-preview";
 import { json } from "../http";
 
@@ -11,7 +11,7 @@ export async function sentAttachmentRequest(request: Request, store: AttachmentS
   if (!bytes) return json({ error: "Attachment not found." }, 404);
   const name = safeAttachmentName(url.searchParams.get("name") ?? undefined) ?? "attachment";
   const encoded = encodeURIComponent(name).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-  if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, bytes, detectExtension(name));
+  if (url.searchParams.get("play") === "1") return audioPreviewResponse(request, bytes, detectSentAttachmentMime(name));
   return new Response(request.method === "HEAD" ? null : new Uint8Array(bytes).buffer, { headers: {
     "Content-Type": "application/octet-stream",
     "Content-Length": String(bytes.length),

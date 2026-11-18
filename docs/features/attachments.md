@@ -22,7 +22,7 @@ PIKO_HOME/state/attachments/<文件名或 UUID>
 
 - 主聊和未归档旁聊的助手可以调用 `send_attachment(path)`，参数是本机绝对路径；每次发送一个文件，不带文字参数。助手仍可另发普通文本。后台子 Agent 和任务不能直接发送，可将生成文件的路径交给所属聊天的助手。
 - 只接受非空、最大 20 MiB 的普通文件，不跟随路径最后一段符号链接。发送时把文件复制为 `PIKO_HOME/state/attachments/<UUID>` 下的独立快照，原文件保持不变；原始安全化文件名保存在会话记录中，用于展示和下载。相同文件名也不会互相覆盖。
-- 助手发送的快照暂不自动清理；删除旁聊也不会删除快照，备份 `PIKO_HOME` 时应一并保护。会话记录使用 Durable `piko.chat-attachment` entry 保存快照身份和文件名等元数据，实时投影和历史恢复共用同一记录。
+- 助手发送的快照暂不自动清理；删除旁聊也不会删除快照，备份 `PIKO_HOME` 时应一并保护。会话记录使用 Durable `piko.chat-attachment` entry 保存快照身份、文件名和 MIME 类型等元数据，实时投影和历史恢复共用同一记录。MIME 使用 `mime-types` 按文件名后缀查询，未知类型回退 `application/octet-stream`；用户上传的类型处理暂不改变。
 - 主聊附件尽力同步到 Telegram，使用 `sendDocument` 发送原名文件；旁聊附件不自动投递 Telegram。会话记录先于 Telegram 投递，发送失败不会回滚会话，也不自动重试或补发；超时结果可能不确定。
 
 ## 展示与音频预览

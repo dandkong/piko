@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
+import { lookup as lookupMime } from "mime-types";
 
 /** One stored upload. The model reads `path`; channels share the same file. */
 export type StoredAttachment = { id: string; path: string; mime: string; bytes: number };
@@ -123,7 +124,7 @@ export class AttachmentStore {
       throw error;
     }
     await output.close();
-    return { id, name, mime: detectExtension(name), bytes: bytes.length };
+    return { id, name, mime: detectSentAttachmentMime(name), bytes: bytes.length };
   }
 
   async readSnapshot(id: string): Promise<Uint8Array | undefined> {
@@ -143,6 +144,11 @@ export class AttachmentStore {
   private allowed(id: string): boolean {
     return safeAttachmentName(id) === id && resolve(this.pathOf(id)).startsWith(resolve(this.directory) + sep);
   }
+}
+
+/** Assistant attachments use the MIME database; unknown extensions stay ordinary files. */
+export function detectSentAttachmentMime(name: string): string {
+  return lookupMime(name) || "application/octet-stream";
 }
 
 export function isSnapshotId(id: string): boolean {
