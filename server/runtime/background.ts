@@ -23,7 +23,7 @@ const TASK_EXTENSIONS = ["piko-tasks", "piko-memory-curation", "piko-posts", "pi
 export function childScope(agent: Agent) {
   return {
     extensions: agent.extensions.filter(value => !CHILD_EXTENSIONS.includes(value.name)),
-    tools: agent.tools.filter(value => value.name !== "send_attachment" && !CHILD_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
+    tools: [...agent.tools, ...agent.deferred].filter(value => value.name !== "send_attachment" && !CHILD_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
   };
 }
 
@@ -31,6 +31,6 @@ export function childScope(agent: Agent) {
 export function sideChatScope(agent: Agent) {
   return {
     extensions: agent.extensions.filter(value => !TASK_EXTENSIONS.includes(value.name)),
-    tools: agent.tools.filter(value => !TASK_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
+    tools: [...agent.tools, ...agent.deferred].filter(value => !TASK_TOOL_PREFIXES.some(prefix => value.name.startsWith(prefix))),
   };
 }

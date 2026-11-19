@@ -7,7 +7,8 @@ export function toolIcon(name: string): string {
     case "write": return "📄";
     case "edit": return "📝";
     case "bash": return "💻";
-    case "web_search": return "🔍";
+    case "web_search":
+    case "tool_search": return "🔍";
     case "web_extract": return "🌐";
     case "send_attachment": return "📎";
     default: return "🛠️";

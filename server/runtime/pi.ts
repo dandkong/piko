@@ -53,6 +53,8 @@ import { StorageRetentionService } from "./storage-retention";
 import { AttachmentStore } from "../attachments";
 import { createSentAttachmentTools } from "./sent-attachments";
 import { join } from "node:path";
+import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
+import { McpManager, readMcpConfig } from "./mcp";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -69,6 +71,7 @@ class PikoRuntime {
   private posts!: PostsService;
   private memory?: MemoryCurationService;
   private retention?: StorageRetentionService;
+  private mcp?: McpManager;
   private main!: DurableChatSession;
   private readonly sessions = new Map<
     ConversationId,
@@ -133,6 +136,7 @@ class PikoRuntime {
     const registry = createRegistry();
     for (const extension of [
       coding,
+      createToolSearchExtension(),
       createWorkspaceResources(this.paths),
       web.extension,
       children.extension,
@@ -145,7 +149,15 @@ class PikoRuntime {
       posts.extension,
     ])
       registry.install(extension);
-    const opened = await openRuntime(this.paths, config, registry);
+    this.mcp = new McpManager(readMcpConfig(this.paths.home), env, this.paths.workspace, registry);
+    let opened: Awaited<ReturnType<typeof openRuntime>>;
+    try {
+      await this.mcp.start();
+      opened = await openRuntime(this.paths, config, registry);
+    } catch (error) {
+      await this.mcp.close();
+      throw error;
+    }
     this.storage = opened.storage;
     const harness = (this.harness = opened.harness);
     this.sideChats = new SideChats(
@@ -356,7 +368,8 @@ class PikoRuntime {
         );
       } finally {
         this.replies.close();
-        await this.harness?.close(ctx);
+        try { await this.harness?.close(ctx); }
+        finally { await this.mcp?.close(); }
       }
     })();
     return this.closed;

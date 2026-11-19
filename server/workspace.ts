@@ -54,6 +54,7 @@ export function initializeWorkspace(paths: WorkspacePaths): WorkspacePaths {
   for (const [name, value] of Object.entries({
     "piko.json": defaultPikoFile,
     "models.json": { providers: {} },
+    "mcp.json": { mcpServers: {} },
   })) {
     try {
       writeFileSync(

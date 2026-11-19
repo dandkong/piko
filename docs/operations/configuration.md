@@ -9,12 +9,13 @@
 ```text
 PIKO_HOME/config/
   piko.json       # 统一 Agent 预设/连接选项、通道与工具行为，不含部署参数/凭据
+  mcp.json        # MCP Server 与工具暴露配置；首次创建为空
   models.json     # 模型目录、能力、请求参数与供应商 apiKey
   auth.json       # 模型凭据，Pi 格式；优先级高于 models.json；权限 0600
   .env            # 可选：部署参数、通道/工具凭据；权限 0600
 ```
 
-首次初始化只创建缺失 JSON 与工作区模板，不把生效的环境值写回 JSON，不创建 settings.json，不覆盖已有文件；auth.json 由使用方按 Pi 格式提供。模型配置详见[Agent 运行时](agent-runtime.md)。
+首次初始化只创建缺失 JSON（包括空的 mcp.json）与工作区模板，不把生效的环境值写回 JSON，不创建 settings.json，不覆盖已有文件；auth.json 由使用方按 Pi 格式提供。模型配置详见[Agent 运行时](agent-runtime.md)。
 
 ## JSON：行为和非敏感设置
 
@@ -48,6 +49,8 @@ piko.json 格式 version 为 1，可省略行为字段并按默认值补齐；ag
 - 模型角色固定为 agent.profiles.main（主聊天与所有旁聊统一使用的全局主模型）和 agent.profiles.background（之后新建的后台工作模型），不接受其他名字；两者模型与思考级别启动时校验。未单独配置 background 时动态跟随 main；后台思考强度可独立覆盖，显式配置后台模型后才与 main 分离。Durable AgentDoc 保存 SDK 当前执行模型，在启动与前台新一轮接纳时对齐全局 main；正在运行的执行不被切换。省略 main 时不会自动选第一个可用模型，模型执行前要求用户明确选择。可选 agent.stream 保留模型连接参数，没有环境覆盖入口。
 - Piko 不配置 retry/compaction，使用 Durable 默认策略；当前锁定依赖默认启用重试（最多额外 3 次）与自动压缩，SDK 升级时跟随其默认行为。
 - models.json 的 headersEnv 只绑定 HTTP header 到一个环境变量**名称**，不放 header 值。供应商凭据写 `providers.<id>.apiKey`（内联，格式与 Pi 一致），或放在 auth.json；`keyless` 与 `apiKey` 互斥，两者都不配置时供应商视为未配置。地址、能力、请求默认值等非敏感设置仍在 JSON，不要把凭据塞进 URL 或其他文字字段。
+
+MCP Server 使用独立的可选 `mcp.json`，详细格式、环境变量、工具发现与限制见 [MCP 工具](../features/mcp.md)。
 
 ## 环境：部署和凭据
 

@@ -80,13 +80,14 @@ Agent 预设统一在 piko.json.agent，取消 settings.json 的生成/读取；
 
 Agent 构建与后台驱动是两个独立能力：调用者显式提供历史起点、模型、cwd、角色、工具和资源选择，公共 Anchor/Reporter 只驱动执行与回传；记忆整理保留自己的 Durable task 流程。已有子会话的 AgentDoc 和资源选择在重启后保留，不重新套用父会话模板；后台默认模型仅在创建新子会话时选择。内部支持原生 fork、无自动资源及技能白名单，不扩大模型工具或 HTTP 能力，详见[Agent 构建与后台执行](../features/agent-composition.md)。
 
-主/后台模型选择通过配置服务写入 piko.json 并热应用；模型目录、凭据、工具、通道及环境变量由部署管理，按部署方式重启服务。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。模型选择 API 尚未鉴权；它不再处理凭据，但仍能更改实例模型策略。
+主/后台模型选择通过配置服务写入 piko.json 并热应用；模型目录、凭据、工具、通道及环境变量由部署管理，按部署方式重启服务。Durable Extension 由 Piko 服务端源码注册，不加载 `PIKO_HOME` 或工作区中的代码插件；MCP 客户端由源码适配器注册，外部 Server 按独立配置连接。模型/思考选择及压缩占用会话空闲边界，不与生成并发。普通指导与技能索引在每次模型请求时刷新，无需重开 Harness。模型选择 API 尚未鉴权；它不再处理凭据，但仍能更改实例模型策略。
 
 - 技能来源：工作区 `.agents/skills/<目录>/SKILL.md` 与应用 `server/resources/skills/<目录>/SKILL.md`，只读单层，不递归或跟随链接目录/文件；同名时工作区优先。同名覆盖有诊断，非法 YAML 跳过。`PIKO_HOME/skills` 不创建也不读取。
 - 核心指导 `server/resources/prompts/core.md` 负责运行规则；工作区只加载 AGENTS.md（助手身份、表达和做事约定）与 MEMORY.md（用户资料、环境事实和长期结论）。`memory/YYYY-MM-DD.md` 每日记忆不自动注入，相关时由助手按需 read/search。注入时标注来源和角色，文件职责见 [资源与工具](../features/workspace-and-main-chat.md#资源与工具)；角色标注不是权限隔离。core、AGENTS、全局和任务 MEMORY 均完整读取，不设应用层文本上限，不静默截断；实际请求仍受模型上下文窗口限制；过大的静态指导可能导致请求在自动压缩聊天历史后仍被模型拒绝，不静默截断文件。技能只注入索引，正文按需 read。
 - 显式资源范围，不发现祖先指导或个人 CLI 资源；UI 输入按原文处理，不展开 CLI 的 `/skill:` 命令。
-- Durable Extension 仅用于 Piko 内建能力：资源 section、web 工具、子 Agent 和内部 记忆整理 task。记忆整理 task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
+- Durable Extension 承载 Piko 内建能力与 Piko 注册的 MCP 工具适配器：资源 section、web 工具、子 Agent 和内部 记忆整理 task。记忆整理 task 仅在主会话闲置 30 分钟后创建专用子会话，限配 `read/write/edit`，从同一批增量直接维护每日及长期记忆；无主 Agent 手动触发工具。子会话的 Bash 使用工作区 cwd 但不是安全沙箱。用户自定义行为通过 skill 指导助手调用已有工具；skill 不注册新工具或运行时 hooks。
 - read、write、edit、bash 使用 durable CodingTools，cwd 为工作区，工具输出溢出文件在 state/tmp；Bash 子进程临时目录沿用用户配置或系统默认。`read` 对 PNG/JPEG/GIF/WebP/BMP 返回图片块，Photon 处理器在 worker 中做方向校正、转码和缩放；非视觉模型由上游给占位诊断。接收的附件落在 `PIKO_HOME/state/attachments` 并把路径交给模型；主聊和旁聊可通过 `send_attachment(path)` 发布文件快照到同一附件目录，由会话 entry 投影到客户端；附件不自动过期，`state/tmp` 在启动时清空。支持的音频可在 App 内预览，见 [附件与图片读取](../features/attachments.md)。本机权限与 cwd 不构成沙箱；目前没有单独操作审批 UI。
+- MCP 工具通过后端独立配置与 `pi-mcp` 连接；常驻 `tool_search` 按需发现 deferred 工具，配置与限制见 [MCP 工具](../features/mcp.md)。
 - web_search/web_extract 由内置 piko-web 注册，网络业务与 SDK 适配分离。搜索的 query/maxResults/freshness/includeDomains/excludeDomains 不暴露供应商；启用开关与 providers 优先级只在 piko.json，搜索凭据 EXA_API_KEY/TAVILY_API_KEY/DEEPSEEK_API_KEY/BRAVE_SEARCH_API_KEY 在创建 Harness 时从后端环境读取，不进入客户端或工具记录。未配置不阻止其他能力。tools 元数据报告内建工具与配置状态；技能/脚本不自动成为内置能力。见 [网络工具](../features/web-tools.md)。
 - 自动压缩、有限重试和手动压缩使用 durable 原生能力。图片读取已接入；头像状态栏显示实时活动，TG 临时显示工具摘要；工具详细进度和思考 UI 尚未实现。产物 UI 与文件边界见[产物浏览](../features/artifacts.md)。
 
