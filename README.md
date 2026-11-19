@@ -14,6 +14,17 @@ Piko is a local-first personal assistant. Through an ongoing conversation, it he
 - **Artifacts**: Browse and download finished work saved by the assistant.
 - **Workspace and tools**: Files, memory, skills, web search and extraction, and configurable MCP tools.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" width="24%" alt="Piko Chat" />
+  <img src="docs/screenshots/tasks.png" width="24%" alt="Piko Tasks" />
+  <img src="docs/screenshots/posts.png" width="24%" alt="Piko Posts" />
+  <img src="docs/screenshots/artifacts.png" width="24%" alt="Piko Artifacts" />
+</p>
+
+*Screenshots use fictional example data.*
+
 ## Development
 
 The frontend uses Expo / React Native and the backend uses Bun. The agent runtime is powered by pi-durable, with model access through pi-ai. With Bun 1.4+ and Node.js installed, run from the repository root:

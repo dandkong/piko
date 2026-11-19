@@ -14,6 +14,17 @@ Piko 是一个本地优先的个人助理。通过持续的对话，它帮助你
 - **Artifacts**：浏览和下载助手保存的正式成果。
 - **工作区与工具**：文件、记忆、技能、网页搜索与提取，以及可配置的 MCP 工具。
 
+## 界面截图
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" width="24%" alt="Piko Chat" />
+  <img src="docs/screenshots/tasks.png" width="24%" alt="Piko Tasks" />
+  <img src="docs/screenshots/posts.png" width="24%" alt="Piko Posts" />
+  <img src="docs/screenshots/artifacts.png" width="24%" alt="Piko Artifacts" />
+</p>
+
+*截图使用虚构的示例数据。*
+
 ## 开发
 
 前端使用 Expo / React Native，后端使用 Bun；Agent 运行时基于 pi-durable，模型接入使用 pi-ai。需要 Bun 1.4+ 和 Node.js，在仓库根目录运行：
