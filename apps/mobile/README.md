@@ -16,7 +16,7 @@
 - 历史默认最近 20 条，向上滚到顶部附近加载更早记录；失败可点击列表顶端重试。分页合并与断线窗口恢复在 shared/history.ts，原生列表保位使用 maintainVisibleContentPosition，Web 使用可见消息 DOM 锚点补齐 RN Web 未实现的保位行为。
 - 输入、滚动和布局的已确认行为见 [产品约定](../../docs/design/PRODUCT.md)。原生键盘与后台切换需设备验证。
 
-客户端通过 `/api/chat` 读取后端唯一主会话，持续 `/api/chat/events` 观察两通道变化，POST 只提交输入。工作区和 Durable 原生 SQLite 都在后端，客户端不另建消息数据库；主聊不使用客户端生成的聊天 ID。职责见 [架构约定](../../docs/design/ARCHITECTURE.md)，恢复行为见 [工作区与主会话模型](../../docs/features/workspace-and-main-chat.md)。
+客户端通过 `/api/chat` 读取后端唯一主会话，持续 `/api/chat/events` 观察两通道变化，POST 只提交输入。工作区和 Durable 原生 SQLite 都在后端，客户端不另建消息数据库；主聊不使用客户端生成的聊天 ID。职责见 [架构约定](../../docs/design/ARCHITECTURE.md)，恢复行为见 [主会话](../../docs/features/main-chat.md)。
 
 正式 Web 使用 `bun run build:web` 导出，由根目录 `bun run start` 托管，默认同源 /api；开发 Web 和原生客户端保持原默认地址。显式 EXPO_PUBLIC_PIKO_API_URL 在构建时生效。Linux Web/API 单进程运行见[运行说明](../../docs/operations/deployment.md)。
 

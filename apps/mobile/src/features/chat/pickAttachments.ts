@@ -1,11 +1,10 @@
-import { Platform } from "react-native";
 import type { PickedFile } from "./api";
 import { ApiError } from "../../api/errors";
 
-/** One picker for the shared UI; the native surface is not wired yet. */
-export function pickAttachments(unavailableMessage = "附件上传目前仅在网页端可用。"): Promise<PickedFile[]> {
-  if (Platform.OS !== "web" || typeof document === "undefined") {
-    return Promise.reject(new ApiError(unavailableMessage, 0, "attachments_unavailable"));
+/** Web retains its browser-native file input; native uses pickAttachments.native.ts. */
+export function pickAttachments(): Promise<PickedFile[]> {
+  if (typeof document === "undefined") {
+    return Promise.reject(new ApiError("File selection is unavailable.", 0, "attachments_unavailable"));
   }
   return new Promise(resolve => {
     const input = document.createElement("input");

@@ -5,6 +5,7 @@ English | [中文](configuration.zh-CN.md)
 Piko initializes `~/.piko/config/` on first launch. `PIKO_HOME` selects another absolute data directory; set it before starting the backend. Never commit credentials or expose them to the client.
 
 - `piko.json`: application behavior and model role selection.
+- `mcp.json`: optional MCP servers; see the [MCP reference](../features/mcp.md) (Chinese).
 - `models.json`: model catalog, custom providers and optional model API keys.
 - `auth.json`: model credentials; takes precedence over model keys in `models.json`.
 - `.env`: optional backend deployment settings and tool/channel credentials. Keep it private (`chmod 600`).

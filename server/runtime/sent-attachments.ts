@@ -1,7 +1,7 @@
 import { defineEntry, defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { Message, MessageAttachment } from "../../shared/chat";
-import { AttachmentStore } from "../attachments";
+import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments";
 
 export type SentAttachment = { id: string; name: string; mime: string; bytes: number; createdAt: number };
 export const SentAttachmentEntry = defineEntry<SentAttachment>("piko.chat-attachment");
@@ -27,7 +27,7 @@ export function createSentAttachmentTools(store: AttachmentStore) {
       if (!path.startsWith("/")) return failure("An absolute local file path is required.");
       let saved: Awaited<ReturnType<AttachmentStore["saveSnapshot"]>>;
       try { saved = await store.saveSnapshot(path); }
-      catch { return failure("Cannot read or save the file. Ensure it is a regular nonempty file no larger than 20 MiB."); }
+      catch { return failure(`Cannot read or save the file. Ensure it is a regular nonempty file no larger than ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB.`); }
       // After a commit is attempted, keep the snapshot on an ambiguous failure: it may already be referenced.
       if (context.abortSignal?.aborted) { await store.discardSnapshot(saved.id); return failure("Attachment publication cancelled."); }
       const data: SentAttachment = { ...saved, createdAt: api.now() };

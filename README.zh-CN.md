@@ -2,30 +2,21 @@
 
 中文 | [English](README.md)
 
-**给日常留一点空间。由 Pi 驱动。**
+**给日常留一点空间。由 Pi Durable 驱动。**
 
-Piko 是一款本地优先的个人助理：用 Expo / React Native 提供 Web、iOS 和 Android 客户端，在你自己的后端机器上运行助手、保存会话与工作区。Agent 运行时使用 pi-durable，模型接入使用 pi-ai。
+Piko 是一个本地优先的个人助理。通过持续的对话，它帮助你思考、安排工作，并把值得保留的成果放在自己的工作区里。
 
-> [!WARNING]
-> Piko 仍处于早期开发阶段，不适合直接作为公开互联网服务使用。当前 API 没有登录认证；文件与命令工具以服务端进程权限运行，也没有工作区沙箱。默认仅监听本机地址。除非在受信网络中使用，或先通过认证代理保护网页、API 和 SSE，否则不要将服务暴露到公网。
+## 主要功能
 
-## 当前能力
+- **Chat**：持久主会话与独立旁聊，支持流式回复、附件和可选的 Telegram 私聊。
+- **Tasks**：通过聊天交办后台工作，或创建可手动、一次性及定时运行的任务。
+- **Posts**：根据用户上下文自动或手动生成个性化内容。
+- **Artifacts**：浏览和下载助手保存的正式成果。
+- **工作区与工具**：文件、记忆、技能、网页搜索与提取，以及可配置的 MCP 工具。
 
-- 持久主会话、独立旁聊、流式回复与重连恢复。
-- 通过对话委派后台工作；保存任务并手动或按计划执行。
-- 工作区文件、记忆和技能；内置网页搜索与正文提取，可配置 [MCP 工具](docs/features/mcp.md)。
-- Web 支持上传附件、助手发送文件和支持的音频播放预览。
-- 可选 Telegram 私聊，与 App 共用主会话。
-- Posts 每天早上 7 点（服务器本地时间）自动尝试或手动生成，支持卡片预览和确认后关联删除；Artifacts 支持文件浏览、下载和确认删除。
-- 临时后台执行保留 7 天、每 24 小时检查回收；有业务归属的记录随所属对象删除。
-- App 界面支持跟随设备、中文和英文，偏好保存在当前设备；用户内容、服务端消息和 Telegram 不随之翻译。
-- Web 可本地开发或通过 Bun 单进程运行；iOS 和 Android 客户端由 Expo 提供。通用部署方案尚未确定。
+## 开发
 
-**尚未完成：** Posts 通知、任务产物聚合、移动端附件选择界面、登录与多用户、权限/沙箱、推送通知和浏览器自动化均未接入。细节见[路线图](ROADMAP.md)。
-
-## 快速开始
-
-需要 Bun 1.4+ 和 Node.js（Expo CLI 使用）。目前以源码运行和开发为主，不提供正式安装包或 Docker 部署支持；Android 和 iOS 未进行全面设备验证，自动化测试覆盖也有限。从仓库根目录安装依赖并启动 Web 开发环境：
+前端使用 Expo / React Native，后端使用 Bun；Agent 运行时基于 pi-durable，模型接入使用 pi-ai。需要 Bun 1.4+ 和 Node.js，在仓库根目录运行：
 
 ```bash
 bun install --frozen-lockfile
@@ -33,29 +24,23 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-开发服务会同时启动 API（默认 `127.0.0.1:8787`）与 Expo（默认 `localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区。配置至少一个模型后即可发送消息；配置方式见[应用配置](docs/guides/configuration.zh-CN.md)和[模型运行时说明](docs/operations/agent-runtime.md)。
-
-Android 模拟器可在启动模拟器后运行 `bun run dev:android`。macOS 上运行 `bun run dev`，再在 Expo 终端按 `i` 启动 iOS Simulator；Windows 可使用 Android Emulator。更多运行与构建说明见[客户端 README](apps/mobile/README.md)。
-
-## 检查与构建
+开发服务默认启动 API（`127.0.0.1:8787`）和 Expo Web（`localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区；发送消息前需[配置模型](docs/guides/configuration.zh-CN.md)。
 
 ```bash
 bun run typecheck
 bun run build:web
 ```
 
-`bun run build` 导出 iOS 和 Android 的 JavaScript bundle，不会生成可直接安装或签名的原生安装包。源码构建后的 Web/API 手动运行见[运行说明](docs/guides/deployment.zh-CN.md)。
+更多运行、配置和备份说明见[文档索引](docs/README.md)。
 
-## 数据与安全
+## 状态与安全
 
-默认情况下，配置、会话数据库和附件保存在后端的 `~/.piko`；助手工作区默认为 `~/.piko/workspace`。可以通过 `PIKO_HOME` 和 `PIKO_WORKSPACE` 指定路径。模型、工具和 Telegram 的配置与凭据均保留在后端，不放入客户端构建包。具体边界见[配置说明](docs/operations/configuration.md)。
+Piko 仍在开发中，功能和数据格式可能变化；iOS / Android 尚未全面真机验证，也没有正式发布的移动端安装包。
 
-不要把 Piko API 直接暴露给不可信网络。工作区只是默认工作目录，不是安全沙箱；助手的 `bash`、文件工具和联网能力可能产生真实副作用。备份、删除和恢复边界见[存储说明](docs/guides/storage.zh-CN.md)。
+**当前 API 没有登录认证，文件和命令工具使用后端账户的权限，工作区不是沙箱。** 服务默认仅监听本机；不要直接暴露到不可信网络。需要远程访问时，应使用认证代理保护 Web、API 和 SSE，并阻止绕过代理直连后端。
 
-## 文档
-
-按主题浏览[文档索引](docs/README.md)。产品范围、架构、交互规范和后续计划分别见[产品说明](docs/design/PRODUCT.md)、[架构说明](docs/design/ARCHITECTURE.md)、[交互规范](docs/design/INTERACTION.md)和[路线图](ROADMAP.md)。
+配置、会话数据、附件和默认工作区位于 `~/.piko`；请保护凭据并定期[备份数据](docs/guides/storage.zh-CN.md)。
 
 ## 许可证
 
-Piko 使用 [MIT 许可证](LICENSE)。
+[MIT](LICENSE)

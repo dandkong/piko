@@ -2,14 +2,21 @@
 
 [中文](README.zh-CN.md) | English
 
-A local-first personal assistant powered by Pi Durable. Piko provides a shared conversation across a Web app and an optional Telegram bot, with background work, scheduled tasks, posts, and a workspace for files, memory, and skills.
+**A little more room for everyday life. Powered by Pi Durable.**
 
-> [!WARNING]
-> Piko is an early development project, not a secure public service. Its API has no authentication, and shell and file tools run with the backend account's permissions. The workspace is **not a sandbox**. The server listens on localhost by default; do not expose it to untrusted networks. If remote access is needed, protect the Web UI, API, and SSE with an authenticated proxy and prevent direct access to the backend.
+Piko is a local-first personal assistant. Through an ongoing conversation, it helps you think, organize work, and keep useful results in your own workspace.
 
-## Run from source
+## Features
 
-Requirements: Bun 1.4+ and Node.js for Expo. From the repository root:
+- **Chat**: A persistent main conversation and independent side chats, with streaming replies, attachments, and optional Telegram private chat.
+- **Tasks**: Delegate background work or create tasks that run manually, once, or on a schedule.
+- **Posts**: Generate personalized reading based on your context, automatically or on demand.
+- **Artifacts**: Browse and download finished work saved by the assistant.
+- **Workspace and tools**: Files, memory, skills, web search and extraction, and configurable MCP tools.
+
+## Development
+
+The frontend uses Expo / React Native and the backend uses Bun. The agent runtime is powered by pi-durable, with model access through pi-ai. With Bun 1.4+ and Node.js installed, run from the repository root:
 
 ```bash
 bun install --frozen-lockfile
@@ -17,29 +24,23 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-The development command starts the API on `127.0.0.1:8787` and Expo Web on `localhost:8081`. On first launch Piko initializes its private configuration and workspace under `~/.piko`. Configure a model before sending messages; see [configuration](docs/guides/configuration.md).
-
-For a source-built Web bundle served by the Bun backend, see the [source deployment guide](docs/guides/deployment.md). Telegram is optional; it shares the main conversation with the app.
+The development command starts the API at `127.0.0.1:8787` and Expo Web at `localhost:8081`. On first launch, Piko initializes its configuration and workspace under `~/.piko`; [configure a model](docs/guides/configuration.md) before sending messages.
 
 ```bash
 bun run typecheck
 bun run build:web
 ```
 
-## Status and scope
+See the [documentation index](docs/README.en.md) for deployment, configuration, and backups.
 
-Current capabilities include persistent main and side chats, background delegation and scheduled tasks; an assistant workspace with files, memory and skills; configurable MCP tools; optional Telegram; scheduled or manual posts; and artifact browsing. Web chat supports attachment uploads, assistant-sent files and playback previews for supported audio.
+## Status and security
 
-Not yet implemented: post notifications, task-artifact aggregation, native attachment selection, login and multi-user isolation, permissions or a sandbox, push notifications, and browser automation. See the [roadmap](ROADMAP.en.md) for details.
+Piko is under active development; features and data formats may change. iOS and Android have not been comprehensively tested on devices, and there are no published mobile releases.
 
-Piko is under active development. There are no published Android or iOS releases, container deployment, or production support guarantees. Native clients and devices have not been comprehensively tested. The current automated test coverage is limited. Features, configuration, and storage may change.
+**The API has no authentication, file and shell tools use the backend account's permissions, and the workspace is not a sandbox.** The server listens on localhost by default; do not expose it directly to untrusted networks. For remote access, protect the Web UI, API, and SSE with an authenticated proxy and prevent direct backend access.
 
-The backend stores configuration, Durable SQLite state, attachments and the assistant workspace under `~/.piko` by default. `PIKO_HOME` and `PIKO_WORKSPACE` can change these paths. Keep credentials private and back up the complete state and workspace; see [storage](docs/guides/storage.md).
-
-The app interface supports English, Chinese, and following the device language. This preference is local to the device and does not translate user content, server messages, or Telegram.
-
-Browse the [documentation index](docs/README.en.md) for English and Chinese user guides. Detailed product, architecture and design references are maintained in Chinese.
+Configuration, conversation data, attachments, and the default workspace live under `~/.piko`. Keep credentials private and [back up your data](docs/guides/storage.md).
 
 ## License
 
-Piko is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)

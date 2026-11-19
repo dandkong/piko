@@ -5,6 +5,7 @@
 首次启动时 Piko 会补齐 `~/.piko/config/` 中缺失的文件。启动前设置绝对路径 `PIKO_HOME` 可使用其他数据目录。不要提交凭据，也不要将凭据放进客户端。
 
 - `piko.json`：应用行为和模型角色选择。
+- `mcp.json`：可选 MCP Server 配置，详见 [MCP 工具](../features/mcp.md)。
 - `models.json`：模型目录、自定义供应商及可选模型 API Key。
 - `auth.json`：模型凭据，优先于 `models.json` 中的模型 Key。
 - `.env`：可选的后端部署参数、工具和通道凭据；设置为私有权限（`chmod 600`）。

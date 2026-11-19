@@ -57,7 +57,7 @@ export function useChatAttachments(loading: boolean, sending: RefObject<boolean>
     if (sending.current || loading || picking.current || locked.current) return;
     picking.current = true;
     try {
-      enqueue(await pickAttachments(t("chat.nativeAttachment")));
+      enqueue(await pickAttachments());
     } catch (cause) {
       if (mounted.current) onError(errorMessage(cause, t("chat.uploadFailed"), t));
     } finally {

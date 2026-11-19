@@ -6,6 +6,7 @@ export type SubmissionReceipt = { id: string; requestId?: string; status: "queue
 export const CHAT_PAGE_SIZE = 20;
 /** Images a single message may carry; each one is read by the model as a separate file. */
 export const MAX_ATTACHMENTS = 4;
+export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 export type HistoryPage = { messages: Message[]; nextBefore?: string };
 /** Prompt size of the last model call; a reference point, not a live token count. */
 export type ChatUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; contextWindow?: number; ratio?: number };
