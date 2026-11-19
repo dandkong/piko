@@ -1,5 +1,5 @@
 import type { AssistantTask, AssistantTaskDetail, TaskExecution } from "../../../shared/tasks";
-import type { ChatRuntime } from "../../runtime/types";
+import type { TasksRuntimeAccess } from "../../runtime/types";
 import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./api";
@@ -139,7 +139,7 @@ function truncateResult(value: string, limit = TELEGRAM_LONG_TEXT_LIMIT_UTF16): 
 /** Stateless task/list/execution callbacks re-read the persisted task facts on every click. */
 export class TelegramTaskMenus {
   private readonly working = new Set<string>();
-  constructor(private readonly runtime: Pick<ChatRuntime, "tasks">, private readonly api: TelegramTransport) {}
+  constructor(private readonly runtime: TasksRuntimeAccess, private readonly api: TelegramTransport) {}
 
   async open(address: Address): Promise<void> {
     const all = await (await this.runtime.tasks()).list();

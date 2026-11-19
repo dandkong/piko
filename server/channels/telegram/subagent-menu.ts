@@ -1,4 +1,4 @@
-import type { ChatRuntime, SubagentDetail, SubagentListItem } from "../../runtime/types";
+import type { WorkspaceRuntimeAccess, SubagentDetail, SubagentListItem } from "../../runtime/types";
 import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
@@ -68,7 +68,7 @@ function detailView(item: SubagentListItem, detail: SubagentDetail): View {
 export class TelegramSubagentMenus {
   private readonly working = new Set<string>();
 
-  constructor(private readonly runtime: Pick<ChatRuntime, "subagents">, private readonly api: TelegramTransport) {}
+  constructor(private readonly runtime: Pick<WorkspaceRuntimeAccess, "subagents">, private readonly api: TelegramTransport) {}
 
   async open(address: Address): Promise<void> {
     const items = await (await this.runtime.subagents()).list();

@@ -1,6 +1,6 @@
 import type { RuntimeDescription } from "../../../shared/runtime";
 import type { ConversationStore } from "../../chat/conversations";
-import { RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
+import { RuntimeBusyError, type ConversationRuntime, type SettingsRuntime } from "../../runtime/types";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 import { sameModel, selectionText } from "./command-format";
 import { TELEGRAM_BUTTON_LABEL_LIMIT, TELEGRAM_MENU_PAGE_SIZE } from "./menu-policy";
@@ -22,7 +22,7 @@ type View = { text: string; buttons: TelegramKeyboard };
 /** Ephemeral, source-bound menus. Issued indices keep referring to the same catalog snapshot. */
 export class TelegramMenus {
   private readonly menus = new Map<string, Menu>();
-  constructor(private readonly store: ConversationStore, private readonly runtime: ChatRuntime, private readonly api: TelegramTransport) {}
+  constructor(private readonly store: ConversationStore, private readonly runtime: Pick<ConversationRuntime, "describe" | "configure"> & Pick<SettingsRuntime, "settings">, private readonly api: TelegramTransport) {}
 
   async open(address: Address, kind: Menu["kind"], description?: RuntimeDescription): Promise<void> {
     description ??= await this.runtime.describe();

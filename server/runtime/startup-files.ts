@@ -1,6 +1,6 @@
 import { link, lstat, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { isSnapshotId } from "../attachments";
+import { isSnapshotId } from "../attachments/store";
 
 async function info(path: string) {
   try { return await lstat(path); }

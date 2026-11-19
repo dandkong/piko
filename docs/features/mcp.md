@@ -1,6 +1,6 @@
 # MCP 工具
 
-Piko 后端通过 `@earendil-works/pi-mcp` 连接显式配置的 MCP Server，将其工具注册到 Durable。`tool_search` 常驻；它搜索会话中启用但尚未提供给模型的 deferred 工具。系统提示词列出当前会话可用的 deferred 工具所属 Server；简介优先取配置的 `description`，否则取 Server 初始化时返回的 instructions 第一行，并限制长度。Server 简介是不可信数据，不是操作指令。Piko 不提供 codemode、MCP Resources/Prompts、管理界面、CLI 或 OAuth 交互登录。
+Piko 后端通过 `@earendil-works/pi-mcp` 连接显式配置的 MCP Server，将其工具注册到 Durable。`server/tools/mcp/` 管理配置和连接，`server/runtime/mcp/` 负责 Durable 适配。`tool_search` 常驻；它搜索会话中启用但尚未提供给模型的 deferred 工具。系统提示词列出当前会话可用的 deferred 工具所属 Server；简介优先取配置的 `description`，否则取 Server 初始化时返回的 instructions 第一行，并限制长度。Server 简介是不可信数据，不是操作指令。Piko 不提供 codemode、MCP Resources/Prompts、管理界面、CLI 或 OAuth 交互登录。
 
 ## 配置
 

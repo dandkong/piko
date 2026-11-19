@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { WorkspacePaths } from "../workspace";
 import type { RuntimeSelection } from "../../shared/runtime";
-import type { AssistantSubagentsRuntime, ChatRuntime } from "./types";
+import type { AssistantSubagentsRuntime, AppRuntime } from "./types";
 import { RuntimeBusyError } from "./types";
 import { DurableChatSession } from "./conversation-session";
 import { createSubagentRuntime } from "./subagents/runtime";
@@ -50,11 +50,12 @@ import { PostsService } from "./posts/service";
 import { postHistoryScope } from "./posts/documents";
 import { historyAroundPiMessage, searchPiHistory } from "./pi-history";
 import { StorageRetentionService } from "./storage-retention";
-import { AttachmentStore } from "../attachments";
+import { AttachmentStore } from "../attachments/store";
 import { createSentAttachmentTools } from "./sent-attachments";
 import { join } from "node:path";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
-import { McpManager, readMcpConfig } from "./mcp";
+import { McpManager } from "./mcp/extension";
+import { readMcpConfig } from "../tools/mcp/config";
 
 /** One owner for storage, scheduler and root-only services; per-chat controllers never close it. */
 class PikoRuntime {
@@ -379,7 +380,7 @@ class PikoRuntime {
 export function createPiRuntime(
   paths: WorkspacePaths,
   options: { models?: Models } = {},
-): ChatRuntime {
+): AppRuntime {
   let opening: Promise<PikoRuntime> | undefined;
   let closing: Promise<void> | undefined;
   async function get() {

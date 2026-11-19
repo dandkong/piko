@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ArtifactStore } from "./artifacts";
+import { ArtifactStore } from "./artifacts/store";
 import { artifactRequest } from "./artifacts/http";
 
 test("artifact downloads use MIME database without changing preview or file bytes", async () => {

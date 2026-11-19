@@ -1,4 +1,4 @@
-import { AttachmentStore, detectExtension, safeAttachmentName } from "../attachments";
+import { AttachmentStore, detectExtension, safeAttachmentName } from "./store";
 import { audioPreviewResponse } from "./audio-preview";
 import { attachmentTextPreview } from "./text-preview";
 import { json } from "../http";

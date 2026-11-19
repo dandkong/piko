@@ -1,11 +1,10 @@
 import { Bot } from "grammy";
 import type { ConversationStore } from "../../chat/conversations";
-import type { ChatRuntime } from "../../runtime/types";
 import { TelegramApi, telegramErrorCode } from "./api";
 import { richBlocksToPlainText } from "./quote";
-import { TelegramChannel, TELEGRAM_COMMANDS } from "./channel";
+import { TelegramChannel, TELEGRAM_COMMANDS, type TelegramRuntime } from "./channel";
 import type { TelegramConfig } from "../../config";
-import type { AttachmentStore } from "../../attachments";
+import type { AttachmentStore } from "../../attachments/store";
 import { MAX_ATTACHMENTS } from "../../../shared/chat";
 import { logInfo, logWarn } from "../../logging";
 
@@ -17,7 +16,7 @@ export class TelegramBot {
   private polling?: Promise<void>;
   private starting?: Promise<void>;
   private stopping = false;
-  constructor(private readonly config: TelegramConfig, private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
+  constructor(private readonly config: TelegramConfig, private readonly conversations: ConversationStore, private readonly runtime: TelegramRuntime,
     private readonly attachments: AttachmentStore, bot?: Bot, private readonly onFailure?: () => void,
     private readonly onExitRequest?: () => void) {
     this.bot = bot ?? new Bot(config.token, { client: { timeoutSeconds: 10 } });

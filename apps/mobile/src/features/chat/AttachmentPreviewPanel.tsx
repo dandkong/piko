@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { FileText } from "lucide-react-native";
-import { artifactPreviewKind, type ArtifactPreviewKind } from "../../../../../shared/artifacts";
+import { filePreviewKind, type FilePreviewKind } from "../../../../../shared/file-preview";
 import type { MessageAttachment } from "../../../../../shared/chat";
 import { apiFetch, readJson } from "../../api/client";
 import { ApiError, errorMessage } from "../../api/errors";
@@ -14,7 +14,7 @@ export function AttachmentPreviewPanel({ file, onClose }: { file?: MessageAttach
   const { colors } = useTheme();
   const { t } = useTranslation();
   const name = file?.name ?? file?.id ?? "";
-  const format = artifactPreviewKind(name);
+  const format = filePreviewKind(name);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ url: string; content?: string; error?: string }>();
   useEffect(() => {
@@ -22,7 +22,7 @@ export function AttachmentPreviewPanel({ file, onClose }: { file?: MessageAttach
     if (!file || !format) return;
     const controller = new AbortController();
     void apiFetch(attachmentActionUrl(file.url, "preview"), { signal: controller.signal })
-      .then(response => readJson<{ content: string; preview: ArtifactPreviewKind }>(response))
+      .then(response => readJson<{ content: string; preview: FilePreviewKind }>(response))
       .then(value => { if (!controller.signal.aborted) setResult({ url: file.url, content: value.content }); })
       .catch(value => {
         if (controller.signal.aborted) return;

@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { MAX_ARTIFACT_PREVIEW_BYTES } from "../../shared/artifacts";
-import { AttachmentStore } from "../attachments";
-import { ArtifactStore } from "../artifacts";
+import { MAX_FILE_PREVIEW_BYTES } from "../../shared/file-preview";
+import { AttachmentStore } from "./store";
+import { ArtifactStore } from "../artifacts/store";
 import { attachmentRequest } from "./http";
 import { sentAttachmentRequest } from "./sent-http";
 
@@ -33,7 +33,7 @@ test("incoming and sent files share text preview rules and separate original dow
     }
     const unsupported = await store.save({ name: "archive.zip", bytes: Buffer.from("data") });
     expect((await attachmentRequest(new Request(`http://localhost/api/attachments/${unsupported.id}?preview=1`), store))?.status).toBe(415);
-    const large = await store.save({ name: "large.txt", bytes: new Uint8Array(MAX_ARTIFACT_PREVIEW_BYTES + 1).fill(65) });
+    const large = await store.save({ name: "large.txt", bytes: new Uint8Array(MAX_FILE_PREVIEW_BYTES + 1).fill(65) });
     expect((await attachmentRequest(new Request(`http://localhost/api/attachments/${large.id}?preview=1`), store))?.status).toBe(413);
     const image = await store.save({ name: "image.png", bytes: new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]) });
     const imageDownload = await attachmentRequest(new Request(`http://localhost/api/attachments/${image.id}?download=1`), store);

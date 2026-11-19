@@ -4,7 +4,7 @@ import {
   isHistoryCursor,
   isRequestId,
 } from "../../shared/chat";
-import type { AttachmentStore } from "../attachments";
+import type { AttachmentStore } from "../attachments/store";
 import type { ConversationStores } from "./stores";
 import { chatStream } from "./stream";
 import { json, readObjectBody } from "../http";

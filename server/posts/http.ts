@@ -1,9 +1,9 @@
 import { isRequestId } from "../../shared/chat";
 import { PostError, postId } from "../domain/posts";
 import { json, readObjectBody } from "../http";
-import type { ChatRuntime } from "../runtime/types";
+import type { PostsRuntimeAccess } from "../runtime/types";
 
-export async function postRequest(request: Request, runtime: ChatRuntime, maxBytes: number): Promise<Response | undefined> {
+export async function postRequest(request: Request, runtime: PostsRuntimeAccess, maxBytes: number): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/posts" && !url.pathname.startsWith("/api/posts/")) return undefined;
   const parts = url.pathname.split("/").slice(3);

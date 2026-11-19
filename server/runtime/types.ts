@@ -66,24 +66,35 @@ export interface PostsRuntime {
   generation(id: string): Promise<PostGeneration>;
   stop(id: string): Promise<PostGeneration>;
 }
-export interface ChatRuntime {
-  posts(): Promise<PostsRuntime>;
-  tasks(): Promise<AssistantTasksRuntime>;
+/** Conversation control and observation; the runtime owns each session's lifetime. */
+export interface ConversationRuntime {
+  createSession(conversationId?: string): Promise<ChatSession>;
+  isModelReady(): Promise<boolean>;
+  describe(conversationId?: string): Promise<RuntimeDescription>;
+  configure(selection: RuntimeSelection): Promise<void>;
+  compact(conversationId?: string): Promise<CompactionResult>;
+  stop(commandId?: string, conversationId?: string): Promise<boolean>;
+}
+export interface TasksRuntimeAccess { tasks(): Promise<AssistantTasksRuntime>; }
+export interface PostsRuntimeAccess { posts(): Promise<PostsRuntime>; }
+export interface WorkspaceRuntimeAccess {
   subagents(): Promise<AssistantSubagentsRuntime>;
   skill(name: string): Promise<WorkspaceSkillDetail | undefined>;
-  isModelReady(): Promise<boolean>;
+}
+export interface SettingsRuntime {
   settings(): Promise<ModelSettingsSnapshot>;
   saveModelSettings(draft: SaveModelSettings): Promise<SaveModelSettingsResult>;
+}
+export interface SideChatsRuntime {
   sideChats: {
     list(): Promise<SideChat[]>;
     create(requestId: string): Promise<SideChat>;
     generateTitle(id: string, requestIds?: readonly string[], signal?: AbortSignal, onlyIfEmpty?: boolean): Promise<SideChat>;
     remove(id: string): Promise<void>;
   };
-  createSession(conversationId?: string): Promise<ChatSession>;
-  describe(conversationId?: string): Promise<RuntimeDescription>;
-  configure(selection: RuntimeSelection): Promise<void>;
-  compact(conversationId?: string): Promise<CompactionResult>;
-  stop(commandId?: string, conversationId?: string): Promise<boolean>;
+}
+/** The application composition root owns one runtime and its lifecycle. */
+export interface AppRuntime extends ConversationRuntime, TasksRuntimeAccess, PostsRuntimeAccess,
+  WorkspaceRuntimeAccess, SettingsRuntime, SideChatsRuntime {
   dispose(): Promise<void>;
 }

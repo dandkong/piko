@@ -1,8 +1,8 @@
 import type { ConversationStore } from "../../chat/conversations";
-import { CompactionExecutionError, ModelConfigurationError, RuntimeBusyError, type ChatRuntime } from "../../runtime/types";
+import { CompactionExecutionError, ModelConfigurationError, RuntimeBusyError, type AppRuntime } from "../../runtime/types";
 import { normalizeMessage } from "../../chat/input";
 import { MAX_ATTACHMENTS } from "../../../shared/chat";
-import type { AttachmentStore } from "../../attachments";
+import type { AttachmentStore } from "../../attachments/store";
 import { telegramErrorCode, type TelegramTransport } from "./api";
 import { withTelegramQuote } from "./quote";
 import { TelegramReply, TELEGRAM_STREAM_INTERVAL_MS } from "./output";
@@ -23,6 +23,9 @@ export type TelegramMessage = {
   topic?: boolean; business?: boolean;
 };
 
+export type TelegramRuntime = Pick<AppRuntime,
+  "posts" | "tasks" | "subagents" | "skill" | "isModelReady" | "settings" | "describe" | "configure" | "compact">;
+
 export class TelegramChannel {
   private accepting = true;
   private notificationChatId?: string;
@@ -37,7 +40,7 @@ export class TelegramChannel {
   private readonly postMenus: TelegramPostMenus;
   private unsubscribeReplies?: () => void;
   constructor(private readonly identity: { botId: string; username: string; userId: string },
-    private readonly conversations: ConversationStore, private readonly runtime: ChatRuntime,
+    private readonly conversations: ConversationStore, private readonly runtime: TelegramRuntime,
     private readonly api: TelegramTransport, private readonly store: AttachmentStore,
     private readonly intervalMs = TELEGRAM_STREAM_INTERVAL_MS,
     private readonly onExitRequest?: () => void) {

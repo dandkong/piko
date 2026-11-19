@@ -8,8 +8,8 @@ import { clearRuntimeTemp, migrateSentAttachments } from "./runtime/startup-file
 import { TelegramBot } from "./channels/telegram/bot";
 import { join, resolve } from "node:path";
 import { createWebHandler } from "./web";
-import { AttachmentStore } from "./attachments";
-import { ArtifactStore } from "./artifacts";
+import { AttachmentStore } from "./attachments/store";
+import { ArtifactStore } from "./artifacts/store";
 import { homedir } from "node:os";
 import {
   configureLogging,

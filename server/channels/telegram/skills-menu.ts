@@ -1,5 +1,5 @@
 import type { RuntimeDescription } from "../../../shared/runtime";
-import type { ChatRuntime, WorkspaceSkillDetail } from "../../runtime/types";
+import type { ConversationRuntime, WorkspaceRuntimeAccess, WorkspaceSkillDetail } from "../../runtime/types";
 import { SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 import type { TelegramCallback } from "./menus";
@@ -84,7 +84,7 @@ function detailText(skill: WorkspaceSkillDetail): string {
 export class TelegramSkillMenus {
   private readonly menus = new Map<string, Menu>();
 
-  constructor(private readonly runtime: Pick<ChatRuntime, "describe" | "skill">, private readonly api: TelegramTransport) {}
+  constructor(private readonly runtime: Pick<ConversationRuntime, "describe"> & Pick<WorkspaceRuntimeAccess, "skill">, private readonly api: TelegramTransport) {}
 
   async open(address: { chatId: string }): Promise<void> {
     const skills = sortedSkills((await this.runtime.describe()).skills);

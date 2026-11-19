@@ -4,7 +4,7 @@ import { link, lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clearRuntimeTemp, migrateSentAttachments } from "./startup-files";
-import { AttachmentStore } from "../attachments";
+import { AttachmentStore } from "../attachments/store";
 import { sentAttachmentRequest } from "../attachments/sent-http";
 import { attachmentRequest } from "../attachments/http";
 

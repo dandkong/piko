@@ -1,7 +1,7 @@
 import { defineEntry, defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { Message, MessageAttachment } from "../../shared/chat";
-import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments";
+import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments/store";
 
 export type SentAttachment = { id: string; name: string; mime: string; bytes: number; createdAt: number };
 export const SentAttachmentEntry = defineEntry<SentAttachment>("piko.chat-attachment");

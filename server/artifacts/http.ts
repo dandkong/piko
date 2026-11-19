@@ -1,4 +1,4 @@
-import { ArtifactError, ArtifactStore } from "../artifacts";
+import { ArtifactError, ArtifactStore } from "./store";
 import { json } from "../http";
 
 function contentDisposition(name: string) {

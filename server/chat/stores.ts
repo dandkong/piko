@@ -1,11 +1,11 @@
-import type { ChatRuntime } from "../runtime/types";
+import type { ConversationRuntime } from "../runtime/types";
 import { ConversationStore } from "./conversations";
 
 /** One output publication line per user-visible conversation; never includes internal children. */
 export class ConversationStores {
   readonly main: ConversationStore;
   private readonly sides = new Map<string, ConversationStore>();
-  constructor(private readonly runtime: ChatRuntime) { this.main = new ConversationStore(runtime); }
+  constructor(private readonly runtime: Pick<ConversationRuntime, "createSession">) { this.main = new ConversationStore(runtime); }
   async side(id: string) {
     // Validate even for cached stores: only user side chats may be addressed by this route.
     await this.runtime.createSession(id);

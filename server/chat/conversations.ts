@@ -6,7 +6,7 @@ import {
 import type {
   BackgroundReply,
   InputSource,
-  ChatRuntime,
+  ConversationRuntime,
   ChatSession,
   SessionEvent,
 } from "../runtime/types";
@@ -27,7 +27,7 @@ export class ConversationStore {
   private runEnds: Extract<StreamEvent, { type: "run-end" }>[] = [];
   private timer?: ReturnType<typeof setTimeout>;
   constructor(
-    readonly runtime: ChatRuntime,
+    readonly runtime: Pick<ConversationRuntime, "createSession">,
     readonly conversationId?: string,
   ) {}
   get size() {

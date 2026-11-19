@@ -8,7 +8,7 @@ Artifacts 是助手保存的正式成果入口，浏览工作区 `artifacts/`；
 
 ## 内置预览
 
-支持 Markdown 和常见文本/代码文件，UTF-8 解码，单文件上限 1 MiB；不支持或过大的文件可下载。HTML/SVG 按文本展示，不执行；Markdown 图片只加载 HTTPS，失败显示替代文字。聊天附件、帖子和执行结果复用阅读组件，但各自的数据范围不变。
+支持 Markdown 和常见文本/代码文件，UTF-8 解码，单文件上限 1 MiB；不支持或过大的文件可下载。HTML/SVG 按文本展示，不执行；Markdown 图片只加载 HTTPS，失败显示替代文字。聊天附件、帖子和执行结果复用阅读组件；文件预览规则位于 `shared/file-preview.ts`，各自的数据范围不变。
 
 ## HTTP
 

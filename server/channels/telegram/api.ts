@@ -1,6 +1,6 @@
 import { Bot, GrammyError, InputFile } from "grammy";
 import type { MessageAttachment } from "../../../shared/chat";
-import type { AttachmentStore } from "../../attachments";
+import type { AttachmentStore } from "../../attachments/store";
 
 export type TelegramButton = { text: string; callbackData: string };
 export type TelegramKeyboard = TelegramButton[][];

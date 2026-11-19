@@ -1,6 +1,6 @@
 import type { HealthResponse } from "../shared/chat";
 import type { ServerConfig } from "./config";
-import { ModelConfigurationError, RuntimeBusyError, StorageDeletionBlocked, type ChatRuntime } from "./runtime/types";
+import { ModelConfigurationError, RuntimeBusyError, StorageDeletionBlocked, type AppRuntime } from "./runtime/types";
 import type { ConversationStore } from "./chat/conversations";
 import type { ConversationStores } from "./chat/stores";
 import { SideChatError } from "./runtime/side-chats";
@@ -13,10 +13,10 @@ import { chatRequest } from "./chat/http";
 import { sideChatRequest } from "./side-chats/http";
 import { attachmentRequest } from "./attachments/http";
 import { sentAttachmentRequest } from "./attachments/sent-http";
-import type { AttachmentStore } from "./attachments";
+import type { AttachmentStore } from "./attachments/store";
 import { artifactRequest } from "./artifacts/http";
 import { settingsRequest } from "./settings/http";
-import type { ArtifactStore } from "./artifacts";
+import type { ArtifactStore } from "./artifacts/store";
 import type { WebHandler } from "./web";
 import { logError, logInfo, logWarn } from "./logging";
 
@@ -30,7 +30,7 @@ export function createApp({
   web,
 }: {
   config: ServerConfig;
-  runtime: ChatRuntime;
+  runtime: AppRuntime;
   conversations: ConversationStore;
   chats: ConversationStores;
   attachments: AttachmentStore;

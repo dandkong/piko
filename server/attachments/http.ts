@@ -1,4 +1,4 @@
-import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "../attachments";
+import { AttachmentStore, MAX_ATTACHMENT_BYTES } from "./store";
 import { json, readBody } from "../http";
 import { audioPreviewResponse } from "./audio-preview";
 import { attachmentTextPreview } from "./text-preview";

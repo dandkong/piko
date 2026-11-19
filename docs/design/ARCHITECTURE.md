@@ -11,7 +11,7 @@ Telegram 私聊 → Bot API 适配器 ────┘
 ```
 
 - 客户端按**页面 → Hook/API → HTTP/SSE**分层，功能放在 `apps/mobile/src/features/`，共用界面组件与主题放在 `apps/mobile/src/components/` 和 `theme.ts`。
-- 服务端按**路由/通道 → 业务服务 → 运行时接口 → Pi 适配器**分层；SDK 类型和事件留在 `server/runtime/`，Telegram SDK 留在通道目录，工具业务与 SDK 注册分离。
+- 服务端按**路由/通道 → 业务服务 → 运行时接口 → Pi 适配器**分层；SDK 类型和事件留在 `server/runtime/`，Telegram SDK 留在通道目录，工具业务与 SDK 注册分离。`AppRuntime` 是唯一运行时的组合接口，路由和通道只依赖所需的会话、任务、帖子或设置能力。
 - `shared/` 只放跨端普通类型和纯逻辑，不依赖 React Native、Bun 或 Pi SDK。
 - 一个后端进程拥有一个 Harness、主会话和工作区；旁聊、后台工作及任务执行使用同一 Harness 的独立会话。相关所有权和资源策略见[主会话](../features/main-chat.md)、[旁聊](../features/side-chats.md)与[Agent 构建](../features/agent-composition.md)。
 

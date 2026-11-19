@@ -1,10 +1,10 @@
 import { isRequestId } from "../../shared/chat";
-import type { ChatRuntime } from "../runtime/types";
+import type { SideChatsRuntime } from "../runtime/types";
 import { json, readObjectBody } from "../http";
 
 export async function sideChatRequest(
   request: Request,
-  runtime: ChatRuntime,
+  runtime: SideChatsRuntime,
   forget?: (id: string) => Promise<void>,
 ): Promise<Response | undefined> {
   const url = new URL(request.url);

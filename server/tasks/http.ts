@@ -7,7 +7,7 @@ import {
   taskId,
 } from "../domain/tasks";
 import { json, readJsonBody } from "../http";
-import type { ChatRuntime } from "../runtime/types";
+import type { TasksRuntimeAccess } from "../runtime/types";
 
 function command(value: unknown): AssistantTaskCommand {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -33,7 +33,7 @@ function command(value: unknown): AssistantTaskCommand {
 }
 export async function taskRequest(
   request: Request,
-  runtime: ChatRuntime,
+  runtime: TasksRuntimeAccess,
   maxBytes: number,
 ): Promise<Response> {
   const url = new URL(request.url);

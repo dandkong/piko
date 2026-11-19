@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
-import type { ChatRuntime } from "../runtime/types";
+import type { SettingsRuntime } from "../runtime/types";
 import { HttpError, json, readBody } from "../http";
 import { SettingsRevisionConflictError, SettingsValidationError } from "./configuration";
 
@@ -35,7 +35,7 @@ function errorResponse(error: unknown) {
 /** Only model role selections are user-editable; provider/tool configuration remains deployment-managed. */
 export async function settingsRequest(
   request: Request,
-  runtime: Pick<ChatRuntime, "settings" | "saveModelSettings">,
+  runtime: SettingsRuntime,
 ): Promise<Response | undefined> {
   if (new URL(request.url).pathname !== "/api/settings") return undefined;
   if (request.method === "GET") {
@@ -53,6 +53,6 @@ export async function settingsRequest(
     try { body = JSON.parse(new TextDecoder().decode(bytes)); }
     catch { return json({ error: "模型设置请求不是有效 JSON。" }, 400); }
     if (!saveValidator.Check(body)) return json({ error: "模型设置请求字段或结构无效。" }, 400);
-    return json(await runtime.saveModelSettings(body as Parameters<ChatRuntime["saveModelSettings"]>[0]));
+    return json(await runtime.saveModelSettings(body as Parameters<SettingsRuntime["saveModelSettings"]>[0]));
   } catch (error) { return errorResponse(error); }
 }

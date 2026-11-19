@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import { AttachmentStore, detectExtension } from "../attachments";
+import { AttachmentStore, detectExtension } from "../attachments/store";
 import { sentAttachmentRequest } from "../attachments/sent-http";
 import { createSentAttachmentTools, sentAttachmentMessage, type SentAttachment } from "./sent-attachments";
 

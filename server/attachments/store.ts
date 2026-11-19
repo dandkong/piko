@@ -3,8 +3,8 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { extension as extensionForMime, lookup as lookupMime } from "mime-types";
-import { MAX_ATTACHMENT_BYTES } from "../shared/chat";
-export { MAX_ATTACHMENT_BYTES } from "../shared/chat";
+import { MAX_ATTACHMENT_BYTES } from "../../shared/chat";
+export { MAX_ATTACHMENT_BYTES } from "../../shared/chat";
 
 /** One stored upload. The model reads `path`; channels share the same file. */
 export type StoredAttachment = { id: string; path: string; mime: string; bytes: number };

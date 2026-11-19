@@ -3,7 +3,7 @@ import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { internalInput } from "./input-origin";
 import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment } from "../../shared/chat";
-import { detectExtension, isSnapshotId } from "../attachments";
+import { detectExtension, isSnapshotId } from "../attachments/store";
 import { PREVIEW_EXCERPT_MAX_CHARS } from "../domain/text-limits";
 import { SentAttachmentEntry, sentAttachmentMessage } from "./sent-attachments";
 

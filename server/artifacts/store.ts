@@ -1,16 +1,14 @@
 import { lstat, readdir, readFile, realpath, rm, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { contentType, lookup } from "mime-types";
+import { filePreviewKind, decodePreviewText, MAX_FILE_PREVIEW_BYTES } from "../../shared/file-preview";
 import {
-  artifactPreviewKind,
-  decodePreviewText,
-  MAX_ARTIFACT_PREVIEW_BYTES,
   type ArtifactDeletion,
   type ArtifactDirectory,
   type ArtifactEntry,
   type ArtifactTextPreview,
-} from "../shared/artifacts";
-import { isWithin } from "./workspace";
+} from "../../shared/artifacts";
+import { isWithin } from "../workspace";
 
 export class ArtifactError extends Error {
   constructor(message: string, readonly status: number) {
@@ -121,7 +119,7 @@ export class ArtifactStore {
           kind,
           size: kind === "file" ? info.size : null,
           modifiedAt: info.mtimeMs,
-          preview: kind === "file" ? artifactPreviewKind(name) : null,
+          preview: kind === "file" ? filePreviewKind(name) : null,
         });
       } catch (error) {
         if (isMissing(error)) continue;
@@ -136,10 +134,10 @@ export class ArtifactStore {
   }
 
   async preview(path: string): Promise<ArtifactTextPreview> {
-    const preview = artifactPreviewKind(basename(path));
+    const preview = filePreviewKind(basename(path));
     if (!preview) throw new ArtifactError("This file type cannot be previewed in Piko.", 415);
     const file = await this.resolveEntry(path, "file");
-    if (file.info.size > MAX_ARTIFACT_PREVIEW_BYTES)
+    if (file.info.size > MAX_FILE_PREVIEW_BYTES)
       throw new ArtifactError("This file is too large to preview in Piko. Download it to view.", 413);
     let bytes: Uint8Array;
     try {
@@ -148,7 +146,7 @@ export class ArtifactStore {
       if (isMissing(error)) throw new ArtifactError("Artifact file not found.", 404);
       throw error;
     }
-    if (bytes.byteLength > MAX_ARTIFACT_PREVIEW_BYTES)
+    if (bytes.byteLength > MAX_FILE_PREVIEW_BYTES)
       throw new ArtifactError("This file is too large to preview in Piko. Download it to view.", 413);
     const content = decodePreviewText(bytes);
     return {
