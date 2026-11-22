@@ -1,4 +1,5 @@
 import { Bot, GrammyError, InputFile } from "grammy";
+import type { InputRichMessage } from "grammy/types";
 import type { MessageAttachment } from "../../../shared/chat";
 import type { AttachmentStore } from "../../attachments/store";
 
@@ -9,6 +10,8 @@ const markup = (buttons: TelegramKeyboard | undefined) => buttons === undefined 
 
 export interface TelegramTransport {
   send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string>;
+  sendRich(chatId: string, content: InputRichMessage): Promise<string>;
+  editRich(chatId: string, messageId: string, content: InputRichMessage): Promise<void>;
   sendFile(chatId: string, attachment: MessageAttachment): Promise<void>;
   sendWidget(chatId: string, html: string): Promise<void>;
   edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void>;
@@ -28,6 +31,10 @@ export function isDefiniteWidgetRejection(error: unknown): boolean {
 export function isFormatError(error: unknown): boolean {
   return error instanceof GrammyError && error.error_code === 400 &&
     /parse|entit|rich.{0,40}(unsupported|not supported)|method.{0,40}not found|message.{0,20}too long/i.test(error.description);
+}
+
+export function isRichMenuError(error: unknown): boolean {
+  return isFormatError(error) || error instanceof GrammyError && error.error_code === 400 && /rich|button/i.test(error.description);
 }
 
 export function telegramErrorCode(error: unknown): string {
@@ -73,6 +80,21 @@ export class TelegramApi implements TelegramTransport {
       ? this.bot.api.sendRichMessage(chatId, { markdown: text }, options, this.signal)
       : this.bot.api.sendMessage(chatId, text, { ...options, link_preview_options: { is_disabled: true } }, this.signal), this.controller.signal);
     return String(message.message_id);
+  }
+
+  async sendRich(chatId: string, content: InputRichMessage): Promise<string> {
+    const message = await telegramRequest(() => this.bot.api.sendRichMessage(chatId, content, {}, this.signal), this.controller.signal);
+    return String(message.message_id);
+  }
+
+  async editRich(chatId: string, messageId: string, content: InputRichMessage): Promise<void> {
+    try {
+      await telegramRequest(() => this.bot.api.editMessageText(chatId, Number(messageId), content,
+        { reply_markup: { inline_keyboard: [] } }, this.signal), this.controller.signal);
+    } catch (error) {
+      if (error instanceof GrammyError && error.error_code === 400 && /message is not modified/i.test(error.description)) return;
+      throw error;
+    }
   }
 
   async sendFile(chatId: string, attachment: MessageAttachment): Promise<void> {

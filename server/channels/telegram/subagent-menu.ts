@@ -2,9 +2,10 @@ import type { WorkspaceRuntimeAccess, SubagentDetail, SubagentListItem } from ".
 import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
+import { editRichMenu, menuInlineButton, menuNavigation, sendRichMenu, type RichMenuView } from "./rich-text";
 
 type Address = { chatId: string; messageId: string };
-type View = { text: string; buttons?: TelegramKeyboard };
+type View = RichMenuView;
 
 const LIST_LIMIT = 4;
 
@@ -28,7 +29,7 @@ function newestFirst(items: SubagentListItem[]): SubagentListItem[] {
 
 function listView(all: SubagentListItem[]): View {
   const items = newestFirst(all).slice(0, LIST_LIMIT);
-  if (!items.length) return { text: "Background subagents\nNo subagents yet." };
+  if (!items.length) return { text: "Background subagents\nNo subagents yet.", rich: { blocks: [{ type: "paragraph", text: "Background subagents\nNo subagents yet." }] } };
   return {
     text: [
       `Background subagents · showing ${items.length} of ${all.length}`,
@@ -43,12 +44,18 @@ function listView(all: SubagentListItem[]): View {
       text: `#${item.id}`,
       callbackData: `s:detail:${item.id}`,
     }))],
+    rich: { blocks: [
+      { type: "paragraph", text: `Background subagents · showing ${items.length} of ${all.length}` },
+      ...items.map(item => ({ type: "paragraph" as const, text: [
+        `${singleLine(`${statusIcon(item.status)} ${item.status} · ${item.title.trim() || item.task.trim() || "(no task description)"}`, SUMMARY_TEXT_LIMIT)}  `,
+        menuInlineButton("View", `s:detail:${item.id}`),
+      ] })),
+    ] },
   };
 }
 
 function detailView(item: SubagentListItem, detail: SubagentDetail): View {
-  return {
-    text: [
+  const lines = [
       `Background subagent #${detail.id}`,
       `Title: ${singleLine(item.title, DETAIL_TEXT_LIMIT) ?? singleLine(item.task, DETAIL_TEXT_LIMIT) ?? "(no task description)"}`,
       `Task: ${singleLine(item.task, DETAIL_TEXT_LIMIT) ?? "(no task description)"}`,
@@ -59,9 +66,11 @@ function detailView(item: SubagentListItem, detail: SubagentDetail): View {
       ...(detail.recentSteps.length
         ? detail.recentSteps.map(step => singleLine(`• ${step}`, DETAIL_TEXT_LIMIT)!)
         : ["(none yet)"]),
-    ].join("\n"),
-    buttons: [[{ text: "Back to list", callbackData: "s:list" }]],
-  };
+    ];
+  const buttons: TelegramKeyboard = [[{ text: "Back to list", callbackData: "s:list" }]];
+  return { text: lines.join("\n"), buttons, rich: { blocks: [
+    { type: "paragraph", text: lines.join("\n") }, menuNavigation(buttons[0]!),
+  ] } };
 }
 
 /** Stateless ID callbacks survive Piko restarts; each click re-reads Durable facts. */
@@ -73,7 +82,7 @@ export class TelegramSubagentMenus {
   async open(address: Address): Promise<void> {
     const items = await (await this.runtime.subagents()).list();
     const view = listView(items);
-    await this.api.send(address.chatId, view.text, false, view.buttons);
+    await sendRichMenu(this.api, address.chatId, view);
   }
 
   async handle(callback: TelegramCallback): Promise<void> {
@@ -101,7 +110,7 @@ export class TelegramSubagentMenus {
       const service = await this.runtime.subagents();
       if (action === "list") {
         const view = listView(await service.list());
-        await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+        await editRichMenu(this.api, callback.chatId, callback.messageId, view);
       } else {
         const [items, detail] = await Promise.all([
           service.list(),
@@ -113,7 +122,7 @@ export class TelegramSubagentMenus {
           return;
         }
         const view = detailView(item, detail);
-        await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+        await editRichMenu(this.api, callback.chatId, callback.messageId, view);
       }
       await this.api.answerCallback(callback.callbackId);
     } catch {

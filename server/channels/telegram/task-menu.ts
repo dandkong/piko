@@ -1,12 +1,20 @@
+import type { InputRichBlock, InputRichMessage, RichTextButton } from "grammy/types";
 import type { AssistantTask, AssistantTaskDetail, TaskExecution } from "../../../shared/tasks";
 import type { TasksRuntimeAccess } from "../../runtime/types";
 import { DETAIL_TEXT_LIMIT, SUMMARY_TEXT_LIMIT, singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
-import { isFormatError, type TelegramKeyboard, type TelegramTransport } from "./api";
+import { isFormatError, isRichMenuError, type TelegramKeyboard, type TelegramTransport } from "./api";
 import { TELEGRAM_LONG_TEXT_LIMIT_UTF16, TELEGRAM_MENU_PAGE_SIZE, TELEGRAM_MENU_TEXT_LIMIT } from "./menu-policy";
 
 type Address = { chatId: string; messageId: string };
-type View = { text: string; buttons?: TelegramKeyboard };
+type View = { text: string; buttons?: TelegramKeyboard; rich?: InputRichMessage };
+
+function richButton(text: string, callbackData: string): RichTextButton {
+  return { type: "button", button: { text, callback_data: assertCallbackData(callbackData), style: "primary" } };
+}
+function richNavigation(buttons: TelegramKeyboard[number]): InputRichBlock {
+  return { type: "buttons", align: "right", buttons: buttons.map(button => ({ text: button.text, callback_data: assertCallbackData(button.callbackData) })) };
+}
 class TaskMenuNotice extends Error {}
 
 const EXECUTION_LIMIT = 5;
@@ -92,7 +100,14 @@ function taskListView(all: AssistantTask[], requestedPage: number): View {
     if (page < pages - 1) navigation.push({ text: "Next ›", callbackData: taskListKey(page + 1) });
     buttons.push(navigation);
   }
-  return { text: lines.join("\n"), buttons };
+  const blocks: InputRichBlock[] = [{ type: "paragraph", text: lines[0]! }];
+  for (const task of visible) {
+    const label = singleLine(`${task.title.trim() || "Untitled"} · ${task.scheduleText.trim() || "Manual"}`, SUMMARY_TEXT_LIMIT) ?? "Untitled";
+    blocks.push({ type: "paragraph", text: [label + "  ", richButton("View", taskKey(task.id, page))] });
+  }
+  if (!visible.length) blocks.push({ type: "paragraph", text: "No active tasks." });
+  if (pages > 1) blocks.push(richNavigation(buttons.at(-1)!));
+  return { text: lines.join("\n"), buttons, rich: { blocks } };
 }
 function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): View {
   const { task } = detail;
@@ -130,7 +145,17 @@ function taskDetailView(detail: AssistantTaskDetail, page: number, id: string): 
   for (let i = 0; i < resultButtons.length; i += 2)
     buttons.push(resultButtons.slice(i, i + 2));
   buttons.push([{ text: "Back to task list", callbackData: taskListKey(page) }]);
-  return { text: lines.join("\n"), buttons };
+  const blocks: InputRichBlock[] = [
+    { type: "paragraph", text: [...beforePrompt, prompt].join("\n") },
+    { type: "paragraph", text: "Recent executions:" },
+  ];
+  if (!executions.length) blocks.push({ type: "paragraph", text: "No executions yet." });
+  for (const run of executions) {
+    const label = singleLine(`${statusIcon(run.status)} ${dateTime(run.startedAt)} · ${statusLabel(run.status)}${run.preview ? ` — ${run.preview}` : ""}`, SUMMARY_TEXT_LIMIT) ?? "Execution";
+    blocks.push({ type: "paragraph", text: run.status === "running" ? label : [label + "  ", richButton("View", taskResultKey(task.id, run.id, page))] });
+  }
+  blocks.push(richNavigation(buttons.at(-1)!));
+  return { text: lines.join("\n"), buttons, rich: { blocks } };
 }
 function truncateResult(value: string, limit = TELEGRAM_LONG_TEXT_LIMIT_UTF16): string {
   return truncateUtf16Text(value, limit, "\n\n… Result truncated. Open Piko to read the full execution.");
@@ -144,13 +169,25 @@ export class TelegramTaskMenus {
   async open(address: Address): Promise<void> {
     const all = await (await this.runtime.tasks()).list();
     const view = taskListView(all, 0);
-    await this.api.send(address.chatId, view.text, false, view.buttons);
+    try { await this.api.sendRich(address.chatId, view.rich!); }
+    catch (error) {
+      if (!isRichMenuError(error)) throw error;
+      await this.api.send(address.chatId, view.text, false, view.buttons);
+    }
+  }
+
+  private async editView(callback: TelegramCallback, view: View): Promise<void> {
+    try { await this.api.editRich(callback.chatId, callback.messageId, view.rich!); }
+    catch (error) {
+      if (!isRichMenuError(error)) throw error;
+      await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+    }
   }
 
   private async editTaskList(callback: TelegramCallback, page: number): Promise<void> {
     const all = await (await this.runtime.tasks()).list();
     const view = taskListView(all, page);
-    await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+    await this.editView(callback, view);
   }
 
   private async editTaskDetail(callback: TelegramCallback, id: string, page: number): Promise<void> {
@@ -158,7 +195,7 @@ export class TelegramTaskMenus {
     const [detail, all] = await Promise.all([service.detail(id), service.list()]);
     if (detail.task.status !== "active") throw new TaskMenuNotice("Task archived.");
     const view = taskDetailView(detail, page, shortId(detail.task, shortTaskIds(all)));
-    await this.api.edit(callback.chatId, callback.messageId, view.text, false, view.buttons);
+    await this.editView(callback, view);
   }
 
   private async editExecutionResult(callback: TelegramCallback, id: string, runId: string, page: number): Promise<void> {

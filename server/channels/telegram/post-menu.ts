@@ -1,13 +1,14 @@
+import type { InputRichBlock } from "grammy/types";
 import type { PostSummary } from "../../../shared/posts";
 import type { PostsRuntime } from "../../runtime/types";
 import { singleLine, truncateUtf16Text } from "../../runtime/text";
 import type { TelegramCallback } from "./menus";
 import type { TelegramKeyboard, TelegramTransport } from "./api";
 import { TELEGRAM_BUTTON_LABEL_LIMIT, TELEGRAM_MENU_PAGE_SIZE } from "./menu-policy";
-import { editTelegramRich, escapeTelegramMarkdown, sendTelegramRich, splitTelegramRichText } from "./rich-text";
+import { editRichMenu, editTelegramRich, escapeTelegramMarkdown, menuInlineButton, menuNavigation, sendRichMenu, sendTelegramRich, splitTelegramRichText, type RichMenuView } from "./rich-text";
 
 type Address = { chatId: string; messageId: string };
-type View = { text: string; buttons: TelegramKeyboard; actions: Set<string> };
+type View = RichMenuView & { buttons: TelegramKeyboard; actions: Set<string> };
 type Menu = Address & {
   token: string;
   createdAt: number;
@@ -56,7 +57,14 @@ export class TelegramPostMenus {
       ? [`**Posts · Page ${menu.page + 1}**`, "", ...page.posts.map((post, index) =>
           `${index + 1}. ${escapeTelegramMarkdown(singleLine(post.title, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Untitled")}`), "", "Select a title below."].join("\n")
       : `**Posts**\n\n${menu.page === 0 ? "No posts yet." : "No more posts on this page."}`;
-    return { text, buttons, actions: new Set(buttons.flat().map(button => button.callbackData)) };
+    const blocks: InputRichBlock[] = [{ type: "paragraph", text: `Posts · Page ${menu.page + 1}` }];
+    for (const post of page.posts) {
+      const title = singleLine(post.title, TELEGRAM_BUTTON_LABEL_LIMIT) ?? "Untitled";
+      blocks.push({ type: "paragraph", text: [title + "  ", menuInlineButton("Read", data(`read:${post.id}`))] });
+    }
+    if (!page.posts.length) blocks.push({ type: "paragraph", text: menu.page === 0 ? "No posts yet." : "No more posts on this page." });
+    if (navigation.length) blocks.push(menuNavigation(navigation));
+    return { text, buttons, actions: new Set(buttons.flat().map(button => button.callbackData)), rich: { blocks } };
   }
 
   async open(address: Address): Promise<void> {
@@ -66,7 +74,7 @@ export class TelegramPostMenus {
       page: 0, cursors: [undefined], posts: [], actions: new Set(), extraMessageIds: [],
     };
     const view = await this.listView(menu);
-    menu.messageId = await sendTelegramRich(this.api, address.chatId, view.text, view.buttons);
+    menu.messageId = await sendRichMenu(this.api, address.chatId, view, true);
     menu.actions = view.actions;
     this.menus.set(menu.token, menu);
     this.prune();
@@ -80,7 +88,7 @@ export class TelegramPostMenus {
   private async editList(menu: Menu) {
     await this.removeContinuationMessages(menu);
     const view = await this.listView(menu);
-    await editTelegramRich(this.api, menu.chatId, menu.messageId, view.text, view.buttons);
+    await editRichMenu(this.api, menu.chatId, menu.messageId, view, true);
     menu.actions = view.actions;
   }
 
