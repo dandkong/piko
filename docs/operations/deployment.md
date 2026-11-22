@@ -17,7 +17,7 @@ PIKO_HOME=/home/your-user/.piko bun run start
 
 ## Web 与 API 地址
 
-生产 Web 默认同源访问 API；开发 Web 可在构建前使用 `EXPO_PUBLIC_PIKO_API_URL` 指定后端，并在后端配置允许的开发 Origin。原生客户端在登录页设置服务器地址。Web 支持添加到主屏幕，但没有离线 Service Worker。
+生产 Web 默认同源访问 API，反向代理应保留原始 `Host`，无需配置公网域名。开发 Web 可在构建前使用 `EXPO_PUBLIC_PIKO_API_URL` 指定后端，并在后端配置允许的开发 Origin。原生客户端在登录页设置服务器地址。Web 支持添加到主屏幕，但没有离线 Service Worker。
 
 ## 网络访问与安全边界
 

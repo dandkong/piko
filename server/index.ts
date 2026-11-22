@@ -40,12 +40,8 @@ try {
 }
 const config = piko.http;
 const env = readConfigEnvironment(piko.paths.home);
-const publicOrigin = env.PIKO_PUBLIC_ORIGIN ? new URL(env.PIKO_PUBLIC_ORIGIN).origin : undefined;
 const allowedOrigins = (env.PIKO_ALLOWED_ORIGINS ?? "").split(",").map(value => value.trim()).filter(Boolean);
-if (publicOrigin) allowedOrigins.push(publicOrigin);
-const allowedHosts = [config.hostname.toLowerCase(), ...(env.PIKO_ALLOWED_HOSTS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean)];
-if (publicOrigin) allowedHosts.push(new URL(publicOrigin).hostname.toLowerCase());
-const auth = createAuth(env.PIKO_ACCESS_KEY ?? "", allowedOrigins, allowedHosts, publicOrigin?.startsWith("https:") === true);
+const auth = createAuth(env.PIKO_ACCESS_KEY ?? "", allowedOrigins);
 let paths: ReturnType<typeof initializeWorkspace>;
 try {
   paths = initializeWorkspace(piko.paths);

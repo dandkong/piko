@@ -1,12 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { isIP } from "node:net";
 import { json, readJsonBody } from "./http";
 
 const COOKIE = "piko_session";
 const LIFETIME = 30 * 24 * 60 * 60;
 
 /** Authentication is independent of the Durable conversation and its lifetime. */
-export function createAuth(key: string, allowedOrigins: string[] = [], allowedHosts: string[] = [], secureCookie = false) {
+export function createAuth(key: string, allowedOrigins: string[] = []) {
   if (!key.trim()) throw new Error("PIKO_ACCESS_KEY is required.");
   const sign = (value: string) => createHmac("sha256", key).update(value).digest("base64url");
   const equal = (a: string, b: string) => {
@@ -27,12 +26,12 @@ export function createAuth(key: string, allowedOrigins: string[] = [], allowedHo
   const originAllowed = (request: Request) => {
     try {
       const url = new URL(request.url);
-      const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-      if (host !== "localhost" && !isIP(host) && !allowedHosts.includes(host)) return false;
       const origin = request.headers.get("origin");
       if (!origin) return true;
       const source = new URL(origin);
-      return source.origin === url.origin || allowedOrigins.includes(source.origin);
+      if (source.origin !== origin || !["http:", "https:"].includes(source.protocol)) return false;
+      // The proxy may terminate HTTPS while preserving the public Host.
+      return source.host === url.host || allowedOrigins.includes(source.origin);
     } catch { return false; }
   };
   let failures = 0, blockedUntil = 0;
@@ -56,7 +55,9 @@ export function createAuth(key: string, allowedOrigins: string[] = [], allowedHo
         const token = `${value}.${sign(value)}`;
         const native = request.headers.get("x-piko-client") === "native";
         const response = json(native ? { token } : { authenticated: true });
-        if (!native) response.headers.set("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LIFETIME}${url.protocol === "https:" || secureCookie ? "; Secure" : ""}`);
+        // Browser Origin is already checked; HTTPS through a proxy needs a Secure cookie too.
+        const secure = url.protocol === "https:" || request.headers.get("origin")?.startsWith("https://") === true;
+        if (!native) response.headers.set("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LIFETIME}${secure ? "; Secure" : ""}`);
         return response;
       }
       if (url.pathname === "/api/auth/logout" && request.method === "POST") {

@@ -33,6 +33,6 @@ bun run start
 
 ## 安全
 
-后端没有内建认证或 Origin 防护；Shell 和文件工具拥有后端运行账户的权限，工作区不是沙箱。保持默认本机监听；远程访问时须通过认证代理保护整个站点、API 和 SSE，并防止不可信客户端绕过代理。见[配置](configuration.zh-CN.md)与[存储和备份](storage.zh-CN.md)。
+后端使用单用户访问密钥，并检查浏览器跨源请求；Shell 和文件工具拥有后端运行账户的权限，工作区不是沙箱。默认监听所有 IPv4 接口；可设置 `PIKO_HOST=127.0.0.1` 限制为本机。远程访问应使用 HTTPS 或受信网络。见[配置](configuration.zh-CN.md)与[存储和备份](storage.zh-CN.md)。
 
 Android、iOS 构建和设备行为尚未全面验证；目前不提供 Docker 部署或可安装发布包。
