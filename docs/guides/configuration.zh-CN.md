@@ -8,7 +8,9 @@
 - `mcp.json`：可选 MCP Server 配置，详见 [MCP 工具](../features/mcp.md)。
 - `models.json`：模型目录、自定义供应商及可选模型 API Key。
 - `auth.json`：模型凭据，优先于 `models.json` 中的模型 Key。
-- `.env`：可选的后端部署参数、工具和通道凭据；设置为私有权限（`chmod 600`）。
+- `.env`：必需的访问密钥及可选的后端部署参数、工具和通道凭据；设置为私有权限（`chmod 600`）。
+
+启动前在 `.env` 设置足够长的随机 `PIKO_ACCESS_KEY`；Web 和原生 App 使用它登录。修改密钥并重启后，已有登录失效。
 
 例如，在 `auth.json` 中为内置模型配置凭据：
 
@@ -51,7 +53,7 @@
 | 变量 | 用途 |
 | --- | --- |
 | `PIKO_WORKSPACE` | 可选绝对工作区路径，默认 `PIKO_HOME/workspace`。 |
-| `PIKO_HOST`、`PIKO_PORT` | 监听地址和端口，默认 `127.0.0.1`、`8787`。 |
+| `PIKO_HOST`、`PIKO_PORT` | 监听地址和端口，默认 `0.0.0.0`、`8787`。 |
 | `PIKO_TELEGRAM_BOT_TOKEN` | Telegram 启用时需要的 Bot 凭据。 |
 | `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_API_KEY` | 搜索凭据；Exa 和 DeepSeek 的 Key 也用于对应提取服务。 |
 | `FIRECRAWL_API_KEY` | 启用 Firecrawl 网页提取。 |
@@ -95,4 +97,4 @@
 
 工具凭据及部署参数在后端启动时读取，修改后停止前台进程并重新启动。App 模型选择在下一次安全接纳边界生效。
 
-**安全：**API 没有身份认证。助手可用后端账户权限执行命令和访问文件，不要将服务直接暴露给不可信网络。
+**安全：**API 使用单用户访问密钥。HTTP 不加密凭据和内容；助手可用后端账户权限执行命令和访问文件，工作区不是沙箱。

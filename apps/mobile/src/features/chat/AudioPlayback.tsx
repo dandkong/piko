@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { Platform } from "react-native";
+import { authHeaders } from "../../api/client";
 
 /** One player per app: switching attachments stops the previous one without preloading every file. */
 type Playback = {
@@ -49,7 +50,7 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
       const replace = selected.current !== nextId || !!status.error || localError;
       if (replace) {
         player.pause();
-        player.replace({ uri });
+        player.replace({ uri, headers: authHeaders(uri) });
         selected.current = nextId;
         setId(nextId);
       }

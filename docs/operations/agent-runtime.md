@@ -35,4 +35,4 @@ Piko 不单独配置 Durable retry 或 compaction；使用所锁定版本的默�
 
 ## 边界
 
-文件、Shell 和 MCP 工具使用实际进程或服务权限，工作区不是沙箱。模型设置 API 未鉴权，不应暴露给不可信网络。重启与备份见[存储说明](storage.md)；后台会话范围见[后台工作](../features/background-subagents.md)。
+文件、Shell 和 MCP 工具使用实际进程或服务权限，工作区不是沙箱。模型设置 API 使用单用户访问密钥，不提供多用户隔离。重启与备份见[存储说明](storage.md)；后台会话范围见[后台工作](../features/background-subagents.md)。

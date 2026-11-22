@@ -14,7 +14,7 @@ App 设置管理设备本地的语言、外观，以及全局主模型、后台�
 
 ## 配置与 API 边界
 
-`GET /api/settings` 返回模型策略、可用模型摘要和修订号；`PUT /api/settings` 仅修改主/后台模型及思考强度，不读取或写入凭据。模型目录和认证方式见[应用配置](../operations/configuration.md)。该 API 未鉴权，不应暴露给不可信网络。
+`GET /api/settings` 返回模型策略、可用模型摘要和修订号；`PUT /api/settings` 仅修改主/后台模型及思考强度，不读取或写入凭据。模型目录和认证方式见[应用配置](../operations/configuration.md)。该 API 使用单用户访问密钥。
 
 ## 验证边界
 

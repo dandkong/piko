@@ -35,7 +35,7 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-开发服务默认启动 API（`127.0.0.1:8787`）和 Expo Web（`localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区；发送消息前需[配置模型](docs/guides/configuration.zh-CN.md)。
+开发服务默认启动 API（监听 `0.0.0.0:8787`）和 Expo Web（`localhost:8081`）。首次启动会在 `~/.piko` 初始化配置和工作区；发送消息前需[配置模型](docs/guides/configuration.zh-CN.md)。
 
 ```bash
 bun run typecheck
@@ -48,7 +48,7 @@ bun run build:web
 
 Piko 仍在开发中，功能和数据格式可能变化；iOS / Android 尚未全面真机验证，也没有正式发布的移动端安装包。
 
-**当前 API 没有登录认证，文件和命令工具使用后端账户的权限，工作区不是沙箱。** 服务默认仅监听本机；不要直接暴露到不可信网络。需要远程访问时，应使用认证代理保护 Web、API 和 SSE，并阻止绕过代理直连后端。
+**启动前须在私有的 `PIKO_HOME/config/.env` 中设置 `PIKO_ACCESS_KEY`。** 文件和命令工具使用后端账户的权限，工作区不是沙箱。服务默认监听所有 IPv4 网络接口；HTTP 不加密凭据和内容，远程访问应使用 HTTPS 或受信网络。
 
 配置、会话数据、附件和默认工作区位于 `~/.piko`；请保护凭据并定期[备份数据](docs/guides/storage.zh-CN.md)。
 

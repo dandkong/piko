@@ -77,6 +77,7 @@ export function withCors(request: Request, response: Response): Response {
   if (!origin) return response;
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Credentials", "true");
   const vary = headers.get("Vary");
   if (!vary) headers.set("Vary", "Origin");
   else if (!vary.toLowerCase().split(/,\s*/).includes("origin"))

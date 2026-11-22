@@ -8,7 +8,9 @@ Piko initializes `~/.piko/config/` on first launch. `PIKO_HOME` selects another 
 - `mcp.json`: optional MCP servers; see the [MCP reference](../features/mcp.md) (Chinese).
 - `models.json`: model catalog, custom providers and optional model API keys.
 - `auth.json`: model credentials; takes precedence over model keys in `models.json`.
-- `.env`: optional backend deployment settings and tool/channel credentials. Keep it private (`chmod 600`).
+- `.env`: required access key and optional backend deployment settings and tool/channel credentials. Keep it private (`chmod 600`).
+
+Set a long random `PIKO_ACCESS_KEY` in `.env` before starting; the Web and native app use it to sign in. Changing the key and restarting invalidates existing sessions.
 
 For a built-in model, add its credential to `auth.json`, for example:
 
@@ -95,4 +97,4 @@ For provider-specific request options, `headersEnv`, keyless providers, OAuth en
 
 Tool credentials and deployment settings are read when the backend starts. Stop the foreground process, make changes, then start it again. App model selection takes effect at the next safe admission boundary.
 
-**Security:** the API has no authentication. The assistant can run commands and access files with the backend account's permissions. Do not expose the service directly to untrusted networks.
+**Security:** the API uses a single-user access key. HTTP does not encrypt credentials or content. The assistant can run commands and access files with the backend account's permissions; the workspace is not a sandbox.

@@ -35,7 +35,7 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-The development command starts the API at `127.0.0.1:8787` and Expo Web at `localhost:8081`. On first launch, Piko initializes its configuration and workspace under `~/.piko`; [configure a model](docs/guides/configuration.md) before sending messages.
+The development command starts the API listening on `0.0.0.0:8787` and Expo Web at `localhost:8081`. On first launch, Piko initializes its configuration and workspace under `~/.piko`; [configure a model](docs/guides/configuration.md) before sending messages.
 
 ```bash
 bun run typecheck
@@ -48,7 +48,7 @@ See the [documentation index](docs/README.en.md) for deployment, configuration, 
 
 Piko is under active development; features and data formats may change. iOS and Android have not been comprehensively tested on devices, and there are no published mobile releases.
 
-**The API has no authentication, file and shell tools use the backend account's permissions, and the workspace is not a sandbox.** The server listens on localhost by default; do not expose it directly to untrusted networks. For remote access, protect the Web UI, API, and SSE with an authenticated proxy and prevent direct backend access.
+**Set `PIKO_ACCESS_KEY` in the private `PIKO_HOME/config/.env` before starting.** File and shell tools use the backend account's permissions, and the workspace is not a sandbox. The server listens on all IPv4 interfaces by default. HTTP does not encrypt credentials or content; use HTTPS or a trusted network for remote access.
 
 Configuration, conversation data, attachments, and the default workspace live under `~/.piko`. Keep credentials private and [back up your data](docs/guides/storage.md).
 

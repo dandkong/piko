@@ -24,7 +24,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.piko.assistant"
+      "bundleIdentifier": "com.piko.assistant",
+      "infoPlist": { "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true } }
     },
     "android": {
       "package": "com.piko.assistant",
@@ -35,6 +36,7 @@
     },
     "plugins": [
       "expo-status-bar",
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
       "./plugins/with-android-adjust-nothing"
     ]
   }

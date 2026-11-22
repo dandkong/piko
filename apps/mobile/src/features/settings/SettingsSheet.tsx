@@ -4,7 +4,9 @@ import { FloatingPanel } from "../../components/FloatingPanel";
 import { useTheme } from "../../theme";
 import { AppearanceSection } from "./AppearanceSection";
 import { LanguageSection } from "./LanguageSection";
-import { useTranslation } from "../../i18n";
+import { useLanguage, useTranslation } from "../../i18n";
+import { useLogout } from "../../api/AuthGate";
+import { TextButton } from "../../components/TextButton";
 import type { FeedbackTone } from "../../components/FeedbackToast";
 import type { ModelSelection, ThinkingLevel } from "../../../../../shared/runtime";
 import type { ModelSettingsSnapshot, SaveModelSettings } from "../../../../../shared/settings";
@@ -22,6 +24,8 @@ export function SettingsSheet({ open, onClose, onToast }: {
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const { language } = useLanguage();
+  const logout = useLogout();
   const [saveError, setSaveError] = useState("");
   const openRef = useRef(open);
   openRef.current = open;
@@ -113,6 +117,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
     {open ? <View style={{ gap: 16 }}>
     <LanguageSection />
     <AppearanceSection />
+    <View style={{ marginHorizontal: 20 }}><TextButton label={language === "zh-CN" ? "退出登录" : "Sign out"} onPress={logout}><Text style={{ color: colors.text }}>{language === "zh-CN" ? "退出登录" : "Sign out"}</Text></TextButton></View>
     {loading && !data ? (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12 }}>
         <ActivityIndicator accessibilityLabel={t("settings.loadingModels")} color={colors.muted} size="small" />

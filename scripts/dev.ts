@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { loadPikoConfig } from "../server/config";
+import { readConfigEnvironment } from "../server/config/files";
 
 const root = resolve(import.meta.dir, "..");
 const mobileRoot = resolve(root, "apps/mobile");
@@ -14,7 +15,8 @@ if (args.includes("--help") || args.includes("-h")) {
 const port = 8081;
 const piko = loadPikoConfig();
 const config = piko.http;
-const env = { ...process.env };
+const configuredOrigins = readConfigEnvironment(piko.paths.home).PIKO_ALLOWED_ORIGINS;
+const env = { ...process.env, PIKO_ALLOWED_ORIGINS: [configuredOrigins, `http://localhost:${port}`, `http://127.0.0.1:${port}`].filter(Boolean).join(",") };
 const children: ChildProcess[] = [];
 let stopping = false;
 
@@ -93,7 +95,7 @@ try {
 
   // Let the API become ready before Expo opens a client that loads its history.
   const host = config.hostname === "0.0.0.0" || config.hostname === "::" ? "127.0.0.1" : config.hostname;
-  const healthUrl = `http://${host.includes(":") ? `[${host}]` : host}:${config.port}/api/health`;
+  const healthUrl = `http://${host.includes(":") ? `[${host}]` : host}:${config.port}/api/auth/session`;
   let ready = false;
   const deadline = Date.now() + 30_000;
   while (!stopping && Date.now() < deadline) {

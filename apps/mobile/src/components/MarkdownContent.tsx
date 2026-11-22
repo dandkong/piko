@@ -10,6 +10,7 @@ import Markdown, {
 } from "react-native-markdown-renderer";
 import { radii, useTheme, type ThemeColors, type ThemeStateColors } from "../theme";
 import { useTranslation } from "../i18n";
+import { authHeaders } from "../api/client";
 import { contentMarkdown, isContentLink, isMarkdownImageUrl, prepareMarkdown } from "./markdown";
 
 const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
@@ -115,7 +116,7 @@ function MarkdownImage({ source, alt, availableWidth, ui }: { source?: string; a
   const height = width / aspectRatio;
   return <Image
     testID="markdown-image"
-    source={{ uri: source }}
+    source={{ uri: source, headers: authHeaders(source) }}
     accessible={!!alt}
     accessibilityLabel={alt || undefined}
     resizeMode="contain"

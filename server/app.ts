@@ -6,6 +6,7 @@ import type { ConversationStores } from "./chat/stores";
 import { SideChatError } from "./runtime/side-chats";
 import { AssistantTaskError } from "./domain/tasks";
 import { HttpError, json, withCors } from "./http";
+import type { createAuth } from "./auth";
 import { taskRequest } from "./tasks/http";
 import { postRequest } from "./posts/http";
 import { PostError } from "./domain/posts";
@@ -28,6 +29,7 @@ export function createApp({
   attachments,
   artifacts,
   web,
+  auth,
 }: {
   config: ServerConfig;
   runtime: AppRuntime;
@@ -36,10 +38,11 @@ export function createApp({
   attachments: AttachmentStore;
   artifacts: ArtifactStore;
   web?: WebHandler;
+  auth: ReturnType<typeof createAuth>;
 }) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
-    const reply = (response: Response) => withCors(request, response);
+    const reply = (response: Response) => auth.allowedOrigin(request) ? withCors(request, response) : response;
     const startedAt = performance.now();
     const shouldLog = url.pathname.startsWith("/api") &&
       request.method !== "OPTIONS" && !url.pathname.endsWith("/events");
@@ -58,17 +61,20 @@ export function createApp({
       }
       return result;
     };
+    if (!auth.allowedOrigin(request)) return finish(json({ error: "Origin not allowed." }, 403));
     if (request.method === "OPTIONS")
       return finish(
         new Response(null, {
           status: 204,
           headers: {
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Accept, Content-Type",
+            "Access-Control-Allow-Headers": "Accept, Content-Type, Authorization, X-Piko-Client",
           },
         }),
       );
     try {
+      const authResponse = await auth.handle(request);
+      if (authResponse) return finish(authResponse);
       const response =
         (await postRequest(request, runtime, config.maxRequestBytes)) ??
         (await settingsRequest(request, runtime)) ??

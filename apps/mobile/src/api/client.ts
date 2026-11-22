@@ -2,16 +2,30 @@ import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
 import { ApiError, LocalApiError, RequestTimeoutError } from "./errors";
 
-const DEFAULT_API_URL = Platform.OS === "web" && !__DEV__ ? ""
+const DEFAULT_API_URL = Platform.OS === "web" ? (__DEV__ ? `http://${window.location.hostname}:8787` : "")
   : Platform.OS === "android" ? "http://10.0.2.2:8787" : "http://127.0.0.1:8787";
-export const API_URL = (process.env.EXPO_PUBLIC_PIKO_API_URL || DEFAULT_API_URL).replace(/\/$/, "");
+export let API_URL = (process.env.EXPO_PUBLIC_PIKO_API_URL || DEFAULT_API_URL).replace(/\/$/, "");
+let sessionToken: string | undefined;
+let onUnauthorized: (() => void) | undefined;
+export function setApiUrl(url: string) { API_URL = url.replace(/\/$/, ""); }
+export function setSessionToken(token?: string) { sessionToken = token; }
+export function setUnauthorizedHandler(handler?: () => void) { onUnauthorized = handler; }
+export function authHeaders(url: string): Record<string, string> {
+  if (!sessionToken || Platform.OS === "web") return {};
+  try { if (new URL(url, API_URL).origin !== new URL(API_URL).origin) return {}; } catch { return {}; }
+  return { Authorization: `Bearer ${sessionToken}` };
+}
 
 // Keep cancellation and the deadline alive until readJson consumes the body, not just the headers.
 const pendingResponses = new WeakMap<Response, { close: () => void; timedOut: () => boolean }>();
 export async function apiFetch(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
   const { timeoutMs = 15_000, signal, ...options } = init;
+  const headers = new Headers(options.headers);
+  for (const [name, value] of Object.entries(authHeaders(`${API_URL}${path}`))) headers.set(name, value);
+  const authenticatedOptions = { ...options, headers, credentials: "include" as const };
+  const check = (response: Response) => { if (response.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.(); return response; };
   // SSE and message submission own their lifetime; preserve their original signal through body reads.
-  if (timeoutMs === 0) return fetch(`${API_URL}${path}`, { ...options, signal });
+  if (timeoutMs === 0) return check(await fetch(`${API_URL}${path}`, { ...authenticatedOptions, signal }));
   const controller = new AbortController();
   const abort = () => controller.abort();
   let timedOut = false;
@@ -20,7 +34,7 @@ export async function apiFetch(path: string, init: RequestInit & { timeoutMs?: n
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   try {
-    const response = await fetch(`${API_URL}${path}`, { ...options, signal: controller.signal });
+    const response = check(await fetch(`${API_URL}${path}`, { ...authenticatedOptions, signal: controller.signal }));
     if (response.status === 204 || response.status === 205 || options.method === "HEAD") close();
     else pendingResponses.set(response, { close, timedOut: () => timedOut });
     return response;

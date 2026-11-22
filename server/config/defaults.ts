@@ -7,4 +7,4 @@ export const defaultPikoFile = {
 };
 
 /** Deployment defaults are never serialized into application JSON. */
-export const defaultDeployment = { host: "127.0.0.1", port: 8787 };
+export const defaultDeployment = { host: "0.0.0.0", port: 8787 };

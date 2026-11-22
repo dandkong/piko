@@ -20,7 +20,7 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-Expo Web 默认地址是 `http://localhost:8081`，API 默认监听 `127.0.0.1:8787`。首次启动会在 `~/.piko` 补齐缺失的配置和工作区文件。发送消息前需要配置并选择模型。
+Expo Web 默认地址是 `http://localhost:8081`，API 默认监听 `0.0.0.0:8787`。首次启动会在 `~/.piko` 补齐缺失的配置和工作区文件。发送消息前需要配置并选择模型。
 
 ## 源码构建后的 Web
 

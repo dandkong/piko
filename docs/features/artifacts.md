@@ -12,7 +12,7 @@ Artifacts 是助手保存的正式成果入口，浏览工作区 `artifacts/`；
 
 ## HTTP
 
-`GET /api/artifacts` 列目录，`GET /api/artifacts/content` 读取允许预览的文本，`GET /api/artifacts/download` 下载文件，`DELETE /api/artifacts` 删除文件或目录。路径均相对 `artifacts/`；拒绝绝对路径、越界、隐藏路径与符号链接，不能删除根目录。API 未鉴权，访问控制依赖部署环境。
+`GET /api/artifacts` 列目录，`GET /api/artifacts/content` 读取允许预览的文本，`GET /api/artifacts/download` 下载文件，`DELETE /api/artifacts` 删除文件或目录。路径均相对 `artifacts/`；拒绝绝对路径、越界、隐藏路径与符号链接，不能删除根目录。API 使用单用户访问密钥。
 
 ## 验证边界
 

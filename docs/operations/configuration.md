@@ -47,7 +47,10 @@ PIKO_HOME/config/
 | --- | --- |
 | `PIKO_HOME` | 数据根目录，仅从进程环境读取 |
 | `PIKO_WORKSPACE` | 工作区绝对路径；默认 PIKO_HOME/workspace |
-| `PIKO_HOST` / `PIKO_PORT` | 后端监听地址，默认 `127.0.0.1:8787` |
+| `PIKO_HOST` / `PIKO_PORT` | 后端监听地址，默认 `0.0.0.0:8787`；设为 `127.0.0.1` 可仅监听本机 |
+| `PIKO_ACCESS_KEY` | 必需的单用户访问密钥；修改后重启使所有登录失效 |
+| `PIKO_PUBLIC_ORIGIN` | 反向代理提供的公开 Web 地址，例如 `https://piko.example.com`；用于允许来源及安全 Cookie |
+| `PIKO_ALLOWED_ORIGINS` / `PIKO_ALLOWED_HOSTS` | 额外允许的浏览器来源 / Host，逗号分隔；仅在开发或特殊部署时配置 |
 | `PIKO_TELEGRAM_BOT_TOKEN` | 已启用 Telegram 的 Bot Token |
 | `BRAVE_SEARCH_API_KEY`、`EXA_API_KEY`、`TAVILY_API_KEY`、`DEEPSEEK_API_KEY`、`FIRECRAWL_API_KEY` | 可选网络工具凭据 |
 | `headersEnv` 或 MCP 配置引用的变量 | 对应服务使用的后端凭据 |
@@ -58,4 +61,4 @@ PIKO_HOME/config/
 
 主/后台模型选择在安全边界热应用；模型目录、凭据、工具、通道及部署环境变更后重启。指导和技能刷新规则见[运行时生效时机](agent-runtime.md#更新的生效时机)。
 
-API 没有内置鉴权；远程访问必须保护 Web、API 与 SSE 并阻止绕过代理直连。配置、凭据及完整备份应按敏感数据保护；详见[部署说明](deployment.md)和[存储说明](storage.md)。
+API 使用访问密钥保护；远程使用时 HTTP 不加密凭据或内容，应使用 HTTPS 或受信网络。配置、凭据及完整备份应按敏感数据保护；详见[部署说明](deployment.md)和[存储说明](storage.md)。

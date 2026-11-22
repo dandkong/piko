@@ -20,7 +20,7 @@ bun install --cwd apps/mobile --frozen-lockfile
 bun run dev:web
 ```
 
-Expo Web is available at `http://localhost:8081`; the API defaults to `127.0.0.1:8787`. First launch initializes missing files under `~/.piko`. Configure and select a model before sending a message.
+Expo Web is available at `http://localhost:8081`; the API listens on `0.0.0.0:8787` by default. First launch initializes missing files under `~/.piko`. Configure and select a model before sending a message.
 
 ## Source-built Web
 
@@ -33,6 +33,6 @@ Open `http://127.0.0.1:8787`. Stop the foreground process with Ctrl+C. The backe
 
 ## Security
 
-The backend has no built-in authentication or Origin protection. Shell and file tools run with the backend user's permissions, and the workspace is not a sandbox. Keep the default loopback binding. For remote access, an authenticated proxy must protect the complete site, API and SSE; prevent untrusted clients from bypassing it. See [configuration](configuration.md) and [storage and backups](storage.md).
+The backend requires a single-user access key and checks browser origins. Shell and file tools run with the backend user's permissions, and the workspace is not a sandbox. The default bind covers all IPv4 interfaces; use `PIKO_HOST=127.0.0.1` to restrict it to loopback. Use HTTPS or a trusted network for remote access. See [configuration](configuration.md) and [storage and backups](storage.md).
 
 Android and iOS builds and devices are not comprehensively tested. No Docker deployment or installable releases are currently provided.
