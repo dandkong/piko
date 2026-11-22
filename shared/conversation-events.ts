@@ -16,6 +16,8 @@ const validators = {
   message: value => record(value.message) && typeof value.message.id === "string" &&
     (value.message.role === "user" || value.message.role === "assistant") &&
     typeof value.message.content === "string" && typeof value.final === "boolean" &&
+    (value.message.widget === undefined || record(value.message.widget) && value.message.widget.version === 1 &&
+      typeof value.message.widget.html === "string" && value.message.widget.html.length <= 32768) &&
     (value.previousId === undefined || typeof value.previousId === "string"),
   "run-end": value => Array.isArray(value.submissions) && value.submissions.every(item =>
     record(item) && typeof item.id === "string" &&

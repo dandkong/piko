@@ -3,6 +3,7 @@ import type { EntryRecord } from "@earendil-works/pi-durable";
 import type { Message, MessageEvent } from "../../shared/chat";
 import { messageText } from "./pi-history";
 import { SentAttachmentEntry, sentAttachmentMessage } from "./sent-attachments";
+import { WidgetEntry, widgetMessage } from "./widgets";
 
 type LiveAssistantMessage = Pick<
   AssistantMessage,
@@ -30,7 +31,7 @@ export class PiMessageEvents {
   /** `initial` seeds historical entries without replaying them to current observers. */
   sync(entries: readonly EntryRecord[], live?: LiveAssistantMessage, initial = false) {
     for (const entry of entries) {
-      if (entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry)) continue;
+      if (entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry) && !WidgetEntry.is(entry)) continue;
       if (initial) this.remember(entry);
       else this.complete(entry);
     }
@@ -72,6 +73,11 @@ export class PiMessageEvents {
 
   private complete(entry: EntryRecord) {
     if (this.seen.has(entry.id)) return;
+    if (WidgetEntry.is(entry)) {
+      this.seen.add(entry.id);
+      this.emit({ type: "message", message: widgetMessage(entry.id, entry.data), final: true });
+      return;
+    }
     if (SentAttachmentEntry.is(entry)) {
       this.seen.add(entry.id);
       this.emit({ type: "message", message: sentAttachmentMessage(entry.id, entry.data), final: true });

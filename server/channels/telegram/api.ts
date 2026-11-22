@@ -10,12 +10,18 @@ const markup = (buttons: TelegramKeyboard | undefined) => buttons === undefined 
 export interface TelegramTransport {
   send(chatId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<string>;
   sendFile(chatId: string, attachment: MessageAttachment): Promise<void>;
+  sendWidget(chatId: string, html: string): Promise<void>;
   edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void>;
   answerCallback(callbackId: string, text?: string, alert?: boolean): Promise<void>;
   remove(chatId: string, messageId: string): Promise<void>;
   typing(chatId: string): Promise<void>;
   /** Bytes of a photo or image document; the channel stores them and gives the model a path. */
   download(fileId: string): Promise<Uint8Array>;
+}
+
+/** A rejected API request did not publish a widget; network and server errors remain ambiguous. */
+export function isDefiniteWidgetRejection(error: unknown): boolean {
+  return error instanceof GrammyError && error.error_code >= 400 && error.error_code < 500 && error.error_code !== 429;
 }
 
 /** Only descriptions of known formatting failures permit fallback, never transport ambiguity. */
@@ -74,6 +80,11 @@ export class TelegramApi implements TelegramTransport {
     if (!bytes) throw new Error("Attachment is unavailable.");
     // Non-idempotent: a timeout can mean Telegram already accepted the upload. Do not retry.
     await this.bot.api.sendDocument(chatId, new InputFile(bytes, attachment.name ?? "attachment"), {}, this.signal);
+  }
+
+  async sendWidget(chatId: string, html: string): Promise<void> {
+    // Widget publication is non-idempotent: a timeout may mean it was already delivered.
+    await this.bot.api.raw.sendWidget({ chat_id: chatId, html }, this.signal);
   }
 
   async edit(chatId: string, messageId: string, text: string, rich: boolean, buttons?: TelegramKeyboard): Promise<void> {

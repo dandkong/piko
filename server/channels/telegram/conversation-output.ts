@@ -2,7 +2,7 @@ import type { ConversationResponse, MessageEvent } from "../../../shared/chat";
 import type { SessionEvent } from "../../runtime/types";
 import { singleLine, SUMMARY_TEXT_LIMIT } from "../../runtime/text";
 import { toolIcon } from "../../runtime/tool-activity";
-import { telegramErrorCode, type TelegramTransport } from "./api";
+import { isDefiniteWidgetRejection, telegramErrorCode, type TelegramTransport } from "./api";
 import { TelegramMessageOutput, TelegramReply } from "./output";
 import { formatCompaction } from "./command-format";
 import { logWarn } from "../../logging";
@@ -67,6 +67,19 @@ export class TelegramConversationOutput {
         return;
       case "message":
         if (event.message.role !== "assistant" || this.known.has(event.message.id)) return;
+        if (event.final && event.message.widget) {
+          await this.flushText();
+          this.breakTools();
+          // Like attachments, do not repeat a send whose outcome may be unknown.
+          this.remember(event.message.id);
+          try { await this.api.sendWidget(this.chatId, event.message.widget.html); }
+          catch (error) {
+            if (!isDefiniteWidgetRejection(error)) throw error;
+            logWarn("telegram.widget.rejected", { telegramCode: telegramErrorCode(error) });
+            await this.api.send(this.chatId, "Unable to display the widget in Telegram.", false);
+          }
+          return;
+        }
         if (event.final && event.message.attachments?.length) {
           await this.flushText();
           this.breakTools();

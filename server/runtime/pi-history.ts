@@ -6,6 +6,7 @@ import { CHAT_PAGE_SIZE, type HistoryPage, type Message, type MessageAttachment 
 import { detectExtension, isSnapshotId } from "../attachments/store";
 import { PREVIEW_EXCERPT_MAX_CHARS } from "../domain/text-limits";
 import { SentAttachmentEntry, sentAttachmentMessage } from "./sent-attachments";
+import { WidgetEntry, widgetMessage } from "./widgets";
 
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -57,7 +58,7 @@ export async function historyPageFromTransaction(tx: Tx, inputs: ReadonlyMap<num
       ...(before && { maxEntryId: (Number(before) - 1) as EntryRecord["id"] }) }, 100, cursor);
     for (const entry of page.items) {
       entries.push(entry);
-      if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry)) continue;
+      if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry) && !WidgetEntry.is(entry)) continue;
       const requestId = inputs.get(entry.id);
       if (requestId && await internalInput(tx, requestId, conversationId)) continue;
       const projected = projectPiHistory([entry], requestId ? new Map([[entry.id, requestId]]) : undefined).messages;
@@ -95,7 +96,9 @@ export function projectPiHistory(
   const messages: Message[] = [];
   for (const entry of entries) {
     if (hidden.has(entry.id)) continue;
-    if (SentAttachmentEntry.is(entry)) {
+    if (WidgetEntry.is(entry)) {
+      messages.push(widgetMessage(entry.id, entry.data));
+    } else if (SentAttachmentEntry.is(entry)) {
       messages.push(sentAttachmentMessage(entry.id, entry.data));
     } else if (entry.kind === "pi.user" || entry.kind === "pi.assistant") {
       for (const message of entry.model ?? []) {
@@ -158,7 +161,7 @@ async function internalEntries(
 }
 
 function visibleEntryMessages(entry: EntryRecord, hidden: ReadonlySet<number>, inputs: ReadonlyMap<number, string>): Message[] {
-  if (hidden.has(entry.id) || (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry))) return [];
+  if (hidden.has(entry.id) || (entry.kind !== "pi.user" && entry.kind !== "pi.assistant" && !SentAttachmentEntry.is(entry) && !WidgetEntry.is(entry))) return [];
   return projectPiHistory([entry], inputs).messages;
 }
 

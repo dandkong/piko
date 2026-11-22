@@ -11,6 +11,7 @@ export function toolIcon(name: string): string {
     case "tool_search": return "🔍";
     case "web_extract": return "🌐";
     case "send_attachment": return "📎";
+    case "show_widget": return "🖼️";
     default: return "🛠️";
   }
 }
