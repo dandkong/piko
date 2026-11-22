@@ -117,7 +117,6 @@ export function SettingsSheet({ open, onClose, onToast }: {
     {open ? <View style={{ gap: 16 }}>
     <LanguageSection />
     <AppearanceSection />
-    <View style={{ marginHorizontal: 20 }}><TextButton label={language === "zh-CN" ? "退出登录" : "Sign out"} onPress={logout}><Text style={{ color: colors.text }}>{language === "zh-CN" ? "退出登录" : "Sign out"}</Text></TextButton></View>
     {loading && !data ? (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12 }}>
         <ActivityIndicator accessibilityLabel={t("settings.loadingModels")} color={colors.muted} size="small" />
@@ -132,6 +131,7 @@ export function SettingsSheet({ open, onClose, onToast }: {
       snapshot={data}
       onChange={(main, background, backgroundThinking) => void update(main, background, backgroundThinking)}
     /> : null}
+    <View style={{ marginHorizontal: 20 }}><TextButton label={language === "zh-CN" ? "退出登录" : "Sign out"} onPress={logout}><Text style={{ color: colors.text }}>{language === "zh-CN" ? "退出登录" : "Sign out"}</Text></TextButton></View>
     </View> : null}
   </FloatingPanel>;
 }
