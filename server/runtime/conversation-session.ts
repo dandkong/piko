@@ -36,7 +36,7 @@ import { logInfo, logWarn } from "../logging";
 
 /** One conversation's facade; Runtime owns its lifetime and the shared Harness. */
 export class DurableChatSession implements ChatSession {
-  private memoryCurationService?: MemoryCurationService;
+  private readonly memoryCurationServices: MemoryCurationService[] = [];
   private readonly listeners = new Set<(event: SessionEvent) => void>();
   private readonly control: ConversationControl;
   private readonly view: ConversationView;
@@ -68,13 +68,10 @@ export class DurableChatSession implements ChatSession {
       (running, boundary) => {
         this.control.running = running;
         if (boundary)
-          void (
-            running
-              ? this.memoryCurationService?.onRunStart()
-              : this.memoryCurationService?.onRunEnd()
-          )?.catch(() =>
-            logWarn("memory.review.activity_failed"),
-          );
+          for (const service of this.memoryCurationServices)
+            void (running ? service.onRunStart() : service.onRunEnd()).catch(() =>
+              logWarn("memory.review.activity_failed"),
+            );
       },
       () => this.control.isBusy,
       () => this.control.closed,
@@ -107,7 +104,7 @@ export class DurableChatSession implements ChatSession {
     return this.control.serial(() => this.view.refreshObservation());
   }
   attachMemory(service: MemoryCurationService) {
-    this.memoryCurationService = service;
+    this.memoryCurationServices.push(service);
   }
   receiveReport(operation: () => Promise<void>) {
     return this.control.receiveReport(operation);

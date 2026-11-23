@@ -35,6 +35,7 @@ import {
   MemoryCurationService,
 } from "./memory-curation";
 import { createPikoCodingTools } from "./coding-tools";
+import { createWikiCurationExtension, WikiCurationDoc } from "./wiki-curation";
 import { createSessionSearchTools } from "./session-search-tools";
 import { SideChatError, requireSideChat } from "./side-chats";
 import { SideChats } from "./side-chat-service";
@@ -71,6 +72,7 @@ class PikoRuntime {
   private tasks!: DurableAssistantTasks;
   private posts!: PostsService;
   private memory?: MemoryCurationService;
+  private wiki?: MemoryCurationService;
   private retention?: StorageRetentionService;
   private mcp?: McpManager;
   private main!: DurableChatSession;
@@ -121,6 +123,8 @@ class PikoRuntime {
       background,
       coding,
     });
+    const wiki = createWikiCurationExtension({ workspace: this.paths.workspace,
+      bindings: () => this.main?.bindings ?? new Map(), background, coding });
     const web = createWebTools(env, { settings: settings.tools });
     const sessionSearch = createSessionSearchTools({
       backgroundScope: (api, context) => api.commit(tx => postHistoryScope(tx, api.conversationId), context),
@@ -144,6 +148,7 @@ class PikoRuntime {
       createSubagentTools(children, background),
       createTaskTools(() => this.tasks),
       memory.extension,
+      wiki.extension,
       sessionSearch,
       createSentAttachmentTools(new AttachmentStore(join(this.paths.state, "attachments"))),
       postTools,
@@ -194,11 +199,14 @@ class PikoRuntime {
         () => this.main.bindings,
       );
       this.main.attachMemory(this.memory);
+      this.wiki = new MemoryCurationService(harness, wiki.task, () => this.main.bindings, undefined, WikiCurationDoc);
+      this.main.attachMemory(this.wiki);
       await this.tasks.recoverDeletions();
       harness.resume();
       this.posts.start();
       this.tasks.start();
       await this.memory.start();
+      await this.wiki.start();
       this.retention = new StorageRetentionService(harness, opened.maintenance);
       await this.retention.start();
     } catch (error) {
@@ -357,6 +365,7 @@ class PikoRuntime {
     this.closing = true;
     this.closed = (async () => {
       this.memory?.close();
+      this.wiki?.close();
       try {
         await this.retention?.close();
         await this.posts?.close();

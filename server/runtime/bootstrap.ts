@@ -27,6 +27,7 @@ import {
 import { sideChats, SIDE_CHAT_INSTRUCTIONS } from "./side-chats";
 import { WorkspaceExecutionEnv } from "./execution-env";
 import { logError, logInfo } from "../logging";
+import { WikiCurationDoc } from "./wiki-curation";
 
 /** Finish no-replay recovery and policy refresh before any caller can resume the Harness. */
 export async function openRuntime(
@@ -111,7 +112,9 @@ export async function openRuntime(
         interrupted.push(id);
     }
     // Apply the no-replay policy before enabling any scheduler or input.
-    const recovery = await prepareRestart(harness, chatIds);
+    const wiki = await harness.snapshot(WikiCurationDoc, ROOT_CONVERSATION_ID, ctx);
+    const recoveryIds = wiki?.conversationId === undefined ? chatIds : [...chatIds, wiki.conversationId as ConversationId];
+    const recovery = await prepareRestart(harness, recoveryIds);
     for (const id of recovery.interruptedIds)
       if (!interrupted.includes(id)) interrupted.push(id);
     const rootAgent = await root.agent(ctx);

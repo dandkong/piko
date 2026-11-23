@@ -265,7 +265,7 @@ export class StorageMaintenance {
   private async retentionKind(graph: Graph, task: NativeTask): Promise<RetentionTarget["kind"] | undefined> {
     if (task.state.status !== "terminal" || !task.background || task.owner !== undefined ||
       task.conversationId !== ROOT_CONVERSATION_ID && graph.conversations.some(row => row.id === task.conversationId)) return;
-    if (task.kind === "piko.memory-curation") return "memory";
+    if (task.kind === "piko.memory-curation" || task.kind === "piko.wiki-curation") return "memory";
     if (task.kind === POSTS_GENERATION_KIND) {
       const post = await this.database.get<{ id: number }>(
         "SELECT id FROM entries WHERE conversation_id=? AND json_extract(record,'$.kind')=? AND json_extract(record,'$.data.generationTaskId')=? LIMIT 1",
@@ -300,7 +300,7 @@ export class StorageMaintenance {
     // No trustworthy completion timestamp: retain rather than guessing from a numeric ID.
     if (tasks.some(task => task.state.status !== "terminal" || task.endedAt === undefined || task.endedAt > cutoff)) return;
     if (target.kind === "memory") {
-      const row = (await this.documentRecords()).find(record => record.kind === "piko.memory-curation" &&
+      const row = (await this.documentRecords()).find(record => record.kind === task.kind &&
         record.scope.kind === "conversation" && record.scope.conversationId === ROOT_CONVERSATION_ID && record.retiredAt === undefined);
       if ((row && (await this.value(row))?.activeTaskId) === target.taskId) return;
     }

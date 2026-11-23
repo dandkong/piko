@@ -27,6 +27,9 @@ export type MemoryCurationState = {
   idleSince: number | null;
   activeTaskId: number | null;
   retryAfter: number | null;
+  /** A separate worker may pause after an uncertain file-writing execution. */
+  blocked?: boolean;
+  conversationId?: number;
 };
 export const MemoryCurationDoc = defineDoc<MemoryCurationState>({
   kind: MEMORY_CURATION_KIND, version: 1, scope: "conversation", history: "latest", fork: "initial",
@@ -34,10 +37,10 @@ export const MemoryCurationDoc = defineDoc<MemoryCurationState>({
   initial: () => ({ initialized: false, cursor: 0, idleSince: null, activeTaskId: null, retryAfter: null }),
 });
 
-type CurationInput = { fromEntryId: number; throughEntryId: number; timezone: string; requestedAt: number };
-type CurationCheckpoint = { phase: "curation"; childId?: number };
-type CurationResult = { reviewedThrough: number };
-type CurationTask = ReturnType<typeof createCurationTask>;
+export type CurationInput = { fromEntryId: number; throughEntryId: number; timezone: string; requestedAt: number };
+export type CurationCheckpoint = { phase: "curation"; childId?: number };
+export type CurationResult = { reviewedThrough: number };
+export type CurationTask = ReturnType<typeof createCurationTask>;
 type Runtime = TaskRuntime<CurationInput, CurationCheckpoint, CurationResult, object>;
 function safeError(): string { return "Memory review failed; it can be retried."; }
 
@@ -125,11 +128,11 @@ export class MemoryCurationService {
   private closing = false;
   private readonly timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   constructor(private readonly harness: Harness, private readonly task: CurationTask, private readonly bindings: () => ReadonlyMap<number, string>,
-    private readonly now = Date.now) {}
+    private readonly now = Date.now, private readonly document: typeof MemoryCurationDoc = MemoryCurationDoc) {}
 
   async start(): Promise<void> {
     await this.harness.commit(async tx => {
-      const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
+      const state = await tx.doc(this.document, ROOT_CONVERSATION_ID);
       const highWater = await rootHighWater(tx);
       const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
       const inbox = await tx.doc(InboxDoc, ROOT_CONVERSATION_ID);
@@ -141,7 +144,11 @@ export class MemoryCurationService {
       } else if (!busy && state.idleSince === null && highWater > state.cursor) state.idleSince = this.now();
       if (state.activeTaskId !== null) {
         const active = await tx.task(state.activeTaskId as TaskId);
-        if (!active || active.state.status === "terminal") state.activeTaskId = null;
+        if (!active || active.state.status === "terminal") {
+          // A reusable file-writing worker may have stopped without recording a safe outcome.
+          if (this.document !== MemoryCurationDoc) state.blocked = true;
+          state.activeTaskId = null;
+        }
       }
     }, context);
     if (!this.timer) {
@@ -153,11 +160,11 @@ export class MemoryCurationService {
   close(): void { this.closing = true; clearInterval(this.timer); this.timer = undefined; }
 
   async onRunStart(): Promise<void> {
-    await this.harness.commit(async tx => { (await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID)).idleSince = null; }, context);
+    await this.harness.commit(async tx => { (await tx.doc(this.document, ROOT_CONVERSATION_ID)).idleSince = null; }, context);
   }
   async onRunEnd(): Promise<void> {
     await this.harness.commit(async tx => {
-      const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
+      const state = await tx.doc(this.document, ROOT_CONVERSATION_ID);
       state.idleSince = this.now(); state.retryAfter = null;
     }, context);
   }
@@ -177,11 +184,12 @@ export class MemoryCurationService {
 
   private async schedule(): Promise<"started" | "nothing-new"> {
     const snapshot = await this.harness.commit(async tx => {
-      const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
-      if (!state.initialized) return undefined;
+      const state = await tx.doc(this.document, ROOT_CONVERSATION_ID);
+      if (!state.initialized || state.blocked) return undefined;
       if (state.activeTaskId !== null) {
         const active = await tx.task(state.activeTaskId as TaskId);
         if (active && active.state.status !== "terminal") return { kind: "active" as const };
+        if (this.document !== MemoryCurationDoc) { state.blocked = true; return undefined; }
         state.activeTaskId = null;
       }
       const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
@@ -211,8 +219,8 @@ export class MemoryCurationService {
 
     let result: number | undefined;
     await this.harness.commit(async tx => {
-      const state = await tx.doc(MemoryCurationDoc, ROOT_CONVERSATION_ID);
-      if (state.activeTaskId !== null || state.cursor !== snapshot.fromEntryId) return;
+      const state = await tx.doc(this.document, ROOT_CONVERSATION_ID);
+      if (state.blocked || state.activeTaskId !== null || state.cursor !== snapshot.fromEntryId) return;
       const live = await tx.doc(LiveDoc, ROOT_CONVERSATION_ID);
       const inbox = await tx.doc(InboxDoc, ROOT_CONVERSATION_ID);
       const busy = !!live.run || inbox.items.some(item => item.mode !== "write");
