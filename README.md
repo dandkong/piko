@@ -6,13 +6,15 @@
 
 Piko is a local-first personal assistant. Through an ongoing conversation, it helps you think, organize work, and keep useful results in your own workspace.
 
-## Features
+## Why Piko?
 
-- **Chat**: A persistent main conversation and independent side chats, with streaming replies, attachments, and optional Telegram private chat.
-- **Tasks**: Delegate background work or create tasks that run manually, once, or on a schedule.
-- **Posts**: Generate personalized reading based on your context, automatically or on demand.
-- **Artifacts**: Browse and download finished work saved by the assistant.
-- **Workspace and tools**: Files, memory, skills, web search and extraction, and configurable MCP tools.
+- **Your choice of where to chat**: Use Piko on the web or through Telegram, with independent side chats to give different topics their own space.
+- **Keep talking while work gets done**: Hand time-consuming work to background subagents and hear back when it's done, without watching a progress bar or putting your conversation on hold.
+- **Ask once. Let it run on schedule.** Create one-off or recurring tasks that keep their execution status and past results—not just reminders that tell you it's time to do the work.
+- **Discover without having to ask**: Personalized Posts draw on your interests and context to bring you things worth reading and discussing.
+- **Keep what you create**: Articles, reports, and other finished work stay together in Artifacts, ready to browse, download, and reuse.
+- **Go beyond the chat box**: Skills, built-in web search and extraction, and configurable MCP tools turn answers into action.
+- **Less repetition, more continuity**: Daily notes, long-term memory, and conversation search help Piko build on past discussions instead of making you explain the background again.
 
 ## Screenshots
 
