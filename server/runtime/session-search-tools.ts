@@ -45,9 +45,9 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
     name: "sessions_search",
     replay: "unsafe",
     description:
-      "Search visible user and assistant text in the permitted conversation history: the current main/side chat, or the host-authorized main-chat snapshot for a Posts researcher. Use this to check prior discussion. Search terms are literal; all whitespace-separated terms must occur in a message. Results are ordered newest first. Use sessions_history with a result's sessionId and messageId to read bounded surrounding context. Tool output, reasoning, hidden internal inputs, and attachment contents are not searched.",
+      "Search visible user and assistant messages in the current conversation or authorized main-chat history. Tool output and attachment contents are not searched. Space-separated keywords match literally (any keyword); more distinct matches rank first, then newer messages. Chinese is not automatically segmented. Use sessions_history to read context around a result.",
     parameters: Type.Object({
-      query: Type.String({ minLength: 1, maxLength: 4096, description: "Keywords or a phrase to find in past user and assistant messages." }),
+      query: Type.String({ minLength: 1, maxLength: 4096, description: "Space-separated keywords to search for." }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: SEARCH_MAX_LIMIT,
         description: `Maximum results to return (default ${SEARCH_DEFAULT_LIMIT}, max ${SEARCH_MAX_LIMIT}).` })),
     }, { additionalProperties: false }),
@@ -69,10 +69,10 @@ export function createSessionSearchTools(access: SessionHistoryAccess) {
     name: "sessions_history",
     replay: "unsafe",
     description:
-      "Read a bounded window of visible messages around a sessions_search result. Pass its sessionId and the raw Durable entry ID as messageId, without a prefix. Message text is returned without per-message truncation. To continue scrolling, pass an id from the returned messages as messageId. A missing or out-of-session anchor returns an error rather than falling back to the latest messages.",
+      "Read visible messages around a sessions_search result. Pass its sessionId and messageId; use an ID from the returned messages to continue reading.",
     parameters: Type.Object({
-      sessionId: Type.String({ minLength: 1, description: "sessionId returned by sessions_search; must be within the host-authorized history scope." }),
-      messageId: Type.String({ pattern: "^[1-9]\\d*$", description: "Raw Durable entry ID returned by sessions_search or as a message id in sessions_history; do not add a prefix." }),
+      sessionId: Type.String({ minLength: 1, description: "Session ID returned by sessions_search." }),
+      messageId: Type.String({ pattern: "^[1-9]\\d*$", description: "Message ID returned by sessions_search or sessions_history, without a prefix." }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: HISTORY_MAX_LIMIT,
         description: `Maximum total messages including the anchor (default ${HISTORY_DEFAULT_LIMIT}, max ${HISTORY_MAX_LIMIT}).` })),
     }, { additionalProperties: false }),

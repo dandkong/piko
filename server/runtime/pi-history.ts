@@ -174,10 +174,10 @@ export async function searchPiHistory(
   conversationId = ROOT_CONVERSATION_ID,
 ): Promise<{ results: SessionSearchHit[]; truncated: boolean }> {
   const query = normalizeSearchText(rawQuery);
-  const terms = query.split(" ").filter(Boolean);
+  const terms = [...new Set(query.split(" ").filter(Boolean))];
   if (!terms.length) return { results: [], truncated: false };
 
-  const candidates: SessionSearchHit[] = [];
+  const candidates: { hit: SessionSearchHit; matchedTerms: number }[] = [];
   const hidden = await internalEntries(tx, inputs, conversationId);
   let matches = 0;
   let cursor: Cursor | undefined;
@@ -188,17 +188,19 @@ export async function searchPiHistory(
       for (const message of messages) {
         const text = normalizeSearchText(message.content);
         if (!text) continue;
-        if (!terms.every(term => text.includes(term))) continue;
+        const matchedTerms = terms.filter(term => text.includes(term));
+        if (!matchedTerms.length) continue;
         matches++;
-        candidates.push({ messageId: message.id, role: message.role, timestamp: message.createdAt,
-          snippet: searchSnippet(message.content, terms) });
-        candidates.sort((a, b) => b.timestamp - a.timestamp || Number(b.messageId) - Number(a.messageId));
+        candidates.push({ hit: { messageId: message.id, role: message.role, timestamp: message.createdAt,
+          snippet: searchSnippet(message.content, matchedTerms) }, matchedTerms: matchedTerms.length });
+        candidates.sort((a, b) => b.matchedTerms - a.matchedTerms || b.hit.timestamp - a.hit.timestamp ||
+          Number(b.hit.messageId) - Number(a.hit.messageId));
         if (candidates.length > limit) candidates.pop();
       }
     }
     cursor = page.next;
   } while (cursor);
-  return { results: candidates, truncated: matches > limit };
+  return { results: candidates.map(candidate => candidate.hit), truncated: matches > limit };
 }
 
 /** Read a bounded window around a visible message anchor from the native transcript. */
