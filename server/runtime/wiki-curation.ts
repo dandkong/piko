@@ -6,7 +6,7 @@ import { configure, defineDoc, defineExtension, defineTask, ROOT_CONVERSATION_ID
 import { buildWikiCurationPrompt } from "../domain/wiki-curation";
 import { backgroundAgent, type BackgroundSelection } from "./background";
 import { collectMainChatBatch } from "./chat-batch";
-import { curatorTools, type CodingExtension } from "./coding-tools";
+import type { CodingExtension } from "./coding-tools";
 import { NO_AGENT_RESOURCES, setAgentResources } from "./agents/resources";
 import { type CurationInput, type CurationCheckpoint, type CurationResult, type MemoryCurationState } from "./memory-curation";
 import { logWarn } from "../logging";
@@ -70,7 +70,7 @@ export function createWikiCurationExtension(options: { workspace: string; bindin
               await setAgentResources(tx, id, NO_AGENT_RESOURCES);
             }
             await configure(tx, id, { ...model, model: model.model!, extensions: [options.coding],
-              tools: curatorTools(options.coding), modelTools: null, cwd: options.workspace, instructions: INSTRUCTIONS,
+              tools: options.coding.tools ?? [], modelTools: null, cwd: options.workspace, instructions: INSTRUCTIONS,
               compaction: wikiCompaction(resolved.contextWindow) });
             childId = id;
             return { status: "running", checkpoint: { phase: "curation", childId: Number(id) } } as const;
